@@ -1,0 +1,220 @@
+package com.betteraichat.providers.openai
+
+import com.betteraichat.core.catalog.ModelCatalog
+import com.betteraichat.core.model.ChatMessage
+import com.betteraichat.core.model.ChatRole
+import com.betteraichat.core.model.ProviderConfig
+import com.betteraichat.core.model.StreamEvent
+import com.betteraichat.core.model.ToolCall
+import com.betteraichat.core.model.ToolSpec
+import com.betteraichat.core.provider.ChatProvider
+import com.betteraichat.core.sse.SseParser
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import java.util.concurrent.TimeUnit
+
+@Serializable
+data class OpenAiChunk(
+    val choices: List<OpenAiChoice> = emptyList()
+)
+
+@Serializable
+data class OpenAiChoice(
+    val delta: OpenAiDelta? = null,
+    @SerialName("finish_reason") val finishReason: String? = null
+)
+
+@Serializable
+data class OpenAiDelta(
+    val content: String? = null,
+    @SerialName("tool_calls") val toolCalls: List<OpenAiToolCallDelta>? = null
+)
+
+@Serializable
+data class OpenAiToolCallDelta(
+    val index: Int? = null,
+    val id: String? = null,
+    val function: OpenAiFunctionDelta? = null
+)
+
+@Serializable
+data class OpenAiFunctionDelta(
+    val name: String? = null,
+    val arguments: String? = null
+)
+
+@Serializable
+data class OpenAiRequest(
+    val model: String,
+    val messages: List<OpenAiMessage>,
+    val stream: Boolean = true,
+    val temperature: Double? = null,
+    @SerialName("max_tokens") val maxTokens: Int? = null,
+    @SerialName("reasoning_effort") val reasoningEffort: String? = null,
+    val tools: List<OpenAiTool>? = null
+)
+
+@Serializable
+data class OpenAiMessage(
+    val role: String,
+    val content: String? = null,
+    @SerialName("tool_calls") val toolCalls: List<OpenAiToolCall>? = null,
+    @SerialName("tool_call_id") val toolCallId: String? = null,
+    val name: String? = null
+)
+
+@Serializable
+data class OpenAiToolCall(
+    val id: String,
+    val type: String = "function",
+    val function: OpenAiFunction
+)
+
+@Serializable
+data class OpenAiFunction(
+    val name: String,
+    val arguments: String
+)
+
+@Serializable
+data class OpenAiTool(
+    val type: String = "function",
+    val function: OpenAiToolFunction
+)
+
+@Serializable
+data class OpenAiToolFunction(
+    val name: String,
+    val description: String,
+    val parameters: JsonObject
+)
+
+class OpenAiProvider : ChatProvider {
+
+    private val json = Json { ignoreUnknownKeys = true }
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(0, TimeUnit.MILLISECONDS)
+        .build()
+
+    override fun chatStream(
+        messages: List<ChatMessage>,
+        config: ProviderConfig,
+        tools: List<ToolSpec>
+    ): Flow<StreamEvent> = flow {
+        val reasoning = config.reasoning &&
+            ModelCatalog.entryFor(config.provider, config.model).supportsReasoning
+        val body = OpenAiRequest(
+            model = config.model,
+            messages = messages.map { it.toWire() },
+            temperature = if (reasoning) null else config.temperature,
+            maxTokens = config.maxTokens,
+            reasoningEffort = if (reasoning) "high" else null,
+            tools = tools.map {
+                OpenAiTool(function = OpenAiToolFunction(it.name, it.description, it.parameters))
+            }.takeIf { it.isNotEmpty() }
+        )
+        val request = Request.Builder()
+            .url("${config.baseUrl.trimEnd('/')}/chat/completions")
+            .post(json.encodeToString(OpenAiRequest.serializer(), body)
+                .toRequestBody("application/json".toMediaType()))
+            .header("Authorization", "Bearer ${config.apiKey}")
+            .build()
+        val call = client.newCall(request)
+        try {
+            val response = call.execute()
+            if (!response.isSuccessful) {
+                emit(StreamEvent.Error("HTTP ${response.code}: ${response.body?.string().orEmpty()}"))
+                return@flow
+            }
+            val respBody = response.body ?: run {
+                emit(StreamEvent.Error("空响应"))
+                return@flow
+            }
+            val toolAcc = mutableMapOf<Int, ToolAcc>()
+            var callsEmitted = false
+            SseParser.parse(respBody) { _, data ->
+                if (data == "[DONE]") {
+                    if (!callsEmitted) {
+                        callsEmitted = true
+                        emit(StreamEvent.ToolCallsDone(toolAcc.toToolCalls()))
+                    }
+                    emit(StreamEvent.Done)
+                    return@parse
+                }
+                val chunk = runCatching { json.decodeFromString(OpenAiChunk.serializer(), data) }
+                    .getOrNull() ?: return@parse
+                val choice = chunk.choices.firstOrNull() ?: return@parse
+                choice.delta?.content?.let { emit(StreamEvent.Delta(it)) }
+                choice.delta?.toolCalls?.forEach { tc ->
+                    val idx = tc.index ?: 0
+                    val acc = toolAcc.getOrPut(idx) { ToolAcc() }
+                    tc.id?.let { acc.id = it }
+                    tc.function?.name?.let { acc.name = it }
+                    tc.function?.arguments?.let { arg ->
+                        when {
+                            arg == acc.args -> Unit
+                            arg.length > acc.args.length && arg.startsWith(acc.args) -> acc.args = arg
+                            acc.args.length > arg.length && acc.args.startsWith(arg) -> Unit
+                            else -> acc.args += arg
+                        }
+                    }
+                }
+                if (choice.finishReason == "tool_calls" && !callsEmitted) {
+                    callsEmitted = true
+                    emit(StreamEvent.ToolCallsDone(toolAcc.toToolCalls()))
+                }
+            }
+            if (!callsEmitted) {
+                emit(StreamEvent.ToolCallsDone(toolAcc.toToolCalls()))
+                emit(StreamEvent.Done)
+            }
+        } finally {
+            call.cancel()
+        }
+    }
+
+    private class ToolAcc {
+        var id: String? = null
+        var name: String? = null
+        var args: String = ""
+    }
+
+    private fun Map<Int, ToolAcc>.toToolCalls(): List<ToolCall> =
+        toSortedMap().map { (idx, acc) ->
+            ToolCall(
+                id = acc.id ?: "call_$idx",
+                name = acc.name ?: "unknown",
+                arguments = acc.args.ifBlank { "{}" }
+            )
+        }
+
+    private fun ChatMessage.toWire(): OpenAiMessage = when (role) {
+        ChatRole.SYSTEM -> OpenAiMessage(role = "system", content = content)
+        ChatRole.USER -> OpenAiMessage(role = "user", content = content)
+        ChatRole.ASSISTANT -> OpenAiMessage(
+            role = "assistant",
+            content = content.ifEmpty { null },
+            toolCalls = toolCalls.map {
+                OpenAiToolCall(
+                    id = it.id,
+                    function = OpenAiFunction(name = it.name, arguments = it.arguments)
+                )
+            }.takeIf { it.isNotEmpty() }
+        )
+        ChatRole.TOOL -> OpenAiMessage(
+            role = "tool",
+            content = content,
+            toolCallId = toolCallId,
+            name = toolName
+        )
+    }
+}

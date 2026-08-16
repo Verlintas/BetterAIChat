@@ -1,0 +1,205 @@
+package com.betteraichat.providers.gemini
+
+import com.betteraichat.core.model.ChatMessage
+import com.betteraichat.core.model.ChatRole
+import com.betteraichat.core.model.ProviderConfig
+import com.betteraichat.core.model.StreamEvent
+import com.betteraichat.core.model.ToolCall
+import com.betteraichat.core.model.ToolSpec
+import com.betteraichat.core.provider.ChatProvider
+import com.betteraichat.core.sse.SseParser
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
+import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import java.util.concurrent.TimeUnit
+
+@Serializable
+data class GeminiRequest(
+    @SerialName("systemInstruction") val systemInstruction: GeminiSystemInstruction? = null,
+    val contents: List<GeminiContent>,
+    @SerialName("generationConfig") val generationConfig: GeminiGenerationConfig? = null,
+    val tools: List<GeminiTool>? = null
+)
+
+@Serializable
+data class GeminiSystemInstruction(val parts: List<GeminiPart>)
+
+@Serializable
+data class GeminiContent(val role: String, val parts: List<GeminiPart>)
+
+@Serializable
+data class GeminiPart(
+    val text: String? = null,
+    @SerialName("functionCall") val functionCall: GeminiFunctionCall? = null,
+    @SerialName("functionResponse") val functionResponse: GeminiFunctionResponse? = null
+)
+
+@Serializable
+data class GeminiFunctionCall(
+    val name: String,
+    val args: JsonObject = JsonObject(emptyMap())
+)
+
+@Serializable
+data class GeminiFunctionResponse(
+    val name: String,
+    val response: JsonObject
+)
+
+@Serializable
+data class GeminiGenerationConfig(
+    val temperature: Double? = null,
+    @SerialName("maxOutputTokens") val maxOutputTokens: Int? = null
+)
+
+@Serializable
+data class GeminiTool(
+    @SerialName("functionDeclarations") val functionDeclarations: List<GeminiFunctionDeclaration>
+)
+
+@Serializable
+data class GeminiFunctionDeclaration(
+    val name: String,
+    val description: String,
+    val parameters: JsonObject
+)
+
+@Serializable
+data class GeminiResponse(
+    val candidates: List<GeminiCandidate> = emptyList(),
+    val error: GeminiError? = null
+)
+
+@Serializable
+data class GeminiCandidate(
+    val content: GeminiContent? = null,
+    @SerialName("finishReason") val finishReason: String? = null
+)
+
+@Serializable
+data class GeminiError(
+    val code: Int = 0,
+    val message: String? = null,
+    val status: String? = null
+)
+
+class GeminiProvider : ChatProvider {
+
+    private val json = Json { ignoreUnknownKeys = true }
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(0, TimeUnit.MILLISECONDS)
+        .build()
+
+    override fun chatStream(
+        messages: List<ChatMessage>,
+        config: ProviderConfig,
+        tools: List<ToolSpec>
+    ): Flow<StreamEvent> = flow {
+        val system = messages.firstOrNull { it.role == ChatRole.SYSTEM }?.content
+        val body = GeminiRequest(
+            systemInstruction = system?.takeIf { it.isNotBlank() }?.let {
+                GeminiSystemInstruction(listOf(GeminiPart(text = it)))
+            },
+            contents = messages.filter { it.role != ChatRole.SYSTEM }.toGeminiContents(),
+            generationConfig = GeminiGenerationConfig(
+                temperature = config.temperature,
+                maxOutputTokens = config.maxTokens
+            ),
+            tools = tools.map {
+                GeminiTool(listOf(GeminiFunctionDeclaration(it.name, it.description, it.parameters)))
+            }.takeIf { it.isNotEmpty() }
+        )
+        val url = "${config.baseUrl.trimEnd('/')}/v1beta/models/${config.model}:streamGenerateContent"
+            .toHttpUrl().newBuilder().addQueryParameter("alt", "sse").build()
+        val request = Request.Builder()
+            .url(url)
+            .post(json.encodeToString(GeminiRequest.serializer(), body)
+                .toRequestBody("application/json".toMediaType()))
+            .header("X-Goog-Api-Key", config.apiKey)
+            .build()
+        val call = client.newCall(request)
+        try {
+            val response = call.execute()
+            if (!response.isSuccessful) {
+                emit(StreamEvent.Error("HTTP ${response.code}: ${response.body?.string().orEmpty()}"))
+                return@flow
+            }
+            val respBody = response.body ?: run {
+                emit(StreamEvent.Error("空响应"))
+                return@flow
+            }
+            val toolCalls = mutableListOf<ToolCall>()
+            SseParser.parse(respBody) { _, data ->
+                val resp = runCatching { json.decodeFromString(GeminiResponse.serializer(), data) }
+                    .getOrNull() ?: return@parse
+                resp.error?.message?.let {
+                    emit(StreamEvent.Error(it))
+                    return@parse
+                }
+                val parts = resp.candidates.firstOrNull()?.content?.parts ?: return@parse
+                for (part in parts) {
+                    part.text?.let { emit(StreamEvent.Delta(it)) }
+                    part.functionCall?.let { fc ->
+                        val name = fc.name
+                        val args = fc.args.toString()
+                        if (toolCalls.none { it.name == name && it.arguments == args }) {
+                            toolCalls.add(ToolCall(id = "call_${toolCalls.size}", name = name, arguments = args))
+                        }
+                    }
+                }
+            }
+            emit(StreamEvent.ToolCallsDone(toolCalls))
+            emit(StreamEvent.Done)
+        } finally {
+            call.cancel()
+        }
+    }
+
+    private fun List<ChatMessage>.toGeminiContents(): List<GeminiContent> {
+        val result = mutableListOf<GeminiContent>()
+        for (m in this) {
+            val parts = buildList {
+                when (m.role) {
+                    ChatRole.USER -> if (m.content.isNotBlank()) add(GeminiPart(text = m.content))
+                    ChatRole.ASSISTANT -> {
+                        if (m.content.isNotBlank()) add(GeminiPart(text = m.content))
+                        m.toolCalls.forEach { tc ->
+                            val args = runCatching { json.parseToJsonElement(tc.arguments).jsonObject }
+                                .getOrDefault(JsonObject(emptyMap()))
+                            add(GeminiPart(functionCall = GeminiFunctionCall(tc.name, args)))
+                        }
+                    }
+                    ChatRole.TOOL -> add(
+                        GeminiPart(
+                            functionResponse = GeminiFunctionResponse(
+                                name = m.toolName ?: "unknown",
+                                response = JsonObject(mapOf("result" to JsonPrimitive(m.content)))
+                            )
+                        )
+                    )
+                    ChatRole.SYSTEM -> Unit
+                }
+            }
+            if (parts.isEmpty()) continue
+            val role = if (m.role == ChatRole.ASSISTANT) "model" else "user"
+            val last = result.lastOrNull()
+            if (last != null && last.role == role) {
+                result[result.size - 1] = last.copy(parts = last.parts + parts)
+            } else {
+                result.add(GeminiContent(role = role, parts = parts))
+            }
+        }
+        return result
+    }
+}
