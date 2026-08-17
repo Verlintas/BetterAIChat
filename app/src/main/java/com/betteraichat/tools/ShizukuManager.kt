@@ -6,26 +6,36 @@ import rikka.shizuku.Shizuku
 
 class ShizukuManager {
 
-    private val _granted = MutableStateFlow(Shizuku.checkSelfPermission() == android.content.pm.PackageManager.PERMISSION_GRANTED)
+    private val _granted = MutableStateFlow(checkGranted())
     val granted: StateFlow<Boolean> = _granted
 
     fun refresh() {
-        _granted.value = Shizuku.pingBinder() &&
-            Shizuku.checkSelfPermission() == android.content.pm.PackageManager.PERMISSION_GRANTED
+        _granted.value = checkGranted()
     }
 
     fun requestPermission() {
-        refresh()
-        if (_granted.value) return
+        if (checkGranted()) return
         try {
-            Shizuku.requestPermission(REQUEST_CODE)
-        } catch (e: IllegalStateException) {
+            if (Shizuku.pingBinder()) {
+                Shizuku.requestPermission(REQUEST_CODE)
+            }
+        } catch (e: Exception) {
             _granted.value = false
         }
     }
 
     fun onPermissionResult(result: Boolean) {
         _granted.value = result
+    }
+
+    private fun checkGranted(): Boolean = try {
+        if (!Shizuku.pingBinder()) {
+            false
+        } else {
+            Shizuku.checkSelfPermission() == android.content.pm.PackageManager.PERMISSION_GRANTED
+        }
+    } catch (e: Exception) {
+        false
     }
 
     companion object {

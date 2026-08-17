@@ -41,6 +41,7 @@ markdown-renderer = { group = "com.mikepenz", name = "multiplatform-markdown-ren
 jsoup = { group = "org.jsoup", name = "jsoup", version.ref = "jsoup" }
 snakeyaml = { group = "org.yaml", name = "snakeyaml", version.ref = "snakeyaml" }
 shizuku = { group = "dev.rikka.shizuku", name = "api", version.ref = "shizuku" }
+shizuku-provider = { group = "dev.rikka.shizuku", name = "provider", version.ref = "shizuku" }
 mlkit-text-recognition-chinese = { group = "com.google.mlkit", name = "text-recognition-chinese", version.ref = "mlkitChinese" }
 
 [plugins]

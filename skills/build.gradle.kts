@@ -26,4 +26,5 @@ dependencies {
     api(libs.kotlinx.coroutines.android)
     api(libs.jsoup)
     api(libs.shizuku)
+    api(libs.shizuku.provider)
 }

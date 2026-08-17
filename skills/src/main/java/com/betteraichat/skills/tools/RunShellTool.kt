@@ -101,9 +101,14 @@ object ShizukuSupport {
 
     fun isBinderAlive(): Boolean = Shizuku.pingBinder()
 
-    fun checkPermission(): Int = Shizuku.checkSelfPermission()
+    fun checkPermission(): Int = try {
+        if (Shizuku.pingBinder()) Shizuku.checkSelfPermission()
+        else android.content.pm.PackageManager.PERMISSION_DENIED
+    } catch (e: Exception) {
+        android.content.pm.PackageManager.PERMISSION_DENIED
+    }
 
-    fun canExecute(): Boolean = isBinderAlive() && checkPermission() == PackageManager.PERMISSION_GRANTED
+    fun canExecute(): Boolean = isBinderAlive() && checkPermission() == android.content.pm.PackageManager.PERMISSION_GRANTED
 
     fun openShizukuApp(context: android.content.Context) {
         val intent = context.packageManager.getLaunchIntentForPackage("moe.shizuku.privileged.api")
