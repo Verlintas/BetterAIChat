@@ -13,8 +13,8 @@ android {
         applicationId = "com.betteraichat"
         minSdk = 26
         targetSdk = 36
-        versionCode = 9
-        versionName = "0.8.1"
+        versionCode = 10
+        versionName = "0.9.0"
     }
 
     buildTypes {
@@ -34,6 +34,18 @@ android {
 
     buildFeatures {
         compose = true
+    }
+
+    flavorDimensions += "version"
+    productFlavors {
+        create("full") {
+            dimension = "version"
+            versionNameSuffix = ""
+        }
+        create("lite") {
+            dimension = "version"
+            versionNameSuffix = "-lite"
+        }
     }
 
     packaging {
@@ -65,7 +77,7 @@ dependencies {
     implementation(libs.androidx.compose.material.icons)
 
     implementation(libs.markdown.renderer)
-    implementation(libs.mlkit.text.recognition.chinese)
+    "fullImplementation"(libs.mlkit.text.recognition.chinese)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
 }

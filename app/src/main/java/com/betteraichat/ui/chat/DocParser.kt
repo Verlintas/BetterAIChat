@@ -6,14 +6,14 @@ import android.graphics.Matrix
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.os.ParcelFileDescriptor
-import com.google.mlkit.vision.common.InputImage
-import com.google.mlkit.vision.text.TextRecognition
-import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.zip.ZipFile
+
+interface OcrEngine {
+    suspend fun recognize(bitmap: Bitmap): String
+}
 
 object DocParser {
 
@@ -35,37 +35,31 @@ object DocParser {
                         val pageCount = renderer.pageCount
                         if (pageCount <= 0) throw IllegalArgumentException("PDF 没有页面")
                         val pageLimit = minOf(pageCount, MAX_PDF_PAGES)
-                        val recognizer = TextRecognition.getClient(
-                            ChineseTextRecognizerOptions.Builder().build()
-                        )
-                        try {
-                            val sb = StringBuilder()
-                            for (i in 0 until pageLimit) {
-                                renderer.openPage(i).use { page ->
-                                    val width = (page.width * OCR_SCALE).toInt().coerceAtLeast(1)
-                                    val height = (page.height * OCR_SCALE).toInt().coerceAtLeast(1)
-                                    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-                                    try {
-                                        page.render(
-                                            bitmap, null,
-                                            Matrix().apply { setScale(OCR_SCALE, OCR_SCALE) },
-                                            PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY
-                                        )
-                                        val text = recognize(recognizer, bitmap)
-                                        sb.appendLine("【第 ${i + 1} 页 / 共 $pageCount 页】")
-                                        sb.appendLine(text.trim())
-                                    } finally {
-                                        bitmap.recycle()
-                                    }
+                        val recognizer: OcrEngine = OcrEngineProvider.get()
+                        val sb = StringBuilder()
+                        for (i in 0 until pageLimit) {
+                            renderer.openPage(i).use { page ->
+                                val width = (page.width * OCR_SCALE).toInt().coerceAtLeast(1)
+                                val height = (page.height * OCR_SCALE).toInt().coerceAtLeast(1)
+                                val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                                try {
+                                    page.render(
+                                        bitmap, null,
+                                        Matrix().apply { setScale(OCR_SCALE, OCR_SCALE) },
+                                        PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY
+                                    )
+                                    val text = recognize(recognizer, bitmap)
+                                    sb.appendLine("【第 ${i + 1} 页 / 共 $pageCount 页】")
+                                    sb.appendLine(text.trim())
+                                } finally {
+                                    bitmap.recycle()
                                 }
                             }
-                            if (pageLimit < pageCount) {
-                                sb.appendLine("\n（文档共 $pageCount 页，仅解析了前 $pageLimit 页）")
-                            }
-                            truncate(sb.toString())
-                        } finally {
-                            recognizer.close()
                         }
+                        if (pageLimit < pageCount) {
+                            sb.appendLine("\n（文档共 $pageCount 页，仅解析了前 $pageLimit 页）")
+                        }
+                        truncate(sb.toString())
                     } finally {
                         renderer.close()
                         pfd.close()
@@ -179,15 +173,9 @@ object DocParser {
     }
 
     private suspend fun recognize(
-        recognizer: com.google.mlkit.vision.text.TextRecognizer,
+        recognizer: OcrEngine,
         bitmap: Bitmap
-    ): String {
-        val deferred = CompletableDeferred<String>()
-        recognizer.process(InputImage.fromBitmap(bitmap, 0))
-            .addOnSuccessListener { result -> deferred.complete(result.text) }
-            .addOnFailureListener { e -> deferred.completeExceptionally(e) }
-        return deferred.await()
-    }
+    ): String = recognizer.recognize(bitmap)
 
     private fun truncate(text: String): String =
         if (text.length > MAX_OUTPUT_CHARS) {
