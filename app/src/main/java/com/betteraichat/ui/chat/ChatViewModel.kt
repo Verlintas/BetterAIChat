@@ -364,7 +364,7 @@ class ChatViewModel(
                             refresh()
                         }
                         is EngineEvent.Failed -> {
-                            _state.update { it.copy(error = ev.message) }
+                            _state.update { it.copy(error = smartError(ev.message)) }
                             persistStreamingPartial(cid)
                             streaming = null
                             refresh()
@@ -383,6 +383,19 @@ class ChatViewModel(
             }
         }
         runJob = currentJob
+    }
+
+    private fun smartError(raw: String): String = when {
+        raw.contains("401") -> "API Key 无效或已过期，请到设置页检查（HTTP 401）"
+        raw.contains("403") -> "API Key 无权限访问该资源（HTTP 403）"
+        raw.contains("404") -> "模型不存在或 Base URL 不正确，请到设置页检测连接（HTTP 404）"
+        raw.contains("429") -> "请求过于频繁或额度不足，请稍后重试（HTTP 429）"
+        raw.contains("timeout", ignoreCase = true) || raw.contains("timed out", ignoreCase = true) ->
+            "网络超时，请检查网络连接后重试"
+        raw.contains("failed to connect", ignoreCase = true) || raw.contains("connect timed out", ignoreCase = true) ->
+            "无法连接到服务，请检查 Base URL 与网络"
+        raw.contains("cancelled", ignoreCase = true) -> "已取消"
+        else -> raw
     }
 
     private fun upsertCall(calls: List<ToolCall>, updated: ToolCall): List<ToolCall> {

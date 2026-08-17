@@ -58,6 +58,22 @@ class SettingsRepository(context: Context) {
         prefs.edit().putBoolean(providerKey(provider, "reasoning"), enabled).apply()
     }
 
+    fun getCustomModels(provider: ProviderId): List<String> {
+        val raw = prefs.getString(providerKey(provider, "custommodels"), null) ?: return emptyList()
+        return runCatching {
+            kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+                .decodeFromString<List<String>>(raw)
+        }.getOrDefault(emptyList())
+    }
+
+    fun setCustomModels(provider: ProviderId, models: List<String>) {
+        val raw = runCatching {
+            kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+                .encodeToString(models)
+        }.getOrNull() ?: return
+        prefs.edit().putString(providerKey(provider, "custommodels"), raw).apply()
+    }
+
     fun getDefaultMode(): AppMode = runCatching {
         AppMode.valueOf(prefs.getString("default_mode", AppMode.CHAT.name)!!)
     }.getOrDefault(AppMode.CHAT)

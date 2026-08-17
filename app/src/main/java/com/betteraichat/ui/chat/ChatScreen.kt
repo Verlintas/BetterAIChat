@@ -571,6 +571,8 @@ private fun ModelSelector(
     var expanded by remember { mutableStateOf(false) }
     var showCustom by remember { mutableStateOf(false) }
     var customInput by remember { mutableStateOf("") }
+    val container = rememberContainer()
+    val serverModels = remember(provider) { container.settings.getCustomModels(provider) }
     val catalogIds = remember(provider) { ModelCatalog.modelsFor(provider).map { it.id } }
     Box {
         TextButton(onClick = { expanded = true }) {
@@ -592,7 +594,34 @@ private fun ModelSelector(
                     }
                 )
             }
-            if (current !in catalogIds) {
+            if (serverModels.isNotEmpty()) {
+                HorizontalDivider()
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            "服务端模型（检测到的 ${serverModels.size} 个）",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    onClick = { }
+                )
+                serverModels.forEach { id ->
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text(id)
+                                Text("服务端 · 设置页检测", style = MaterialTheme.typography.bodySmall)
+                            }
+                        },
+                        onClick = {
+                            onSelect(id)
+                            expanded = false
+                        }
+                    )
+                }
+            }
+            if (current !in catalogIds && current !in serverModels) {
                 DropdownMenuItem(
                     text = { Text("$current（自定义）") },
                     onClick = {
