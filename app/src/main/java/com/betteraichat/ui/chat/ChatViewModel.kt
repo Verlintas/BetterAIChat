@@ -32,7 +32,8 @@ data class UiMessage(
     val mode: AppMode? = null,
     val streaming: Boolean = false,
     val usageInput: Long = 0,
-    val usageOutput: Long = 0
+    val usageOutput: Long = 0,
+    val createdAt: Long = 0
 )
 
 data class ConfirmRequest(val call: ToolCall, val mode: AppMode)
@@ -121,7 +122,8 @@ class ChatViewModel(
                         mode = e.mode?.let { runCatching { AppMode.valueOf(it) }.getOrNull() },
                         streaming = false,
                         usageInput = e.usageInput,
-                        usageOutput = e.usageOutput
+                        usageOutput = e.usageOutput,
+                        createdAt = e.createdAt
                     )
                 }
                 refresh()

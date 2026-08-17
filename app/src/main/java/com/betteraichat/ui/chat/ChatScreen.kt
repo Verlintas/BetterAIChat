@@ -3,11 +3,14 @@ package com.betteraichat.ui.chat
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -17,12 +20,12 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Build
-import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -40,6 +43,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -50,12 +54,11 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.betteraichat.core.catalog.ModelCatalog
 import com.betteraichat.core.mode.AppMode
-import com.betteraichat.core.model.ToolCall
-import com.betteraichat.core.model.ToolCallStatus
 import com.betteraichat.ui.rememberContainer
 import kotlinx.serialization.json.Json
 
@@ -70,6 +73,7 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
     val state by vm.state.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
     val last = state.messages.lastOrNull()
+    var showMaxConfirm by remember { mutableStateOf(false) }
 
     val totalPromptTokens = state.messages.sumOf { it.usageInput }
     val contextWindow = ModelCatalog.entryFor(state.provider, state.model).contextWindow
@@ -80,8 +84,16 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
         " · ${formatTokens(totalPromptTokens)}（$usagePercent%）"
     } else ""
 
-    LaunchedEffect(state.messages.size, last?.content?.length) {
-        if (state.messages.isNotEmpty()) {
+    val shouldAutoScroll by remember {
+        derivedStateOf {
+            val info = listState.layoutInfo
+            val lastVisible = info.visibleItemsInfo.lastOrNull()?.index ?: -1
+            lastVisible >= info.totalItemsCount - 3
+        }
+    }
+
+    LaunchedEffect(state.messages.size, last?.content?.length, shouldAutoScroll) {
+        if (shouldAutoScroll && state.messages.isNotEmpty()) {
             listState.animateScrollToItem(state.messages.size - 1)
         }
     }
@@ -105,7 +117,16 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                     }
                 },
                 actions = {
-                    ModeSelector(state.mode, vm::updateMode)
+                    ModeSelector(
+                        current = state.mode,
+                        onSelect = { target ->
+                            if (target == AppMode.MAX && state.mode != AppMode.MAX) {
+                                showMaxConfirm = true
+                            } else {
+                                vm.updateMode(target)
+                            }
+                        }
+                    )
                     ModelSelector(state.provider, state.model, vm::updateModel)
                 }
             )
@@ -114,46 +135,80 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
             InputBar(
                 input = state.input,
                 isRunning = state.isRunning,
+                mode = state.mode,
                 onInputChange = vm::onInputChange,
                 onSend = vm::send,
                 onStop = vm::stop
             )
         }
     ) { padding ->
-        LazyColumn(
-            state = listState,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            item {
-                Text(
-                    "模式：${state.mode.displayName} — ${state.mode.description}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            items(state.messages.size, key = { state.messages[it].id }) { idx ->
-                MessageItem(state.messages[idx])
-            }
-            state.error?.let { error ->
-                item {
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = MaterialTheme.colorScheme.errorContainer
-                    ) {
-                        Text(
-                            "出错了：$error",
-                            modifier = Modifier.padding(12.dp),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onErrorContainer
-                        )
+        if (state.messages.isEmpty() && state.error == null) {
+            WelcomePanel(
+                mode = state.mode,
+                onPickExample = { vm.onInputChange(it) },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+            )
+        } else {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                items(state.messages.size, key = { state.messages[it].id }) { idx ->
+                    MessageItem(state.messages[idx])
+                }
+                state.error?.let { error ->
+                    item {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.errorContainer
+                        ) {
+                            Text(
+                                "出错了：$error",
+                                modifier = Modifier.padding(12.dp),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                        }
                     }
                 }
             }
         }
+    }
+
+    if (showMaxConfirm) {
+        AlertDialog(
+            onDismissRequest = { showMaxConfirm = false },
+            title = { Text("切换到 Max 模式？") },
+            text = {
+                Column {
+                    Text(
+                        "Max 模式下 AI 将自主调用设备工具完成任务，无需每一步确认。",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Spacer(Modifier.size(8.dp))
+                    Text(
+                        "包括：打开应用、发送通知、调整亮度/音量、截屏、联网搜索。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    vm.updateMode(AppMode.MAX)
+                    showMaxConfirm = false
+                }) { Text("切换") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showMaxConfirm = false }) { Text("取消") }
+            }
+        )
     }
 
     state.confirmRequest?.let { req ->
@@ -188,10 +243,101 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun WelcomePanel(
+    mode: AppMode,
+    onPickExample: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val examples = when (mode) {
+        AppMode.CHAT -> listOf(
+            "你好，介绍一下你自己",
+            "用 markdown 写一份番茄工作法说明",
+            "给我讲个冷笑话"
+        )
+        AppMode.PLAN -> listOf(
+            "分析一下这台设备的状况并给出优化建议",
+            "制定一个本周健身计划"
+        )
+        AppMode.BUILD -> listOf(
+            "打开计算器",
+            "把音量调到 30%",
+            "发送一条 5 分钟后提醒我喝水的通知"
+        )
+        AppMode.MAX -> listOf(
+            "搜索今天的热点新闻并总结",
+            "把亮度调到最高，然后截图给我看",
+            "查一下现在的天气，如果下雨就提醒我"
+        )
+    }
+    Column(
+        modifier = modifier.padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Surface(
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(72.dp)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Text(
+                    "AI",
+                    color = MaterialTheme.colorScheme.onPrimary,
+                    fontSize = 26.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+        Spacer(Modifier.size(16.dp))
+        Text("BetterAIChat", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.size(8.dp))
+        Text(
+            "当前模式：${mode.displayName}",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.primary
+        )
+        Spacer(Modifier.size(4.dp))
+        Text(
+            mode.description,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.widthIn(max = 320.dp)
+        )
+        Spacer(Modifier.size(24.dp))
+        Text(
+            "试试这样说：",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.size(12.dp))
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            examples.forEach { example ->
+                AssistChip(
+                    onClick = { onPickExample(example) },
+                    label = { Text(example, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+                )
+            }
+        }
+        Spacer(Modifier.size(16.dp))
+        Text(
+            "长按消息可复制内容",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+        )
+    }
+}
+
 @Composable
 private fun InputBar(
     input: String,
     isRunning: Boolean,
+    mode: AppMode,
     onInputChange: (String) -> Unit,
     onSend: () -> Unit,
     onStop: () -> Unit
@@ -199,6 +345,7 @@ private fun InputBar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .imePadding()
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.Bottom
     ) {
@@ -206,13 +353,36 @@ private fun InputBar(
             value = input,
             onValueChange = onInputChange,
             modifier = Modifier.weight(1f),
-            placeholder = { Text("输入消息…") },
-            maxLines = 6
+            placeholder = {
+                Text(
+                    when (mode) {
+                        AppMode.CHAT -> "输入消息…"
+                        AppMode.PLAN -> "输入问题，AI 将进行分析…"
+                        AppMode.BUILD -> "输入任务，AI 可操作设备…"
+                        AppMode.MAX -> "输入任务，AI 将自主执行…"
+                    }
+                )
+            },
+            maxLines = 6,
+            trailingIcon = {
+                if (input.isNotEmpty() && !isRunning) {
+                    IconButton(onClick = { onInputChange("") }) {
+                        Icon(Icons.Filled.Clear, contentDescription = "清空")
+                    }
+                }
+            }
         )
         Spacer(Modifier.width(8.dp))
-        FilledIconButton(onClick = { if (isRunning) onStop() else onSend() }) {
+        FilledIconButton(
+            onClick = { if (isRunning) onStop() else onSend() },
+            enabled = isRunning || input.isNotBlank()
+        ) {
             if (isRunning) {
-                Icon(Icons.Filled.Close, contentDescription = "停止")
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.onPrimary
+                )
             } else {
                 Icon(Icons.Filled.Send, contentDescription = "发送")
             }
