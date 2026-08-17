@@ -41,8 +41,19 @@ class SetAlarmTool : DeviceTool {
                 .putExtra("content", content),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        am.set(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + delayMs, pi)
+        val triggerAt = System.currentTimeMillis() + delayMs
+        val exact = if (android.os.Build.VERSION.SDK_INT >= 31) {
+            am.canScheduleExactAlarms()
+        } else {
+            true
+        }
+        if (exact) {
+            am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi)
+        } else {
+            am.set(AlarmManager.RTC_WAKEUP, triggerAt, pi)
+        }
         val minutesText = if (minutes > 0) "%.0f".format(minutes) else "%.0f".format(seconds / 60.0)
-        return "已设定 $minutesText 分钟后的提醒（$title：$content）"
+        val precision = if (exact) "（精确）" else "（非精确，可能延迟几分钟，Android 12+ 请到系统设置允许精确闹钟）"
+        return "已设定 $minutesText 分钟后的提醒$precision（$title：$content）"
     }
 }

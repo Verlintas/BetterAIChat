@@ -43,27 +43,31 @@ class SpeakTextTool : DeviceTool {
             if (!inited) {
                 "TTS 引擎初始化失败（设备可能缺少语音包）"
             } else {
-                tts.language = Locale.CHINESE
-                tts.setSpeechRate(rate / 100f)
-                val done = CompletableDeferred<String>()
-                tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                    override fun onStart(utteranceId: String?) {}
-                    override fun onDone(utteranceId: String?) {
-                        if (!done.isCompleted) done.complete("朗读完成")
-                    }
-                    @Deprecated("Deprecated in Java")
-                    override fun onError(utteranceId: String?) {
-                        if (!done.isCompleted) done.complete("朗读中断")
-                    }
-                    override fun onError(utteranceId: String?, errorCode: Int) {
-                        if (!done.isCompleted) done.complete("朗读失败（错误码 $errorCode）")
-                    }
-                })
-                val result = tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "betteraichat_tts")
-                if (result != TextToSpeech.SUCCESS) {
-                    "TTS 引擎无法朗读"
+                val langResult = tts.setLanguage(Locale.CHINESE)
+                if (langResult == TextToSpeech.LANG_MISSING_DATA || langResult == TextToSpeech.LANG_NOT_SUPPORTED) {
+                    "设备缺少中文语音包，请到系统设置安装 TTS 语音数据"
                 } else {
-                    withTimeoutOrNull(90_000) { done.await() } ?: "朗读超时"
+                    tts.setSpeechRate(rate / 100f)
+                    val done = CompletableDeferred<String>()
+                    tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                        override fun onStart(utteranceId: String?) {}
+                        override fun onDone(utteranceId: String?) {
+                            if (!done.isCompleted) done.complete("朗读完成")
+                        }
+                        @Deprecated("Deprecated in Java")
+                        override fun onError(utteranceId: String?) {
+                            if (!done.isCompleted) done.complete("朗读中断")
+                        }
+                        override fun onError(utteranceId: String?, errorCode: Int) {
+                            if (!done.isCompleted) done.complete("朗读失败（错误码 $errorCode）")
+                        }
+                    })
+                    val result = tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "betteraichat_tts")
+                    if (result != TextToSpeech.SUCCESS) {
+                        "TTS 引擎无法朗读"
+                    } else {
+                        withTimeoutOrNull(90_000) { done.await() } ?: "朗读超时"
+                    }
                 }
             }
         } catch (e: CancellationException) {

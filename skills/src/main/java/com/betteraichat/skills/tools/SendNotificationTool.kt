@@ -13,6 +13,8 @@ import kotlinx.serialization.json.jsonPrimitive
 
 class SendNotificationTool : DeviceTool {
 
+    private val notificationIdCounter = java.util.concurrent.atomic.AtomicInteger(0)
+
     override val name = "send_notification"
     override val description = "在设备上发送一条系统通知提醒用户。适合提醒、闹钟类场景。"
     override val readOnly = false
@@ -39,7 +41,7 @@ class SendNotificationTool : DeviceTool {
             .setContentText(content)
             .setAutoCancel(true)
             .build()
-        val id = (System.currentTimeMillis() % Int.MAX_VALUE).toInt()
+        val id = notificationIdCounter.incrementAndGet()
         nm.notify(id, notification)
         return "通知已发送（标题：$title，内容：$content）"
     }

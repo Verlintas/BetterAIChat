@@ -16,6 +16,7 @@ import com.betteraichat.core.model.ToolCall
 import com.betteraichat.core.model.ToolCallStatus
 import com.betteraichat.core.storage.SettingsRepository
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -81,6 +82,7 @@ class ChatViewModel(
     private var streaming: UiMessage? = null
     private var currentConversationId: Long = conversationId
     private var runJob: Job? = null
+    private var streamTickerJob: Job? = null
     private var pendingAssistantEntity: MessageEntity? = null
 
     init {
@@ -220,6 +222,10 @@ class ChatViewModel(
             val cid = currentConversationId
             val s = _state.value
             val attachments = processPending(s.pendingAttachments)
+            if (attachments.isEmpty() && text.isEmpty()) {
+                _state.update { it.copy(isRunning = false, pendingAttachments = emptyList()) }
+                return@launch
+            }
             if (attachments.isNotEmpty() && text.isEmpty()) {
                 _state.update { it.copy(attachmentError = null) }
             }
@@ -271,6 +277,12 @@ class ChatViewModel(
         refresh()
         var currentJob: Job? = null
         currentJob = viewModelScope.launch {
+            streamTickerJob = viewModelScope.launch {
+                while (true) {
+                    delay(100)
+                    if (streaming != null) refresh()
+                }
+            }
             val history = repository.getHistory(cid).map { repository.messageToDomain(it) }
             try {
                 engine.run(history, config, s.mode).collect { ev ->
@@ -283,7 +295,6 @@ class ChatViewModel(
                                 )
                             }
                             streaming = streaming?.copy(content = (streaming?.content ?: "") + ev.text)
-                            refresh()
                         }
                         is EngineEvent.ThinkingDelta -> {
                             if (streaming == null) {
@@ -293,7 +304,6 @@ class ChatViewModel(
                                 )
                             }
                             streaming = streaming?.copy(thinking = (streaming?.thinking ?: "") + ev.text)
-                            refresh()
                         }
                         is EngineEvent.ToolCallStarted -> {
                             if (streaming == null) {
@@ -308,7 +318,6 @@ class ChatViewModel(
                                     ev.call.copy(status = ToolCallStatus.RUNNING)
                                 )
                             )
-                            refresh()
                         }
                         is EngineEvent.ToolCallFinished -> {
                             if (streaming == null) {
@@ -365,6 +374,9 @@ class ChatViewModel(
                     }
                 }
             } finally {
+                streamTickerJob?.cancel()
+                streamTickerJob = null
+                refresh()
                 if (runJob === currentJob) {
                     _state.update { it.copy(isRunning = false) }
                 }
@@ -428,6 +440,8 @@ class ChatViewModel(
     fun stop() {
         runJob?.cancel()
         runJob = null
+        streamTickerJob?.cancel()
+        streamTickerJob = null
         _state.update { it.copy(confirmRequest = null) }
         viewModelScope.launch {
             persistStreamingPartial(currentConversationId)
@@ -442,6 +456,8 @@ class ChatViewModel(
         viewModelScope.launch {
             runJob?.cancel()
             runJob = null
+            streamTickerJob?.cancel()
+            streamTickerJob = null
             streaming = null
             pendingAssistantEntity = null
             _state.update { it.copy(confirmRequest = null) }

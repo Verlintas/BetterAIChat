@@ -51,6 +51,8 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+private val CONV_TIME_FORMAT = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ConversationListScreen(
@@ -212,8 +214,7 @@ private fun SwipeableConversationCard(
                                 }
                                 append(" · ")
                                 append(
-                                    SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
-                                        .format(Date(conversation.updatedAt))
+                                    CONV_TIME_FORMAT.format(Date(conversation.updatedAt))
                                 )
                             },
                             style = MaterialTheme.typography.bodySmall,

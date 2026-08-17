@@ -124,33 +124,32 @@ object DocParser {
                     } ?: throw IllegalArgumentException("无法读取 xlsx 文件")
                     ZipFile(cacheFile).use { zip ->
                         val sharedStrings = parseSharedStrings(zip)
-                        val sheetEntry = zip.getEntry("xl/worksheets/sheet1.xml")
-                            ?: zip.getEntry("xl/worksheets/sheet.xml")
-                            ?: throw IllegalArgumentException("xlsx 结构异常：缺少工作表")
-                        val sheetXml = zip.getInputStream(sheetEntry).readBytes().toString(Charsets.UTF_8)
-                        val rows = mutableListOf<String>()
-                        Regex("<row[^>]*>(.*?)</row>", RegexOption.DOT_MATCHES_ALL)
-                            .findAll(sheetXml)
-                            .forEach { rowMatch ->
+                        val sheetNames = zip.entries().asSequence()
+                            .map { it.name }
+                            .filter { it.matches(Regex("xl/worksheets/sheet\\d+\\.xml")) }
+                            .sortedBy { it.substringAfterLast("sheet").substringBefore(".xml").toIntOrNull() ?: 0 }
+                            .toList()
+                        val allSheets = mutableListOf<String>()
+                        for ((index, sheetPath) in sheetNames.withIndex()) {
+                            val sheetXml = zip.getInputStream(zip.getEntry(sheetPath))
+                                .readBytes().toString(Charsets.UTF_8)
+                            val rows = mutableListOf<String>()
+                            ROW_REGEX.findAll(sheetXml).forEach { rowMatch ->
                                 val cells = mutableMapOf<Int, String>()
-                                Regex(
-                                    "<c[^>]*r=\"([A-Z]+)\\d+\"[^>]*t=\"([^\"]+)\"[^>]*>(.*?)</c>|<c[^>]*r=\"([A-Z]+)\\d+\"[^>]*>(.*?)</c>",
-                                    RegexOption.DOT_MATCHES_ALL
-                                ).findAll(rowMatch.groupValues[1]).forEach { cellMatch ->
+                                CELL_REGEX.findAll(rowMatch.groupValues[1]).forEach { cellMatch ->
                                     val colLetters = cellMatch.groupValues[1].ifEmpty { cellMatch.groupValues[4] }
                                     val type = cellMatch.groupValues[2]
                                     val body = cellMatch.groupValues[3].ifEmpty { cellMatch.groupValues[5] }
                                     val value = when {
-                                        type == "s" -> Regex("<v>([^<]*)</v>").find(body)
+                                        type == "s" -> V_REGEX.find(body)
                                             ?.groupValues?.get(1)?.toIntOrNull()
                                             ?.let { sharedStrings.getOrNull(it) } ?: ""
-                                        type == "inlineStr" -> Regex("<is>(.*?)</is>", RegexOption.DOT_MATCHES_ALL)
-                                            .find(body)
+                                        type == "inlineStr" -> IS_REGEX.find(body)
                                             ?.groupValues?.get(1)
                                             ?.replace(Regex("<t[^>]*>"), "")
                                             ?.replace(Regex("</t>"), "")
                                             ?.replace(Regex("<[^>]+>"), "") ?: ""
-                                        else -> Regex("<v>([^<]*)</v>").find(body)
+                                        else -> V_REGEX.find(body)
                                             ?.groupValues?.get(1) ?: ""
                                     }
                                     cells[colIndex(colLetters)] = decodeEntities(value)
@@ -158,14 +157,27 @@ object DocParser {
                                 val maxCol = cells.keys.maxOrNull() ?: 0
                                 rows.add((0..maxCol).joinToString("\t") { cells[it] ?: "" })
                             }
-                        if (rows.isEmpty()) throw IllegalArgumentException("xlsx 中没有数据")
-                        truncate(rows.joinToString("\n"))
+                            if (rows.isNotEmpty()) {
+                                allSheets.add("【工作表 ${index + 1}】")
+                                allSheets.addAll(rows)
+                            }
+                        }
+                        if (allSheets.isEmpty()) throw IllegalArgumentException("xlsx 中没有数据")
+                        truncate(allSheets.joinToString("\n"))
                     }
                 } finally {
                     cacheFile.delete()
                 }
             }
         }
+
+    private val ROW_REGEX = Regex("<row[^>]*>(.*?)</row>", RegexOption.DOT_MATCHES_ALL)
+    private val CELL_REGEX = Regex(
+        "<c[^>]*r=\"([A-Z]+)\\d+\"[^>]*t=\"([^\"]+)\"[^>]*>(.*?)</c>|<c[^>]*r=\"([A-Z]+)\\d+\"[^>]*>(.*?)</c>",
+        RegexOption.DOT_MATCHES_ALL
+    )
+    private val V_REGEX = Regex("<v>([^<]*)</v>")
+    private val IS_REGEX = Regex("<is>(.*?)</is>", RegexOption.DOT_MATCHES_ALL)
 
     private fun parseSharedStrings(zip: ZipFile): List<String> {
         val entry = zip.getEntry("xl/sharedStrings.xml") ?: return emptyList()

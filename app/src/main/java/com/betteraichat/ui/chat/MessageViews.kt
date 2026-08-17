@@ -49,6 +49,8 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+private val TIME_FORMAT = SimpleDateFormat("HH:mm", Locale.getDefault())
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun MessageItem(msg: UiMessage) {
@@ -78,7 +80,7 @@ fun MessageItem(msg: UiMessage) {
                         if (isEmpty()) append("BetterAIChat")
                         if (msg.createdAt > 0) {
                             append(" · ")
-                            append(SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(msg.createdAt)))
+                            append(TIME_FORMAT.format(Date(msg.createdAt)))
                         }
                     },
                     style = MaterialTheme.typography.labelSmall,
@@ -204,7 +206,7 @@ private fun UserBubble(msg: UiMessage, copyAction: () -> Unit) {
             }
             if (msg.createdAt > 0) {
                 Text(
-                    SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(msg.createdAt)),
+                    TIME_FORMAT.format(Date(msg.createdAt)),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 2.dp, end = 4.dp)

@@ -111,8 +111,16 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
         }
     }
 
+    var initialScrollDone by remember { mutableStateOf(false) }
+    LaunchedEffect(state.messages.size) {
+        if (!initialScrollDone && state.messages.isNotEmpty()) {
+            listState.scrollToItem(state.messages.size - 1)
+            initialScrollDone = true
+        }
+    }
+
     LaunchedEffect(state.messages.size, last?.content?.length, shouldAutoScroll) {
-        if (shouldAutoScroll && state.messages.isNotEmpty()) {
+        if (shouldAutoScroll && state.messages.isNotEmpty() && initialScrollDone) {
             listState.animateScrollToItem(state.messages.size - 1)
         }
     }

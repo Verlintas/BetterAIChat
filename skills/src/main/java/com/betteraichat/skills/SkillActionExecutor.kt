@@ -13,7 +13,11 @@ import com.betteraichat.core.skills.SkillToolDef
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
+private val PLACEHOLDER_REGEX = Regex("\\{([a-zA-Z0-9_]+)\\}")
+
 class SkillActionExecutor(private val context: Context) {
+
+    private val notificationIdCounter = java.util.concurrent.atomic.AtomicInteger(0)
 
     fun execute(def: SkillToolDef, args: JsonObject): String {
         return try {
@@ -32,7 +36,7 @@ class SkillActionExecutor(private val context: Context) {
 
     private fun render(template: String, args: JsonObject): String {
         var out = template
-        Regex("\\{([a-zA-Z0-9_]+)\\}").findAll(template).forEach { m ->
+        PLACEHOLDER_REGEX.findAll(template).forEach { m ->
             val key = m.groupValues[1]
             val value = args[key]?.jsonPrimitive?.let { if (it.isString) it.content else it.toString() } ?: ""
             out = out.replace(m.value, value)
@@ -47,7 +51,7 @@ class SkillActionExecutor(private val context: Context) {
         )
     }
 
-    private fun notify(title: String, content: String, id: Int = (System.currentTimeMillis() % Int.MAX_VALUE).toInt()): Boolean {
+    private fun notify(title: String, content: String, id: Int = notificationIdCounter.incrementAndGet()): Boolean {
         ensureChannel()
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (!nm.areNotificationsEnabled()) return false
@@ -97,9 +101,20 @@ class SkillActionExecutor(private val context: Context) {
                 .putExtra("content", content),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        am.set(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + delayMs, pi)
+        val triggerAt = System.currentTimeMillis() + delayMs
+        val exact = if (android.os.Build.VERSION.SDK_INT >= 31) {
+            am.canScheduleExactAlarms()
+        } else {
+            true
+        }
+        if (exact) {
+            am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi)
+        } else {
+            am.set(AlarmManager.RTC_WAKEUP, triggerAt, pi)
+        }
         val minutesText = if (minutes > 0) "%.0f".format(minutes) else "%.0f".format(seconds / 60.0)
-        return "已设定 $minutesText 分钟后的提醒（$title：$content）"
+        val precision = if (exact) "（精确）" else "（非精确，可能延迟几分钟，Android 12+ 请到系统设置允许精确闹钟）"
+        return "已设定 $minutesText 分钟后的提醒$precision（$title：$content）"
     }
 
     private fun doIntent(def: SkillToolDef, args: JsonObject): String {
