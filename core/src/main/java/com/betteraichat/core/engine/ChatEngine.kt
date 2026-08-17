@@ -12,10 +12,12 @@ import com.betteraichat.core.model.ToolSpec
 import com.betteraichat.core.provider.ChatProvider
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withTimeout
 import java.util.concurrent.ConcurrentHashMap
 
@@ -60,8 +62,7 @@ class ChatEngine(
         messages: List<ChatMessage>,
         config: ProviderConfig,
         mode: AppMode
-    ): Flow<EngineEvent> = flow {
-        val provider = providerFactory(config.provider)
+    ): Flow<EngineEvent> = flow {        val provider = providerFactory(config.provider)
         val effectiveConfig = config.copy(reasoning = config.reasoning && mode == AppMode.MAX)
         var history = messages
         var toolRounds = 0
@@ -166,7 +167,7 @@ class ChatEngine(
             }
         }
         emit(EngineEvent.Completed)
-    }
+    }.flowOn(Dispatchers.IO)
 
     private suspend fun executeTool(
         call: ToolCall,

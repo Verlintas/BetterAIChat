@@ -18,6 +18,8 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -101,6 +103,9 @@ fun ConversationListScreen(
                             renameTarget = c
                             renameText = c.title
                         },
+                        onClearMessages = {
+                            scope.launch { container.repository.clearMessages(c.id) }
+                        },
                         onDelete = { scope.launch { container.repository.deleteConversation(c.id) } }
                     )
                 }
@@ -157,8 +162,10 @@ private fun SwipeableConversationCard(
     conversation: ConversationEntity,
     onClick: () -> Unit,
     onRename: () -> Unit,
+    onClearMessages: () -> Unit,
     onDelete: () -> Unit
 ) {
+    var menuOpen by remember { mutableStateOf(false) }
     val dismissState = rememberSwipeToDismissBoxState(
         confirmValueChange = { value ->
             if (value == SwipeToDismissBoxValue.EndToStart) {
@@ -194,7 +201,7 @@ private fun SwipeableConversationCard(
                         .fillMaxWidth()
                         .combinedClickable(
                             onClick = onClick,
-                            onLongClick = onRename
+                            onLongClick = { menuOpen = true }
                         )
                         .padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -224,6 +231,29 @@ private fun SwipeableConversationCard(
                     }
                 }
             }
+        }
+        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            DropdownMenuItem(
+                text = { Text("重命名") },
+                onClick = {
+                    menuOpen = false
+                    onRename()
+                }
+            )
+            DropdownMenuItem(
+                text = { Text("清除聊天记录") },
+                onClick = {
+                    menuOpen = false
+                    onClearMessages()
+                }
+            )
+            DropdownMenuItem(
+                text = { Text("删除会话", color = MaterialTheme.colorScheme.error) },
+                onClick = {
+                    menuOpen = false
+                    onDelete()
+                }
+            )
         }
     }
 }

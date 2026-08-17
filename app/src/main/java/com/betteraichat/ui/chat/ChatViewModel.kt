@@ -480,6 +480,15 @@ class ChatViewModel(
         }
     }
 
+    fun deleteMessage(messageId: Long) {
+        if (messageId <= 0) return
+        viewModelScope.launch {
+            if (pendingAssistantEntity?.id == messageId) pendingAssistantEntity = null
+            repository.deleteMessage(messageId)
+            refresh()
+        }
+    }
+
     fun respondConfirm(allow: Boolean) {
         val req = _state.value.confirmRequest ?: return
         engine.respond(req.call.id, allow)

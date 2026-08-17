@@ -210,7 +210,7 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 items(state.messages.size, key = { state.messages[it].id }) { idx ->
-                    MessageItem(state.messages[idx])
+                    MessageItem(state.messages[idx], vm::deleteMessage)
                 }
                 state.error?.let { error ->
                     item {

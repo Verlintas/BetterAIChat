@@ -20,11 +20,13 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -53,16 +55,30 @@ private val TIME_FORMAT = SimpleDateFormat("HH:mm", Locale.getDefault())
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun MessageItem(msg: UiMessage) {
+fun MessageItem(msg: UiMessage, onDelete: (Long) -> Unit) {
     if (msg.role == ChatRole.TOOL) return
     val clipboard = LocalClipboardManager.current
+    var showActions by remember { mutableStateOf(false) }
     val copyAction = {
         if (msg.content.isNotBlank()) {
             clipboard.setText(AnnotatedString(msg.content))
         }
+        showActions = false
     }
+    val onLongPress = { if (msg.id > 0 && !msg.streaming) showActions = true }
     if (msg.role == ChatRole.USER) {
-        UserBubble(msg, copyAction)
+        UserBubble(msg, onLongPress)
+        if (showActions) {
+            MessageActionsDialog(
+                content = msg.content,
+                onCopy = copyAction,
+                onDelete = {
+                    showActions = false
+                    onDelete(msg.id)
+                },
+                onDismiss = { showActions = false }
+            )
+        }
         return
     }
     Row(modifier = Modifier.fillMaxWidth()) {
@@ -131,6 +147,48 @@ fun MessageItem(msg: UiMessage) {
             }
         }
     }
+    if (showActions) {
+        MessageActionsDialog(
+            content = msg.content,
+            onCopy = copyAction,
+            onDelete = {
+                showActions = false
+                onDelete(msg.id)
+            },
+            onDismiss = { showActions = false }
+        )
+    }
+}
+
+@Composable
+private fun MessageActionsDialog(
+    content: String,
+    onCopy: () -> Unit,
+    onDelete: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("消息操作") },
+        text = {
+            Text(
+                content.take(120) + if (content.length > 120) "…" else "",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onCopy) { Text("复制") }
+        },
+        dismissButton = {
+            Row {
+                TextButton(onClick = onDismiss) { Text("取消") }
+                TextButton(onClick = onDelete) {
+                    Text("删除", color = MaterialTheme.colorScheme.error)
+                }
+            }
+        }
+    )
 }
 
 @Composable
@@ -174,7 +232,7 @@ private fun ThinkingCard(thinking: String) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun UserBubble(msg: UiMessage, copyAction: () -> Unit) {
+private fun UserBubble(msg: UiMessage, onLongPress: () -> Unit) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
         Column(horizontalAlignment = Alignment.End) {
             Surface(
@@ -182,7 +240,7 @@ private fun UserBubble(msg: UiMessage, copyAction: () -> Unit) {
                 color = MaterialTheme.colorScheme.primaryContainer,
                 modifier = Modifier
                     .widthIn(max = 480.dp)
-                    .combinedClickable(onClick = {}, onLongClick = copyAction)
+                    .combinedClickable(onClick = {}, onLongClick = onLongPress)
             ) {
                 Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
                     if (msg.attachments.isNotEmpty()) {

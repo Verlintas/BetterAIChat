@@ -62,6 +62,8 @@ class ChatRepository(private val db: AppDatabase) {
 
     suspend fun clearMessages(conversationId: Long) = db.messageDao().deleteAllForConversation(conversationId)
 
+    suspend fun deleteMessage(id: Long) = db.messageDao().deleteById(id)
+
     fun messageToDomain(e: MessageEntity): ChatMessage = ChatMessage(
         role = runCatching { ChatRole.valueOf(e.role) }.getOrDefault(ChatRole.USER),
         content = e.content,
