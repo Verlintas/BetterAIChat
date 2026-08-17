@@ -7,14 +7,22 @@ import com.betteraichat.core.engine.ChatEngine
 import com.betteraichat.core.storage.SettingsRepository
 import com.betteraichat.core.skills.SkillRepository
 import com.betteraichat.providers.ProviderFactory
+import com.betteraichat.skills.DeviceTool
 import com.betteraichat.skills.DeviceToolRunner
+import com.betteraichat.skills.SkillActionExecutor
 import com.betteraichat.skills.ToolContext
 import com.betteraichat.skills.ToolRegistry
 import com.betteraichat.skills.tools.DeviceInfoTool
+import com.betteraichat.skills.tools.GetClipboardTool
 import com.betteraichat.skills.tools.LoadSkillTool
 import com.betteraichat.skills.tools.OpenAppTool
+import com.betteraichat.skills.tools.OpenSettingsTool
 import com.betteraichat.skills.tools.SendNotificationTool
+import com.betteraichat.skills.tools.SetAlarmTool
 import com.betteraichat.skills.tools.SetBrightnessTool
+import com.betteraichat.skills.tools.SetClipboardTool
+import com.betteraichat.skills.tools.SetFlashlightTool
+import com.betteraichat.skills.tools.SetScreenTimeoutTool
 import com.betteraichat.skills.tools.SetVolumeTool
 import com.betteraichat.skills.tools.TakeScreenshotTool
 import com.betteraichat.skills.tools.WebReadTool
@@ -42,7 +50,9 @@ class AppContainer(context: Application) {
     private val screenshotManager = ScreenshotManager(context.applicationContext)
     private val toolContext = ToolContext(context.applicationContext, screenshotManager)
 
-    val tools = listOf(
+    val actionExecutor = SkillActionExecutor(context.applicationContext)
+
+    val tools: List<DeviceTool> = listOf(
         OpenAppTool(),
         SendNotificationTool(),
         SetBrightnessTool(),
@@ -51,11 +61,21 @@ class AppContainer(context: Application) {
         TakeScreenshotTool(),
         WebSearchTool(),
         WebReadTool(),
-        LoadSkillTool { skillRepository.loadAll() }
+        SetClipboardTool(),
+        GetClipboardTool(),
+        SetAlarmTool(),
+        SetFlashlightTool(),
+        OpenSettingsTool(),
+        SetScreenTimeoutTool(),
+        LoadSkillTool({ skillRepository.loadAll() }, { registry }, actionExecutor)
     )
     val registry = ToolRegistry(tools)
-    val runner = DeviceToolRunner(tools, toolContext)
-    val engine = ChatEngine({ ProviderFactory.create(it) }, registry, runner)
+    val runner = DeviceToolRunner(registry, toolContext)
+    val engine = ChatEngine(
+        { ProviderFactory.create(it) },
+        registry,
+        runner
+    )
 
     val screenshotManagerRef = screenshotManager
 }

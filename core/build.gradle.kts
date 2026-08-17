@@ -29,5 +29,6 @@ dependencies {
     api(libs.androidx.core.ktx)
     api(libs.room.runtime)
     api(libs.room.ktx)
+    api(libs.snakeyaml)
     ksp(libs.room.compiler)
 }

@@ -13,6 +13,7 @@ kotlinxSerialization = "1.8.1"
 kotlinxCoroutines = "1.10.2"
 markdown = "0.37.0"
 jsoup = "1.18.3"
+snakeyaml = "2.3"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -36,6 +37,7 @@ kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "kotlinxCoroutines" }
 markdown-renderer = { group = "com.mikepenz", name = "multiplatform-markdown-renderer-m3", version.ref = "markdown" }
 jsoup = { group = "org.jsoup", name = "jsoup", version.ref = "jsoup" }
+snakeyaml = { group = "org.yaml", name = "snakeyaml", version.ref = "snakeyaml" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

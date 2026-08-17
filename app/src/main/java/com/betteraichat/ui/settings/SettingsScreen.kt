@@ -288,6 +288,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                                 )
                             }
                             TextButton(onClick = {
+                                container.registry.unregisterSkillTools(skill.name)
                                 container.skillRepository.delete(skill.name)
                                 skills = container.skillRepository.loadAll()
                                 skillMessage = "Skill「${skill.name}」已删除"
@@ -317,6 +318,17 @@ fun SettingsScreen(onBack: () -> Unit) {
                     if (Build.VERSION.SDK_INT >= 33) {
                         notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                     }
+                }
+            )
+            val hasCamera = androidx.core.content.ContextCompat.checkSelfPermission(
+                context, Manifest.permission.CAMERA
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            PermissionRow(
+                title = "相机（闪光灯/手电筒）",
+                status = if (hasCamera) "已授权" else "未授权",
+                buttonText = "授权",
+                onAction = {
+                    notifPermissionLauncher.launch(Manifest.permission.CAMERA)
                 }
             )
             PermissionRow(
