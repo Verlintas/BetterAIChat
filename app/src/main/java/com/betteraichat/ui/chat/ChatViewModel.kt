@@ -23,6 +23,14 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 
+data class PendingAttachment(
+    val id: Long,
+    val name: String,
+    val kind: String,
+    val mimeType: String,
+    val uri: android.net.Uri
+)
+
 data class UiMessage(
     val id: Long,
     val role: ChatRole,
@@ -33,6 +41,7 @@ data class UiMessage(
     val streaming: Boolean = false,
     val usageInput: Long = 0,
     val usageOutput: Long = 0,
+    val attachments: List<com.betteraichat.core.model.Attachment> = emptyList(),
     val createdAt: Long = 0
 )
 
@@ -48,14 +57,17 @@ data class ChatUiState(
     val isRunning: Boolean = false,
     val input: String = "",
     val confirmRequest: ConfirmRequest? = null,
-    val error: String? = null
+    val error: String? = null,
+    val pendingAttachments: List<PendingAttachment> = emptyList(),
+    val attachmentError: String? = null
 )
 
 class ChatViewModel(
     private val conversationId: Long,
     private val repository: ChatRepository,
     private val settings: SettingsRepository,
-    private val engine: ChatEngine
+    private val engine: ChatEngine,
+    private val appContext: android.content.Context
 ) : ViewModel() {
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -123,6 +135,10 @@ class ChatViewModel(
                         streaming = false,
                         usageInput = e.usageInput,
                         usageOutput = e.usageOutput,
+                        attachments = e.attachmentsJson?.let {
+                            runCatching { json.decodeFromString<List<com.betteraichat.core.model.Attachment>>(it) }
+                                .getOrDefault(emptyList())
+                        } ?: emptyList(),
                         createdAt = e.createdAt
                     )
                 }
@@ -139,29 +155,83 @@ class ChatViewModel(
         _state.update { it.copy(input = text) }
     }
 
+    private var attachmentCounter = 0L
+
+    fun addPendingImages(uris: List<android.net.Uri>, resolver: android.content.ContentResolver) {
+        val items = uris.map { uri ->
+            val name = AttachmentProcessor.queryNameFromResolver(resolver, uri)
+            attachmentCounter++
+            PendingAttachment(attachmentCounter, name, "image", resolver.getType(uri) ?: "image/*", uri)
+        }
+        _state.update { it.copy(pendingAttachments = it.pendingAttachments + items, attachmentError = null) }
+    }
+
+    fun addPendingFile(uri: android.net.Uri, resolver: android.content.ContentResolver) {
+        val name = AttachmentProcessor.queryNameFromResolver(resolver, uri)
+        attachmentCounter++
+        _state.update {
+            it.copy(
+                pendingAttachments = it.pendingAttachments + PendingAttachment(
+                    attachmentCounter, name, "file", resolver.getType(uri) ?: "*/*", uri
+                ),
+                attachmentError = null
+            )
+        }
+    }
+
+    fun removePendingAttachment(id: Long) {
+        _state.update { it.copy(pendingAttachments = it.pendingAttachments.filterNot { a -> a.id == id }) }
+    }
+
     fun send() {
         val text = _state.value.input.trim()
-        if (text.isEmpty() || _state.value.isRunning) return
+        val pending = _state.value.pendingAttachments
+        if ((text.isEmpty() && pending.isEmpty()) || _state.value.isRunning) return
         viewModelScope.launch {
             if (currentConversationId <= 0) {
                 val s = _state.value
                 val cid = repository.createConversation(s.provider, s.model, s.mode)
                 currentConversationId = cid
-                repository.updateTitle(cid, text.take(30))
-                _state.update { it.copy(conversationId = cid, title = text.take(30)) }
+                repository.updateTitle(cid, text.take(30).ifBlank { "对话" })
+                _state.update { it.copy(conversationId = cid, title = text.take(30).ifBlank { "对话" }) }
                 startObserving(cid)
             }
             val cid = currentConversationId
             val s = _state.value
+            val attachments = processPending(s.pendingAttachments)
+            if (attachments.isNotEmpty() && text.isEmpty()) {
+                _state.update { it.copy(attachmentError = null) }
+            }
             repository.insertMessage(
                 repository.domainToMessage(
-                    ChatMessage(role = ChatRole.USER, content = text, model = s.model, mode = s.mode),
+                    ChatMessage(
+                        role = ChatRole.USER,
+                        content = text,
+                        model = s.model,
+                        mode = s.mode,
+                        attachments = attachments
+                    ),
                     cid
                 )
             )
-            _state.update { it.copy(input = "", isRunning = true, error = null) }
+            _state.update { it.copy(input = "", isRunning = true, error = null, pendingAttachments = emptyList()) }
             runGeneration(cid)
         }
+    }
+
+    private suspend fun processPending(pending: List<PendingAttachment>): List<com.betteraichat.core.model.Attachment> {
+        val context = appContext ?: return emptyList()
+        val result = mutableListOf<com.betteraichat.core.model.Attachment>()
+        for (p in pending) {
+            val r = if (p.kind == "image") {
+                AttachmentProcessor.imageFromUri(context, p.uri, p.name)
+            } else {
+                AttachmentProcessor.textFromUri(context, p.uri, p.name)
+            }
+            r.onSuccess { result.add(it) }
+                .onFailure { _state.update { st -> st.copy(attachmentError = it.message) } }
+        }
+        return result
     }
 
     private fun runGeneration(cid: Long) {
@@ -318,5 +388,11 @@ class ChatViewModelFactory(
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        ChatViewModel(conversationId, container.repository, container.settings, container.engine) as T
+        ChatViewModel(
+            conversationId,
+            container.repository,
+            container.settings,
+            container.engine,
+            container.appContext
+        ) as T
 }

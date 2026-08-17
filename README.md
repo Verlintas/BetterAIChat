@@ -6,6 +6,7 @@ An Android app that lets you chat with leading LLMs using your **own API keys**,
 
 - **Multiple providers**: OpenAI-compatible (OpenAI / DeepSeek / Moonshot / Qwen / Ollama, etc.), Anthropic Claude, Google Gemini
 - **Streaming chat**: SSE streaming output, Markdown rendering, stop-generation control
+- **Image & file understanding**: attach photos (up to 4, auto-compressed) for vision models to analyze, or attach text files (up to 200KB) whose contents are read into the conversation
 - **Model selection**: built-in model catalog + custom model ID input + per-conversation model switching
 - **Context usage tracking**: live token usage shown as `117.3K (12%)` in the conversation header, like opencode
 - **Mode system (aligned with opencode)**:

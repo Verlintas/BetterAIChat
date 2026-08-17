@@ -40,8 +40,15 @@ data class GeminiContent(val role: String, val parts: List<GeminiPart>)
 @Serializable
 data class GeminiPart(
     val text: String? = null,
+    @SerialName("inlineData") val inlineData: GeminiInlineData? = null,
     @SerialName("functionCall") val functionCall: GeminiFunctionCall? = null,
     @SerialName("functionResponse") val functionResponse: GeminiFunctionResponse? = null
+)
+
+@Serializable
+data class GeminiInlineData(
+    @SerialName("mimeType") val mimeType: String,
+    val data: String
 )
 
 @Serializable
@@ -181,7 +188,15 @@ class GeminiProvider : ChatProvider {
         for (m in this) {
             val parts = buildList {
                 when (m.role) {
-                    ChatRole.USER -> if (m.content.isNotBlank()) add(GeminiPart(text = m.content))
+                    ChatRole.USER -> {
+                        if (m.content.isNotBlank()) add(GeminiPart(text = m.content))
+                        m.attachments.forEach { att ->
+                            when {
+                                att.isImage -> add(GeminiPart(inlineData = GeminiInlineData(att.mimeType, att.dataBase64)))
+                                att.textContent != null -> add(GeminiPart(text = "（文件：${att.name}）\n${att.textContent}"))
+                            }
+                        }
+                    }
                     ChatRole.ASSISTANT -> {
                         if (m.content.isNotBlank()) add(GeminiPart(text = m.content))
                         m.toolCalls.forEach { tc ->

@@ -1,5 +1,7 @@
 package com.betteraichat.ui.chat
 
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,6 +21,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
@@ -34,6 +37,7 @@ import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.InputChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -50,6 +54,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -74,6 +79,18 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
     val listState = rememberLazyListState()
     val last = state.messages.lastOrNull()
     var showMaxConfirm by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+
+    val imagePicker = androidx.activity.compose.rememberLauncherForActivityResult(
+        ActivityResultContracts.PickMultipleVisualMedia(4)
+    ) { uris ->
+        if (uris.isNotEmpty()) vm.addPendingImages(uris, context.contentResolver)
+    }
+    val filePicker = androidx.activity.compose.rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) vm.addPendingFile(uri, context.contentResolver)
+    }
 
     val totalPromptTokens = state.messages.sumOf { it.usageInput }
     val contextWindow = ModelCatalog.entryFor(state.provider, state.model).contextWindow
@@ -136,7 +153,14 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                 input = state.input,
                 isRunning = state.isRunning,
                 mode = state.mode,
+                pendingAttachments = state.pendingAttachments,
+                attachmentError = state.attachmentError,
                 onInputChange = vm::onInputChange,
+                onPickImages = {
+                    imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                },
+                onPickFile = { filePicker.launch("*/*") },
+                onRemoveAttachment = vm::removePendingAttachment,
                 onSend = vm::send,
                 onStop = vm::stop
             )
@@ -338,53 +362,111 @@ private fun InputBar(
     input: String,
     isRunning: Boolean,
     mode: AppMode,
+    pendingAttachments: List<PendingAttachment>,
+    attachmentError: String?,
     onInputChange: (String) -> Unit,
+    onPickImages: () -> Unit,
+    onPickFile: () -> Unit,
+    onRemoveAttachment: (Long) -> Unit,
     onSend: () -> Unit,
     onStop: () -> Unit
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .imePadding()
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.Bottom
-    ) {
-        OutlinedTextField(
-            value = input,
-            onValueChange = onInputChange,
-            modifier = Modifier.weight(1f),
-            placeholder = {
-                Text(
-                    when (mode) {
-                        AppMode.CHAT -> "输入消息…"
-                        AppMode.PLAN -> "输入问题，AI 将进行分析…"
-                        AppMode.BUILD -> "输入任务，AI 可操作设备…"
-                        AppMode.MAX -> "输入任务，AI 将自主执行…"
-                    }
-                )
-            },
-            maxLines = 6,
-            trailingIcon = {
-                if (input.isNotEmpty() && !isRunning) {
-                    IconButton(onClick = { onInputChange("") }) {
-                        Icon(Icons.Filled.Clear, contentDescription = "清空")
-                    }
+    var attachMenu by remember { mutableStateOf(false) }
+    Column(modifier = Modifier.fillMaxWidth()) {
+        if (pendingAttachments.isNotEmpty()) {
+            FlowRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                pendingAttachments.forEach { att ->
+                    InputChip(
+                        selected = false,
+                        onClick = { },
+                        label = { Text(att.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                        trailingIcon = {
+                            IconButton(onClick = { onRemoveAttachment(att.id) }) {
+                                Icon(Icons.Filled.Close, contentDescription = "移除", modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    )
                 }
             }
-        )
-        Spacer(Modifier.width(8.dp))
-        FilledIconButton(
-            onClick = { if (isRunning) onStop() else onSend() },
-            enabled = isRunning || input.isNotBlank()
+        }
+        attachmentError?.let {
+            Text(
+                it,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error
+            )
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .imePadding()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.Bottom
         ) {
-            if (isRunning) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(20.dp),
-                    strokeWidth = 2.dp,
-                    color = MaterialTheme.colorScheme.onPrimary
-                )
-            } else {
-                Icon(Icons.Filled.Send, contentDescription = "发送")
+            Box {
+                IconButton(onClick = { attachMenu = true }) {
+                    Icon(Icons.Filled.Add, contentDescription = "添加附件")
+                }
+                DropdownMenu(expanded = attachMenu, onDismissRequest = { attachMenu = false }) {
+                    DropdownMenuItem(
+                        text = { Text("选择图片（可多选）") },
+                        onClick = {
+                            attachMenu = false
+                            onPickImages()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("选择文件") },
+                        onClick = {
+                            attachMenu = false
+                            onPickFile()
+                        }
+                    )
+                }
+            }
+            OutlinedTextField(
+                value = input,
+                onValueChange = onInputChange,
+                modifier = Modifier.weight(1f),
+                placeholder = {
+                    Text(
+                        when (mode) {
+                            AppMode.CHAT -> "输入消息…"
+                            AppMode.PLAN -> "输入问题，AI 将进行分析…"
+                            AppMode.BUILD -> "输入任务，AI 可操作设备…"
+                            AppMode.MAX -> "输入任务，AI 将自主执行…"
+                        }
+                    )
+                },
+                maxLines = 6,
+                trailingIcon = {
+                    if (input.isNotEmpty() && !isRunning) {
+                        IconButton(onClick = { onInputChange("") }) {
+                            Icon(Icons.Filled.Clear, contentDescription = "清空")
+                        }
+                    }
+                }
+            )
+            Spacer(Modifier.width(8.dp))
+            FilledIconButton(
+                onClick = { if (isRunning) onStop() else onSend() },
+                enabled = isRunning || input.isNotBlank() || pendingAttachments.isNotEmpty()
+            ) {
+                if (isRunning) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                } else {
+                    Icon(Icons.Filled.Send, contentDescription = "发送")
+                }
             }
         }
     }

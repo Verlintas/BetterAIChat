@@ -4,6 +4,7 @@ import com.betteraichat.core.db.AppDatabase
 import com.betteraichat.core.db.ConversationEntity
 import com.betteraichat.core.db.MessageEntity
 import com.betteraichat.core.mode.AppMode
+import com.betteraichat.core.model.Attachment
 import com.betteraichat.core.model.ChatMessage
 import com.betteraichat.core.model.ChatRole
 import com.betteraichat.core.model.ProviderId
@@ -68,7 +69,10 @@ class ChatRepository(private val db: AppDatabase) {
         toolCallId = e.toolCallId,
         toolName = e.toolName,
         model = e.model,
-        mode = e.mode?.let { runCatching { AppMode.valueOf(it) }.getOrNull() }
+        mode = e.mode?.let { runCatching { AppMode.valueOf(it) }.getOrNull() },
+        attachments = e.attachmentsJson?.let {
+            runCatching { json.decodeFromString<List<Attachment>>(it) }.getOrDefault(emptyList())
+        } ?: emptyList()
     )
 
     fun domainToMessage(m: ChatMessage, conversationId: Long, status: String = "done"): MessageEntity = MessageEntity(
@@ -82,6 +86,10 @@ class ChatRepository(private val db: AppDatabase) {
         model = m.model,
         mode = m.mode?.name,
         status = status,
+        usageInput = 0,
+        usageOutput = 0,
+        attachmentsJson = m.attachments.takeIf { it.isNotEmpty() }
+            ?.let { json.encodeToString(ListSerializer(Attachment.serializer()), it) },
         createdAt = System.currentTimeMillis()
     )
 }

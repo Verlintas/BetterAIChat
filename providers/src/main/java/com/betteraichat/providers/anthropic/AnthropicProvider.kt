@@ -54,7 +54,15 @@ data class AnthropicBlock(
     val name: String? = null,
     val input: JsonObject? = null,
     @SerialName("tool_use_id") val toolUseId: String? = null,
-    val content: String? = null
+    val content: String? = null,
+    val source: AnthropicImageSource? = null
+)
+
+@Serializable
+data class AnthropicImageSource(
+    val type: String,
+    @SerialName("media_type") val mediaType: String,
+    val data: String
 )
 
 @Serializable
@@ -213,10 +221,28 @@ class AnthropicProvider : ChatProvider {
     }
 
     private fun ChatMessage.toWire(): AnthropicMessage = when (role) {
-        ChatRole.USER -> AnthropicMessage(
-            role = "user",
-            content = listOf(AnthropicBlock(type = "text", text = content))
-        )
+        ChatRole.USER -> {
+            val blocks = mutableListOf<AnthropicBlock>()
+            if (content.isNotBlank()) blocks.add(AnthropicBlock(type = "text", text = content))
+            attachments.forEach { att ->
+                when {
+                    att.isImage -> blocks.add(
+                        AnthropicBlock(
+                            type = "image",
+                            source = AnthropicImageSource(
+                                type = "base64",
+                                mediaType = att.mimeType,
+                                data = att.dataBase64
+                            )
+                        )
+                    )
+                    att.textContent != null -> blocks.add(
+                        AnthropicBlock(type = "text", text = "（文件：${att.name}）\n${att.textContent}")
+                    )
+                }
+            }
+            AnthropicMessage(role = "user", content = blocks)
+        }
         ChatRole.ASSISTANT -> {
             val blocks = mutableListOf<AnthropicBlock>()
             if (content.isNotBlank()) blocks.add(AnthropicBlock(type = "text", text = content))

@@ -27,6 +27,17 @@ data class ToolCall(
 
 enum class ToolCallStatus { PENDING, RUNNING, DONE, FAILED, REJECTED, DENIED }
 
+@Serializable
+data class Attachment(
+    val kind: String,
+    val name: String,
+    val mimeType: String,
+    val dataBase64: String = "",
+    val textContent: String? = null
+) {
+    val isImage: Boolean get() = kind == "image"
+}
+
 data class ChatMessage(
     val role: ChatRole,
     val content: String,
@@ -34,7 +45,8 @@ data class ChatMessage(
     val toolCallId: String? = null,
     val toolName: String? = null,
     val model: String? = null,
-    val mode: AppMode? = null
+    val mode: AppMode? = null,
+    val attachments: List<Attachment> = emptyList()
 )
 
 data class ProviderConfig(

@@ -135,12 +135,25 @@ private fun UserBubble(msg: UiMessage, copyAction: () -> Unit) {
                     .widthIn(max = 480.dp)
                     .combinedClickable(onClick = {}, onLongClick = copyAction)
             ) {
-                Text(
-                    msg.content,
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                )
+                Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                    if (msg.attachments.isNotEmpty()) {
+                        msg.attachments.forEach { att ->
+                            Text(
+                                if (att.isImage) "图片：${att.name}" else "文件：${att.name}",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Spacer(Modifier.size(4.dp))
+                    }
+                    Text(
+                        msg.content,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
             }
             if (msg.createdAt > 0) {
                 Text(

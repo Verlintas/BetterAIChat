@@ -14,7 +14,12 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -78,7 +83,7 @@ data class OpenAiRequest(
 @Serializable
 data class OpenAiMessage(
     val role: String,
-    val content: String? = null,
+    val content: JsonElement? = null,
     @SerialName("tool_calls") val toolCalls: List<OpenAiToolCall>? = null,
     @SerialName("tool_call_id") val toolCallId: String? = null,
     val name: String? = null
@@ -217,11 +222,14 @@ class OpenAiProvider : ChatProvider {
         }
 
     private fun ChatMessage.toWire(): OpenAiMessage = when (role) {
-        ChatRole.SYSTEM -> OpenAiMessage(role = "system", content = content)
-        ChatRole.USER -> OpenAiMessage(role = "user", content = content)
+        ChatRole.SYSTEM -> OpenAiMessage(role = "system", content = JsonPrimitive(content))
+        ChatRole.USER -> OpenAiMessage(
+            role = "user",
+            content = buildUserContent()
+        )
         ChatRole.ASSISTANT -> OpenAiMessage(
             role = "assistant",
-            content = content.ifEmpty { null },
+            content = content.ifEmpty { null }?.let { JsonPrimitive(it) },
             toolCalls = toolCalls.map {
                 OpenAiToolCall(
                     id = it.id,
@@ -231,9 +239,39 @@ class OpenAiProvider : ChatProvider {
         )
         ChatRole.TOOL -> OpenAiMessage(
             role = "tool",
-            content = content,
+            content = JsonPrimitive(content),
             toolCallId = toolCallId,
             name = toolName
         )
+    }
+
+    private fun ChatMessage.buildUserContent(): JsonElement {
+        val blocks = mutableListOf<JsonElement>()
+        if (content.isNotBlank()) {
+            blocks.add(buildJsonObject { put("type", "text"); put("text", content) })
+        }
+        attachments.forEach { att ->
+            if (att.isImage) {
+                blocks.add(
+                    buildJsonObject {
+                        put("type", "image_url")
+                        put(
+                            "image_url",
+                            buildJsonObject {
+                                put("url", "data:${att.mimeType};base64,${att.dataBase64}")
+                            }
+                        )
+                    }
+                )
+            } else if (att.textContent != null) {
+                blocks.add(
+                    buildJsonObject {
+                        put("type", "text")
+                        put("text", "（文件：${att.name}）\n${att.textContent}")
+                    }
+                )
+            }
+        }
+        return if (blocks.isEmpty()) JsonPrimitive(content) else JsonArray(blocks)
     }
 }

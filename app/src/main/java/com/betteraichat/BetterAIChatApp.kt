@@ -42,6 +42,7 @@ class BetterAIChatApp : Application() {
 
 class AppContainer(context: Application) {
 
+    val appContext = context.applicationContext
     val db = AppDatabase.get(context)
     val settings = SettingsRepository(context)
     val repository = ChatRepository(db)
