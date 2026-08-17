@@ -14,6 +14,7 @@ An Android app that lets you chat with leading LLMs using your **own API keys**,
   - `Build` — default mode, every tool execution requires user confirmation
   - `Max` — autonomous multi-step tool calls + deep reasoning (`reasoning_effort` / `thinking` injected per model capability)
 - **Device tools**: open apps, send notifications, adjust brightness/volume, take screenshots (MediaProjection), query device info
+- **Web search**: real-time web search (Bing with DuckDuckGo fallback) + web page content extraction — no API key required
 - **Custom Skills**: import opencode-style `SKILL.md` files; the AI loads and follows them via the `load_skill` tool
 - **Local-first security**: API keys encrypted with Android Keystore (AES-GCM); conversations stored in Room. No cloud sync, ever
 - **Multi-conversation management**: create / switch / delete conversations
@@ -50,6 +51,15 @@ allowed-tools:
 ```
 
 The AI discovers skills through the `load_skill` tool and follows their instructions. `allowed-tools` optionally restricts which built-in tools the skill may use.
+
+## Web Search
+
+No API key needed. The AI can:
+
+- `web_search` — search the web (Bing first, DuckDuckGo fallback) and get titles/URLs/snippets
+- `web_read` — fetch a page and extract its main text
+
+Works in Plan/Build/Max modes (read-only tools).
 
 ## Permissions
 

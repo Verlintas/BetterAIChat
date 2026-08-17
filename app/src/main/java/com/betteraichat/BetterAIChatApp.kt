@@ -17,6 +17,8 @@ import com.betteraichat.skills.tools.SendNotificationTool
 import com.betteraichat.skills.tools.SetBrightnessTool
 import com.betteraichat.skills.tools.SetVolumeTool
 import com.betteraichat.skills.tools.TakeScreenshotTool
+import com.betteraichat.skills.tools.WebReadTool
+import com.betteraichat.skills.tools.WebSearchTool
 import com.betteraichat.tools.ScreenshotManager
 
 class BetterAIChatApp : Application() {
@@ -47,6 +49,8 @@ class AppContainer(context: Application) {
         SetVolumeTool(),
         DeviceInfoTool(),
         TakeScreenshotTool(),
+        WebSearchTool(),
+        WebReadTool(),
         LoadSkillTool { skillRepository.loadAll() }
     )
     val registry = ToolRegistry(tools)
