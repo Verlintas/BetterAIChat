@@ -35,6 +35,8 @@ data class MessageEntity(
     val model: String? = null,
     val mode: String? = null,
     val status: String = "done",
+    val usageInput: Long = 0,
+    val usageOutput: Long = 0,
     val createdAt: Long
 )
 
@@ -80,7 +82,7 @@ interface MessageDao {
     suspend fun updateContent(id: Long, content: String)
 }
 
-@Database(entities = [ConversationEntity::class, MessageEntity::class], version = 1, exportSchema = false)
+@Database(entities = [ConversationEntity::class, MessageEntity::class], version = 2, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun conversationDao(): ConversationDao
     abstract fun messageDao(): MessageDao
@@ -89,9 +91,17 @@ abstract class AppDatabase : RoomDatabase() {
         @Volatile
         private var instance: AppDatabase? = null
 
+        val MIGRATION_1_2 = object : androidx.room.migration.Migration(1, 2) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE messages ADD COLUMN usageInput INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE messages ADD COLUMN usageOutput INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "betteraichat.db")
+                    .addMigrations(MIGRATION_1_2)
                     .build()
                     .also { instance = it }
             }

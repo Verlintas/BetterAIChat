@@ -1,50 +1,69 @@
 # BetterAIChat
 
-一个 Android 应用：填入你自己的 AI API Key，即可像 opencode 一样与主流大模型对话，并通过 **Function Calling + 设备工具（Skills）** 让 AI 在手机上执行简单操作。
+An Android app that lets you chat with leading LLMs using your **own API keys**, opencode-style. The AI can not only talk to you, but also perform simple device operations via **Function Calling + device tools (Skills)**.
 
-## 功能
+## Features
 
-- **多 Provider**：OpenAI 兼容（OpenAI / DeepSeek / Moonshot / 通义千问 / Ollama 等）、Anthropic Claude、Google Gemini
-- **流式对话**：SSE 流式输出、Markdown 渲染、停止生成
-- **模型选择**：内置模型目录 + 手动输入任意模型 ID + 每会话独立切换
-- **模式系统（对齐 opencode）**：
-  - `Chat` 纯对话，不调用工具
-  - `Plan` 只读分析，禁止执行类工具
-  - `Build` 默认模式，工具执行前需用户确认
-  - `Max` 自主连续调用工具 + 深度推理（按模型能力注入 `reasoning_effort` / `thinking`）
-- **设备工具**：打开应用、发送通知、调整亮度/音量、截屏（MediaProjection）、查询设备信息
-- **本地安全**：API Key 用 Android Keystore（AES-GCM）加密存储，会话数据存 Room，无任何云端同步
-- 多会话管理：新建/切换/删除/重命名
+- **Multiple providers**: OpenAI-compatible (OpenAI / DeepSeek / Moonshot / Qwen / Ollama, etc.), Anthropic Claude, Google Gemini
+- **Streaming chat**: SSE streaming output, Markdown rendering, stop-generation control
+- **Model selection**: built-in model catalog + custom model ID input + per-conversation model switching
+- **Context usage tracking**: live token usage shown as `117.3K (12%)` in the conversation header, like opencode
+- **Mode system (aligned with opencode)**:
+  - `Chat` — pure conversation, no tool access
+  - `Plan` — read-only analysis, write tools forbidden
+  - `Build` — default mode, every tool execution requires user confirmation
+  - `Max` — autonomous multi-step tool calls + deep reasoning (`reasoning_effort` / `thinking` injected per model capability)
+- **Device tools**: open apps, send notifications, adjust brightness/volume, take screenshots (MediaProjection), query device info
+- **Custom Skills**: import opencode-style `SKILL.md` files; the AI loads and follows them via the `load_skill` tool
+- **Local-first security**: API keys encrypted with Android Keystore (AES-GCM); conversations stored in Room. No cloud sync, ever
+- **Multi-conversation management**: create / switch / delete conversations
 
-## 构建
+## Build
 
 ```bash
-# 需要 JDK 17 + Android SDK（compileSdk 36）
+# Requires JDK 17 + Android SDK (compileSdk 36)
 ./gradlew assembleDebug
 ```
 
-APK 输出：`app/build/outputs/apk/debug/app-debug.apk`
+APK output: `app/build/outputs/apk/debug/app-debug.apk`
 
-## 使用
+## Getting Started
 
-1. 打开应用 → 设置
-2. 选择服务商，填入 API Key（和自定义 Base URL，支持本地 Ollama）
-3. 选择模型与默认模式，保存
-4. 新对话，选择模式（Build/Max 可让 AI 操作设备；Max 模式自动执行工具，注意授权）
+1. Open the app → Settings
+2. Pick a provider, enter your API key (and a custom Base URL for local Ollama etc.)
+3. Choose a model and default mode, save
+4. Start a new conversation and pick a mode (Build/Max lets the AI operate your device; Max executes tools autonomously — grant permission with care)
 
-## 权限说明
+## Custom Skills
 
-| 权限 | 用途 |
+Import a markdown file with YAML frontmatter (opencode `SKILL.md` format):
+
+```markdown
+---
+name: reminder_helper
+description: Helps set up reminder notifications for the user
+allowed-tools:
+  - send_notification
+---
+1. Ask the user what to be reminded of.
+2. Use the send_notification tool to deliver the reminder.
+```
+
+The AI discovers skills through the `load_skill` tool and follows their instructions. `allowed-tools` optionally restricts which built-in tools the skill may use.
+
+## Permissions
+
+| Permission | Purpose |
 | --- | --- |
-| 通知 | AI 发送通知提醒 |
-| 修改系统设置 | AI 调整屏幕亮度 |
-| 截屏（MediaProjection） | AI 截取屏幕并保存图片 |
-| 后台服务 | 截屏执行 |
+| Notifications | AI sends reminder notifications |
+| Modify system settings | AI adjusts screen brightness |
+| Screen capture (MediaProjection) | AI takes screenshots |
+| Foreground service | Screenshot capture |
 
-所有权限均在设置页手动授予，AI 工具在未授权时只会返回错误提示。
+All permissions are granted manually in Settings; tools simply return an error when unauthorized.
 
-## 技术栈
+## Tech Stack
 
-Kotlin · Jetpack Compose · Material 3 · OkHttp（SSE）· kotlinx.serialization · Room · Android Keystore
+Kotlin · Jetpack Compose · Material 3 · OkHttp (SSE) · kotlinx.serialization · Room · Android Keystore
 
-模块：`:app`（UI）· `:core`（模型/引擎/存储）· `:providers`（适配器）· `:skills`（设备工具）
+Modules: `:app` (UI) · `:core` (models/engine/storage) · `:providers` (adapters) · `:skills` (device tools)

@@ -69,7 +69,20 @@ data class AnthropicEvent(
     val type: String? = null,
     @SerialName("content_block") val contentBlock: AnthropicBlock? = null,
     val delta: AnthropicDelta? = null,
-    val error: AnthropicError? = null
+    val error: AnthropicError? = null,
+    val message: AnthropicMessageStart? = null,
+    val usage: AnthropicUsage? = null
+)
+
+@Serializable
+data class AnthropicMessageStart(
+    val usage: AnthropicUsage? = null
+)
+
+@Serializable
+data class AnthropicUsage(
+    @SerialName("input_tokens") val inputTokens: Long = 0,
+    @SerialName("output_tokens") val outputTokens: Long = 0
 )
 
 @Serializable
@@ -138,10 +151,14 @@ class AnthropicProvider : ChatProvider {
             var currentBlockArgs = StringBuilder()
             var callsEmitted = false
             var doneEmitted = false
+            var inputTokens = 0L
+            var outputTokens = 0L
             SseParser.parse(respBody) { _, data ->
                 val ev = runCatching { json.decodeFromString(AnthropicEvent.serializer(), data) }
                     .getOrNull() ?: return@parse
                 when (ev.type) {
+                    "message_start" -> ev.message?.usage?.let { inputTokens = it.inputTokens }
+                    "message_delta" -> ev.usage?.let { outputTokens = it.outputTokens }
                     "content_block_start" -> {
                         val block = ev.contentBlock
                         if (block?.type == "tool_use") {
@@ -185,6 +202,7 @@ class AnthropicProvider : ChatProvider {
                     "error" -> ev.error?.message?.let { emit(StreamEvent.Error(it)) }
                 }
             }
+            emit(StreamEvent.Usage(inputTokens, outputTokens))
             if (!callsEmitted) {
                 emit(StreamEvent.ToolCallsDone(toolCalls))
                 emit(StreamEvent.Done)

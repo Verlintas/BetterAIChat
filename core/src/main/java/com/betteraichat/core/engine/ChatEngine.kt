@@ -30,6 +30,7 @@ sealed interface EngineEvent {
     data class ToolCallStarted(val call: ToolCall) : EngineEvent
     data class ToolCallFinished(val call: ToolCall) : EngineEvent
     data class AssistantFinished(val content: String, val toolCalls: List<ToolCall>) : EngineEvent
+    data class Usage(val promptTokens: Long, val completionTokens: Long) : EngineEvent
     data class ConfirmRequested(val call: ToolCall) : EngineEvent
     data object Completed : EngineEvent
     data class Failed(val message: String) : EngineEvent
@@ -72,6 +73,7 @@ class ChatEngine(
                             emit(EngineEvent.Delta(ev.text))
                         }
                         is StreamEvent.ToolCallsDone -> toolCalls = ev.calls
+                        is StreamEvent.Usage -> emit(EngineEvent.Usage(ev.promptTokens, ev.completionTokens))
                         is StreamEvent.Error -> throw IllegalStateException(ev.message)
                         StreamEvent.Done -> Unit
                     }

@@ -7,41 +7,42 @@ data class ModelEntry(
     val label: String,
     val temperature: Double = 0.7,
     val maxTokens: Int = 4096,
-    val supportsReasoning: Boolean = false
+    val supportsReasoning: Boolean = false,
+    val contextWindow: Int = 200_000
 )
 
 object ModelCatalog {
 
     val openAiCompat = listOf(
-        ModelEntry("gpt-5", "GPT-5", maxTokens = 8192, supportsReasoning = true),
-        ModelEntry("gpt-4o", "GPT-4o", maxTokens = 8192),
-        ModelEntry("gpt-4o-mini", "GPT-4o mini", maxTokens = 8192),
-        ModelEntry("gpt-4.1", "GPT-4.1", maxTokens = 8192),
-        ModelEntry("gpt-4.1-mini", "GPT-4.1 mini", maxTokens = 8192),
-        ModelEntry("o3-mini", "o3-mini", temperature = 1.0, maxTokens = 8192, supportsReasoning = true),
-        ModelEntry("o1", "o1", temperature = 1.0, maxTokens = 8192, supportsReasoning = true),
-        ModelEntry("deepseek-chat", "DeepSeek Chat", maxTokens = 8192),
-        ModelEntry("deepseek-reasoner", "DeepSeek Reasoner", maxTokens = 8192, supportsReasoning = true),
-        ModelEntry("moonshot-v1-128k", "Moonshot v1 128k", maxTokens = 8192),
-        ModelEntry("kimi-k2-0711-preview", "Kimi K2", maxTokens = 8192),
-        ModelEntry("qwen-max", "通义千问 Max", maxTokens = 8192),
-        ModelEntry("qwen-plus", "通义千问 Plus", maxTokens = 8192),
-        ModelEntry("qwen-turbo", "通义千问 Turbo", maxTokens = 8192)
+        ModelEntry("gpt-5", "GPT-5", maxTokens = 8192, supportsReasoning = true, contextWindow = 400_000),
+        ModelEntry("gpt-4o", "GPT-4o", maxTokens = 8192, contextWindow = 128_000),
+        ModelEntry("gpt-4o-mini", "GPT-4o mini", maxTokens = 8192, contextWindow = 128_000),
+        ModelEntry("gpt-4.1", "GPT-4.1", maxTokens = 8192, contextWindow = 1_047_576),
+        ModelEntry("gpt-4.1-mini", "GPT-4.1 mini", maxTokens = 8192, contextWindow = 1_047_576),
+        ModelEntry("o3-mini", "o3-mini", temperature = 1.0, maxTokens = 8192, supportsReasoning = true, contextWindow = 200_000),
+        ModelEntry("o1", "o1", temperature = 1.0, maxTokens = 8192, supportsReasoning = true, contextWindow = 200_000),
+        ModelEntry("deepseek-chat", "DeepSeek Chat", maxTokens = 8192, contextWindow = 128_000),
+        ModelEntry("deepseek-reasoner", "DeepSeek Reasoner", maxTokens = 8192, supportsReasoning = true, contextWindow = 128_000),
+        ModelEntry("moonshot-v1-128k", "Moonshot v1 128k", maxTokens = 8192, contextWindow = 128_000),
+        ModelEntry("kimi-k2-0711-preview", "Kimi K2", maxTokens = 8192, contextWindow = 128_000),
+        ModelEntry("qwen-max", "通义千问 Max", maxTokens = 8192, contextWindow = 32_000),
+        ModelEntry("qwen-plus", "通义千问 Plus", maxTokens = 8192, contextWindow = 131_072),
+        ModelEntry("qwen-turbo", "通义千问 Turbo", maxTokens = 8192, contextWindow = 1_000_000)
     )
 
     val anthropic = listOf(
-        ModelEntry("claude-opus-4-20250514", "Claude Opus 4", maxTokens = 8192, supportsReasoning = true),
-        ModelEntry("claude-sonnet-4-20250514", "Claude Sonnet 4", maxTokens = 8192, supportsReasoning = true),
-        ModelEntry("claude-haiku-4-20250514", "Claude Haiku 4", maxTokens = 8192),
-        ModelEntry("claude-3-7-sonnet-20250219", "Claude 3.7 Sonnet", maxTokens = 8192, supportsReasoning = true),
-        ModelEntry("claude-3-5-haiku-20241022", "Claude 3.5 Haiku", maxTokens = 8192)
+        ModelEntry("claude-opus-4-20250514", "Claude Opus 4", maxTokens = 8192, supportsReasoning = true, contextWindow = 200_000),
+        ModelEntry("claude-sonnet-4-20250514", "Claude Sonnet 4", maxTokens = 8192, supportsReasoning = true, contextWindow = 200_000),
+        ModelEntry("claude-haiku-4-20250514", "Claude Haiku 4", maxTokens = 8192, contextWindow = 200_000),
+        ModelEntry("claude-3-7-sonnet-20250219", "Claude 3.7 Sonnet", maxTokens = 8192, supportsReasoning = true, contextWindow = 200_000),
+        ModelEntry("claude-3-5-haiku-20241022", "Claude 3.5 Haiku", maxTokens = 8192, contextWindow = 200_000)
     )
 
     val gemini = listOf(
-        ModelEntry("gemini-2.5-pro", "Gemini 2.5 Pro", maxTokens = 8192, supportsReasoning = true),
-        ModelEntry("gemini-2.5-flash", "Gemini 2.5 Flash", maxTokens = 8192, supportsReasoning = true),
-        ModelEntry("gemini-2.5-flash-lite", "Gemini 2.5 Flash Lite", maxTokens = 8192),
-        ModelEntry("gemini-2.0-flash", "Gemini 2.0 Flash", maxTokens = 8192)
+        ModelEntry("gemini-2.5-pro", "Gemini 2.5 Pro", maxTokens = 8192, supportsReasoning = true, contextWindow = 1_048_576),
+        ModelEntry("gemini-2.5-flash", "Gemini 2.5 Flash", maxTokens = 8192, supportsReasoning = true, contextWindow = 1_048_576),
+        ModelEntry("gemini-2.5-flash-lite", "Gemini 2.5 Flash Lite", maxTokens = 8192, contextWindow = 1_048_576),
+        ModelEntry("gemini-2.0-flash", "Gemini 2.0 Flash", maxTokens = 8192, contextWindow = 1_048_576)
     )
 
     fun modelsFor(provider: ProviderId): List<ModelEntry> = when (provider) {

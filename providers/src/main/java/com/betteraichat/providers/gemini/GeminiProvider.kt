@@ -77,7 +77,14 @@ data class GeminiFunctionDeclaration(
 @Serializable
 data class GeminiResponse(
     val candidates: List<GeminiCandidate> = emptyList(),
-    val error: GeminiError? = null
+    val error: GeminiError? = null,
+    @SerialName("usageMetadata") val usageMetadata: GeminiUsageMetadata? = null
+)
+
+@Serializable
+data class GeminiUsageMetadata(
+    @SerialName("promptTokenCount") val promptTokenCount: Long = 0,
+    @SerialName("candidatesTokenCount") val candidatesTokenCount: Long = 0
 )
 
 @Serializable
@@ -140,6 +147,7 @@ class GeminiProvider : ChatProvider {
                 return@flow
             }
             val toolCalls = mutableListOf<ToolCall>()
+            var lastUsage: GeminiUsageMetadata? = null
             SseParser.parse(respBody) { _, data ->
                 val resp = runCatching { json.decodeFromString(GeminiResponse.serializer(), data) }
                     .getOrNull() ?: return@parse
@@ -147,6 +155,7 @@ class GeminiProvider : ChatProvider {
                     emit(StreamEvent.Error(it))
                     return@parse
                 }
+                resp.usageMetadata?.let { lastUsage = it }
                 val parts = resp.candidates.firstOrNull()?.content?.parts ?: return@parse
                 for (part in parts) {
                     part.text?.let { emit(StreamEvent.Delta(it)) }
@@ -159,6 +168,7 @@ class GeminiProvider : ChatProvider {
                     }
                 }
             }
+            lastUsage?.let { emit(StreamEvent.Usage(it.promptTokenCount, it.candidatesTokenCount)) }
             emit(StreamEvent.ToolCallsDone(toolCalls))
             emit(StreamEvent.Done)
         } finally {

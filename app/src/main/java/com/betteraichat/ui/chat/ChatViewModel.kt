@@ -30,7 +30,9 @@ data class UiMessage(
     val toolCalls: List<ToolCall> = emptyList(),
     val model: String? = null,
     val mode: AppMode? = null,
-    val streaming: Boolean = false
+    val streaming: Boolean = false,
+    val usageInput: Long = 0,
+    val usageOutput: Long = 0
 )
 
 data class ConfirmRequest(val call: ToolCall, val mode: AppMode)
@@ -117,7 +119,9 @@ class ChatViewModel(
                         } ?: emptyList(),
                         model = e.model,
                         mode = e.mode?.let { runCatching { AppMode.valueOf(it) }.getOrNull() },
-                        streaming = false
+                        streaming = false,
+                        usageInput = e.usageInput,
+                        usageOutput = e.usageOutput
                     )
                 }
                 refresh()
@@ -191,6 +195,9 @@ class ChatViewModel(
                             persistToolResult(ev.call, cid)
                             refresh()
                         }
+                        is EngineEvent.Usage -> {
+                            streaming = streaming?.copy(usageInput = ev.promptTokens, usageOutput = ev.completionTokens)
+                        }
                         is EngineEvent.AssistantFinished -> {
                             val content = ev.content
                             val entity = repository.domainToMessage(
@@ -202,6 +209,9 @@ class ChatViewModel(
                                     mode = s.mode
                                 ),
                                 cid
+                            ).copy(
+                                usageInput = streaming?.usageInput ?: 0,
+                                usageOutput = streaming?.usageOutput ?: 0
                             )
                             val id = repository.insertMessage(entity)
                             pendingAssistantEntity = entity.copy(id = id)

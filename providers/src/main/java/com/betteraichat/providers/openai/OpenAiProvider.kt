@@ -23,7 +23,19 @@ import java.util.concurrent.TimeUnit
 
 @Serializable
 data class OpenAiChunk(
-    val choices: List<OpenAiChoice> = emptyList()
+    val choices: List<OpenAiChoice> = emptyList(),
+    val usage: OpenAiUsage? = null
+)
+
+@Serializable
+data class OpenAiUsage(
+    @SerialName("prompt_tokens") val promptTokens: Long = 0,
+    @SerialName("completion_tokens") val completionTokens: Long = 0
+)
+
+@Serializable
+data class OpenAiStreamOptions(
+    @SerialName("include_usage") val includeUsage: Boolean = true
 )
 
 @Serializable
@@ -59,6 +71,7 @@ data class OpenAiRequest(
     val temperature: Double? = null,
     @SerialName("max_tokens") val maxTokens: Int? = null,
     @SerialName("reasoning_effort") val reasoningEffort: String? = null,
+    @SerialName("stream_options") val streamOptions: OpenAiStreamOptions? = null,
     val tools: List<OpenAiTool>? = null
 )
 
@@ -118,6 +131,7 @@ class OpenAiProvider : ChatProvider {
             temperature = if (reasoning) null else config.temperature,
             maxTokens = config.maxTokens,
             reasoningEffort = if (reasoning) "high" else null,
+            streamOptions = OpenAiStreamOptions(),
             tools = tools.map {
                 OpenAiTool(function = OpenAiToolFunction(it.name, it.description, it.parameters))
             }.takeIf { it.isNotEmpty() }
@@ -152,6 +166,11 @@ class OpenAiProvider : ChatProvider {
                 }
                 val chunk = runCatching { json.decodeFromString(OpenAiChunk.serializer(), data) }
                     .getOrNull() ?: return@parse
+                chunk.usage?.let { usage ->
+                    if (usage.promptTokens > 0 || usage.completionTokens > 0) {
+                        emit(StreamEvent.Usage(usage.promptTokens, usage.completionTokens))
+                    }
+                }
                 val choice = chunk.choices.firstOrNull() ?: return@parse
                 choice.delta?.content?.let { emit(StreamEvent.Delta(it)) }
                 choice.delta?.toolCalls?.forEach { tc ->

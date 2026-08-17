@@ -227,6 +227,87 @@ fun SettingsScreen(onBack: () -> Unit) {
 
             HorizontalDivider()
 
+            SectionTitle("Skills")
+            Text(
+                "导入 opencode 风格的 SKILL.md（含 name/description frontmatter），AI 可通过 load_skill 工具加载执行。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            var skills by remember { mutableStateOf(container.skillRepository.loadAll()) }
+            var skillMessage by remember { mutableStateOf<String?>(null) }
+            val skillLauncher = rememberLauncherForActivityResult(
+                ActivityResultContracts.OpenDocument()
+            ) { uri ->
+                if (uri != null) {
+                    val fileName = context.contentResolver.query(
+                        uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null
+                    )?.use { c ->
+                        if (c.moveToFirst()) c.getString(0) else "skill.md"
+                    } ?: "skill.md"
+                    val content = context.contentResolver.openInputStream(uri)?.use {
+                        it.readBytes().toString(Charsets.UTF_8)
+                    } ?: ""
+                    if (content.isNotBlank()) {
+                        val result = container.skillRepository.import(fileName, content)
+                        result.onSuccess { skillMessage = "Skill「${it.name}」导入成功" }
+                            .onFailure { skillMessage = "导入失败：${it.message}" }
+                        skills = container.skillRepository.loadAll()
+                    }
+                }
+            }
+            Button(
+                onClick = { skillLauncher.launch(arrayOf("*/*")) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("导入 Skill 文件")
+            }
+            if (skills.isEmpty()) {
+                Text(
+                    "暂无技能。可在 Settings 页导入后，于 Build/Max 模式对 AI 说「加载 xx 技能」执行。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                skills.forEach { skill ->
+                    Surface(
+                        shape = MaterialTheme.shapes.medium,
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(skill.name, style = MaterialTheme.typography.bodyMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                                Text(
+                                    skill.description,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 2
+                                )
+                            }
+                            TextButton(onClick = {
+                                container.skillRepository.delete(skill.name)
+                                skills = container.skillRepository.loadAll()
+                                skillMessage = "Skill「${skill.name}」已删除"
+                            }) {
+                                Text("删除", color = MaterialTheme.colorScheme.error)
+                            }
+                        }
+                    }
+                }
+            }
+            skillMessage?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (it.startsWith("导入失败")) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                )
+            }
+
+            HorizontalDivider()
+
             SectionTitle("权限与工具授权")
             PermissionRow(
                 title = "通知",

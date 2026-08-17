@@ -71,6 +71,15 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
     val listState = rememberLazyListState()
     val last = state.messages.lastOrNull()
 
+    val totalPromptTokens = state.messages.sumOf { it.usageInput }
+    val contextWindow = ModelCatalog.entryFor(state.provider, state.model).contextWindow
+    val usagePercent = if (contextWindow > 0 && totalPromptTokens > 0) {
+        ((totalPromptTokens * 100) / contextWindow).toInt().coerceIn(0, 100)
+    } else 0
+    val usageText = if (totalPromptTokens > 0) {
+        " · ${formatTokens(totalPromptTokens)}（$usagePercent%）"
+    } else ""
+
     LaunchedEffect(state.messages.size, last?.content?.length) {
         if (state.messages.isNotEmpty()) {
             listState.animateScrollToItem(state.messages.size - 1)
@@ -84,7 +93,7 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                     Column {
                         Text(state.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(
-                            "${state.model} · ${state.mode.displayName}",
+                            "${state.model} · ${state.mode.displayName}$usageText",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -316,6 +325,12 @@ private fun ModelSelector(
 }
 
 private val prettyJson = Json { prettyPrint = true; ignoreUnknownKeys = true }
+
+private fun formatTokens(n: Long): String = when {
+    n >= 1_000_000 -> "%.1fM".format(n / 1_000_000.0)
+    n >= 1_000 -> "%.1fK".format(n / 1000.0)
+    else -> n.toString()
+}
 
 private fun prettyJson(input: String): String = runCatching {
     prettyJson.encodeToString(

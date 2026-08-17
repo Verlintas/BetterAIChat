@@ -5,11 +5,13 @@ import com.betteraichat.core.chat.ChatRepository
 import com.betteraichat.core.db.AppDatabase
 import com.betteraichat.core.engine.ChatEngine
 import com.betteraichat.core.storage.SettingsRepository
+import com.betteraichat.core.skills.SkillRepository
 import com.betteraichat.providers.ProviderFactory
 import com.betteraichat.skills.DeviceToolRunner
 import com.betteraichat.skills.ToolContext
 import com.betteraichat.skills.ToolRegistry
 import com.betteraichat.skills.tools.DeviceInfoTool
+import com.betteraichat.skills.tools.LoadSkillTool
 import com.betteraichat.skills.tools.OpenAppTool
 import com.betteraichat.skills.tools.SendNotificationTool
 import com.betteraichat.skills.tools.SetBrightnessTool
@@ -33,6 +35,7 @@ class AppContainer(context: Application) {
     val db = AppDatabase.get(context)
     val settings = SettingsRepository(context)
     val repository = ChatRepository(db)
+    val skillRepository = SkillRepository(context.applicationContext)
 
     private val screenshotManager = ScreenshotManager(context.applicationContext)
     private val toolContext = ToolContext(context.applicationContext, screenshotManager)
@@ -43,7 +46,8 @@ class AppContainer(context: Application) {
         SetBrightnessTool(),
         SetVolumeTool(),
         DeviceInfoTool(),
-        TakeScreenshotTool()
+        TakeScreenshotTool(),
+        LoadSkillTool { skillRepository.loadAll() }
     )
     val registry = ToolRegistry(tools)
     val runner = DeviceToolRunner(tools, toolContext)
