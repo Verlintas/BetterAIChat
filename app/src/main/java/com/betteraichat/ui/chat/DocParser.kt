@@ -19,6 +19,8 @@ object DocParser {
 
     private const val MAX_OUTPUT_CHARS = 300_000
     private const val MAX_PDF_PAGES = 5
+    private const val MAX_PDF_BYTES = 20 * 1024 * 1024
+    private const val MAX_RENDER_EDGE = 4096
     private const val OCR_SCALE = 2f
 
     suspend fun extractPdf(context: Context, uri: Uri, name: String): Result<String> =
@@ -26,6 +28,12 @@ object DocParser {
             runCatching {
                 val cacheFile = File(context.cacheDir, "doc_${System.currentTimeMillis()}.pdf")
                 try {
+                    val size = context.contentResolver.query(
+                        uri, arrayOf(android.provider.OpenableColumns.SIZE), null, null, null
+                    )?.use { c -> if (c.moveToFirst() && !c.isNull(0)) c.getLong(0) else -1 } ?: -1L
+                    if (size > MAX_PDF_BYTES) {
+                        throw IllegalArgumentException("PDF 过大（${size / 1024 / 1024}MB），仅支持 20MB 以内的文件")
+                    }
                     context.contentResolver.openInputStream(uri)?.use { input ->
                         cacheFile.outputStream().use { output -> input.copyTo(output) }
                     } ?: throw IllegalArgumentException("无法读取 PDF 文件")
@@ -39,13 +47,18 @@ object DocParser {
                         val sb = StringBuilder()
                         for (i in 0 until pageLimit) {
                             renderer.openPage(i).use { page ->
-                                val width = (page.width * OCR_SCALE).toInt().coerceAtLeast(1)
-                                val height = (page.height * OCR_SCALE).toInt().coerceAtLeast(1)
+                                val scale = minOf(
+                                    OCR_SCALE,
+                                    MAX_RENDER_EDGE.toFloat() / maxOf(1, page.width),
+                                    MAX_RENDER_EDGE.toFloat() / maxOf(1, page.height)
+                                )
+                                val width = (page.width * scale).toInt().coerceAtLeast(1)
+                                val height = (page.height * scale).toInt().coerceAtLeast(1)
                                 val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
                                 try {
                                     page.render(
                                         bitmap, null,
-                                        Matrix().apply { setScale(OCR_SCALE, OCR_SCALE) },
+                                        Matrix().apply { setScale(scale, scale) },
                                         PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY
                                     )
                                     val text = recognize(recognizer, bitmap)
@@ -131,10 +144,16 @@ object DocParser {
                                         type == "s" -> Regex("<v>([^<]*)</v>").find(body)
                                             ?.groupValues?.get(1)?.toIntOrNull()
                                             ?.let { sharedStrings.getOrNull(it) } ?: ""
+                                        type == "inlineStr" -> Regex("<is>(.*?)</is>", RegexOption.DOT_MATCHES_ALL)
+                                            .find(body)
+                                            ?.groupValues?.get(1)
+                                            ?.replace(Regex("<t[^>]*>"), "")
+                                            ?.replace(Regex("</t>"), "")
+                                            ?.replace(Regex("<[^>]+>"), "") ?: ""
                                         else -> Regex("<v>([^<]*)</v>").find(body)
                                             ?.groupValues?.get(1) ?: ""
                                     }
-                                    cells[colIndex(colLetters)] = value
+                                    cells[colIndex(colLetters)] = decodeEntities(value)
                                 }
                                 val maxCol = cells.keys.maxOrNull() ?: 0
                                 rows.add((0..maxCol).joinToString("\t") { cells[it] ?: "" })
@@ -154,12 +173,14 @@ object DocParser {
         return Regex("<si>(.*?)</si>", RegexOption.DOT_MATCHES_ALL)
             .findAll(xml)
             .map { si ->
-                si.groupValues[1]
-                    .replace(Regex("<t[^>]*>"), "")
-                    .replace(Regex("</t>"), "")
-                    .replace(Regex("<[^>]+>"), "")
-                    .replace(Regex("\\s+"), " ")
-                    .trim()
+                decodeEntities(
+                    si.groupValues[1]
+                        .replace(Regex("<t[^>]*>"), "")
+                        .replace(Regex("</t>"), "")
+                        .replace(Regex("<[^>]+>"), "")
+                        .replace(Regex("\\s+"), " ")
+                        .trim()
+                )
             }
             .toList()
     }
@@ -176,6 +197,13 @@ object DocParser {
         recognizer: OcrEngine,
         bitmap: Bitmap
     ): String = recognizer.recognize(bitmap)
+
+    private fun decodeEntities(text: String): String = text
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
 
     private fun truncate(text: String): String =
         if (text.length > MAX_OUTPUT_CHARS) {

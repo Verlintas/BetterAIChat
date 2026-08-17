@@ -38,6 +38,8 @@ data class MessageEntity(
     val usageInput: Long = 0,
     val usageOutput: Long = 0,
     val attachmentsJson: String? = null,
+    val thinkingText: String? = null,
+    val thinkingSignature: String? = null,
     val createdAt: Long
 )
 
@@ -86,7 +88,7 @@ interface MessageDao {
     suspend fun deleteAllForConversation(conversationId: Long)
 }
 
-@Database(entities = [ConversationEntity::class, MessageEntity::class], version = 3, exportSchema = false)
+@Database(entities = [ConversationEntity::class, MessageEntity::class], version = 4, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun conversationDao(): ConversationDao
     abstract fun messageDao(): MessageDao
@@ -108,10 +110,17 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_3_4 = object : androidx.room.migration.Migration(3, 4) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE messages ADD COLUMN thinkingText TEXT")
+                db.execSQL("ALTER TABLE messages ADD COLUMN thinkingSignature TEXT")
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "betteraichat.db")
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                     .build()
                     .also { instance = it }
             }

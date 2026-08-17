@@ -105,7 +105,25 @@ class ChatViewModel(
 
     private fun loadConversation(id: Long) {
         viewModelScope.launch {
-            val c = repository.getConversation(id) ?: return@launch
+            val c = repository.getConversation(id)
+            if (c == null) {
+                currentConversationId = -1
+                _state.update {
+                    it.copy(
+                        conversationId = -1,
+                        title = "新对话",
+                        provider = settings.getDefaultProvider()
+                    )
+                }
+                val provider = settings.getDefaultProvider()
+                _state.update {
+                    it.copy(
+                        model = settings.getModel(provider),
+                        mode = settings.getDefaultMode()
+                    )
+                }
+                return@launch
+            }
             val provider = runCatching { ProviderId.valueOf(c.provider) }.getOrDefault(ProviderId.OPENAI_COMPAT)
             val mode = runCatching { AppMode.valueOf(c.mode) }.getOrDefault(AppMode.CHAT)
             _state.update {
@@ -189,6 +207,7 @@ class ChatViewModel(
         val text = _state.value.input.trim()
         val pending = _state.value.pendingAttachments
         if ((text.isEmpty() && pending.isEmpty()) || _state.value.isRunning) return
+        _state.update { it.copy(isRunning = true) }
         viewModelScope.launch {
             if (currentConversationId <= 0) {
                 val s = _state.value
@@ -216,7 +235,7 @@ class ChatViewModel(
                     cid
                 )
             )
-            _state.update { it.copy(input = "", isRunning = true, error = null, pendingAttachments = emptyList()) }
+            _state.update { it.copy(input = "", error = null, pendingAttachments = emptyList()) }
             runGeneration(cid)
         }
     }
@@ -250,20 +269,39 @@ class ChatViewModel(
             model = config.model, mode = s.mode, streaming = true
         )
         refresh()
-        runJob = viewModelScope.launch {
+        var currentJob: Job? = null
+        currentJob = viewModelScope.launch {
             val history = repository.getHistory(cid).map { repository.messageToDomain(it) }
             try {
                 engine.run(history, config, s.mode).collect { ev ->
                     when (ev) {
                         is EngineEvent.Delta -> {
+                            if (streaming == null) {
+                                streaming = UiMessage(
+                                    id = -1, role = ChatRole.ASSISTANT, content = "",
+                                    model = config.model, mode = s.mode, streaming = true
+                                )
+                            }
                             streaming = streaming?.copy(content = (streaming?.content ?: "") + ev.text)
                             refresh()
                         }
                         is EngineEvent.ThinkingDelta -> {
+                            if (streaming == null) {
+                                streaming = UiMessage(
+                                    id = -1, role = ChatRole.ASSISTANT, content = "",
+                                    model = config.model, mode = s.mode, streaming = true
+                                )
+                            }
                             streaming = streaming?.copy(thinking = (streaming?.thinking ?: "") + ev.text)
                             refresh()
                         }
                         is EngineEvent.ToolCallStarted -> {
+                            if (streaming == null) {
+                                streaming = UiMessage(
+                                    id = -1, role = ChatRole.ASSISTANT, content = "",
+                                    model = config.model, mode = s.mode, streaming = true
+                                )
+                            }
                             streaming = streaming?.copy(
                                 toolCalls = upsertCall(
                                     streaming?.toolCalls ?: emptyList(),
@@ -273,6 +311,12 @@ class ChatViewModel(
                             refresh()
                         }
                         is EngineEvent.ToolCallFinished -> {
+                            if (streaming == null) {
+                                streaming = UiMessage(
+                                    id = -1, role = ChatRole.ASSISTANT, content = "",
+                                    model = config.model, mode = s.mode, streaming = true
+                                )
+                            }
                             streaming = streaming?.copy(
                                 toolCalls = upsertCall(streaming?.toolCalls ?: emptyList(), ev.call)
                             )
@@ -280,17 +324,25 @@ class ChatViewModel(
                             refresh()
                         }
                         is EngineEvent.Usage -> {
+                            if (streaming == null) {
+                                streaming = UiMessage(
+                                    id = -1, role = ChatRole.ASSISTANT, content = "",
+                                    model = config.model, mode = s.mode, streaming = true
+                                )
+                            }
                             streaming = streaming?.copy(usageInput = ev.promptTokens, usageOutput = ev.completionTokens)
                         }
                         is EngineEvent.AssistantFinished -> {
-                            val content = ev.content
+                            val msg = ev.message
                             val entity = repository.domainToMessage(
                                 ChatMessage(
                                     role = ChatRole.ASSISTANT,
-                                    content = content,
-                                    toolCalls = ev.toolCalls.map { it.copy(status = ToolCallStatus.PENDING) },
+                                    content = msg.content,
+                                    toolCalls = msg.toolCalls.map { it.copy(status = ToolCallStatus.PENDING) },
                                     model = config.model,
-                                    mode = s.mode
+                                    mode = s.mode,
+                                    thinkingText = msg.thinkingText,
+                                    thinkingSignature = msg.thinkingSignature
                                 ),
                                 cid
                             ).copy(
@@ -304,15 +356,21 @@ class ChatViewModel(
                         }
                         is EngineEvent.Failed -> {
                             _state.update { it.copy(error = ev.message) }
+                            persistStreamingPartial(cid)
+                            streaming = null
+                            refresh()
                         }
                         is EngineEvent.ConfirmRequested -> Unit
                         EngineEvent.Completed -> Unit
                     }
                 }
             } finally {
-                _state.update { it.copy(isRunning = false) }
+                if (runJob === currentJob) {
+                    _state.update { it.copy(isRunning = false) }
+                }
             }
         }
+        runJob = currentJob
     }
 
     private fun upsertCall(calls: List<ToolCall>, updated: ToolCall): List<ToolCall> {
@@ -346,23 +404,33 @@ class ChatViewModel(
         pendingAssistantEntity?.let { repository.updateMessage(it) }
     }
 
+    private suspend fun persistStreamingPartial(cid: Long) {
+        val st = streaming ?: return
+        if (st.content.isBlank() && st.toolCalls.isEmpty()) return
+        if (pendingAssistantEntity != null) {
+            repository.updateMessage(pendingAssistantEntity!!.copy(content = st.content))
+        } else {
+            repository.insertMessage(
+                repository.domainToMessage(
+                    ChatMessage(
+                        role = ChatRole.ASSISTANT,
+                        content = st.content,
+                        model = st.model,
+                        mode = st.mode,
+                        thinkingText = st.thinking.ifBlank { null }
+                    ),
+                    cid
+                )
+            )
+        }
+    }
+
     fun stop() {
         runJob?.cancel()
         runJob = null
+        _state.update { it.copy(confirmRequest = null) }
         viewModelScope.launch {
-            val st = streaming
-            if (st != null && st.content.isNotBlank() && currentConversationId > 0) {
-                if (pendingAssistantEntity != null) {
-                    repository.updateMessage(pendingAssistantEntity!!.copy(content = st.content))
-                } else {
-                    repository.insertMessage(
-                        repository.domainToMessage(
-                            ChatMessage(role = ChatRole.ASSISTANT, content = st.content, model = st.model, mode = st.mode),
-                            currentConversationId
-                        )
-                    )
-                }
-            }
+            persistStreamingPartial(currentConversationId)
             streaming = null
             _state.update { it.copy(isRunning = false) }
             refresh()
@@ -376,6 +444,7 @@ class ChatViewModel(
             runJob = null
             streaming = null
             pendingAssistantEntity = null
+            _state.update { it.copy(confirmRequest = null) }
             repository.clearMessages(currentConversationId)
             _state.update { it.copy(isRunning = false, error = null) }
             refresh()

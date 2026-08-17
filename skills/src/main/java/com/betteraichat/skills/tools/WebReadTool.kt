@@ -37,6 +37,7 @@ class WebReadTool : DeviceTool {
                     .userAgent(userAgent)
                     .followRedirects(true)
                     .timeout(20_000)
+                    .maxBodySize(2 * 1024 * 1024)
                     .get()
                 doc.select("script, style, noscript, iframe, nav, footer, header, form, .ad, .ads, .advertisement, .cookie, [aria-hidden=true]").remove()
                 val title = doc.title().trim()

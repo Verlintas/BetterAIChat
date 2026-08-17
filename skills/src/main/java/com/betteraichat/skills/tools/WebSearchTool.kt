@@ -33,13 +33,16 @@ class WebSearchTool : DeviceTool {
             val query = arguments["query"]?.jsonPrimitive?.content?.trim()
                 ?: return@withContext "缺少 query 参数"
             val max = (arguments["max_results"]?.jsonPrimitive?.content?.toIntOrNull() ?: 5).coerceIn(1, 8)
-            val results = try {
+            var results = try {
                 searchBing(query)
             } catch (e: Exception) {
-                try {
+                emptyList()
+            }
+            if (results.isEmpty()) {
+                results = try {
                     searchDuckDuckGo(query)
                 } catch (e2: Exception) {
-                    return@withContext "搜索失败：${e2.message ?: "网络错误"}（Bing 与 DuckDuckGo 均不可用）"
+                    emptyList()
                 }
             }
             if (results.isEmpty()) {
@@ -66,11 +69,21 @@ class WebSearchTool : DeviceTool {
             .get()
         return doc.select("li.b_algo").mapNotNull { el ->
             val h2 = el.selectFirst("h2") ?: return@mapNotNull null
-            val a = el.selectFirst("a:has(h2)")
-            val url = a?.attr("href") ?: return@mapNotNull null
+            val a = el.selectFirst("a:has(h2)") ?: el.selectFirst("h2 a[href]")
+            var url = a?.attr("href") ?: return@mapNotNull null
+            url = decodeBingUrl(url)
             val snippet = el.selectFirst(".b_caption p")?.text()?.trim().orEmpty()
             SearchResult(h2.text().trim(), url, snippet)
         }
+    }
+
+    private fun decodeBingUrl(raw: String): String {
+        if (!raw.contains("/ck/a")) return raw
+        val encoded = Regex("u=a1([0-9A-Za-z+/=]+)").find(raw)?.groupValues?.get(1) ?: return raw
+        return runCatching {
+            val decoded = String(android.util.Base64.decode(encoded, android.util.Base64.DEFAULT), Charsets.UTF_8)
+            decoded.takeIf { it.startsWith("http") } ?: raw
+        }.getOrDefault(raw)
     }
 
     private fun searchDuckDuckGo(query: String): List<SearchResult> {

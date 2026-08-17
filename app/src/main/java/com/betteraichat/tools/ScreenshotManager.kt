@@ -25,14 +25,17 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.io.FileOutputStream
 
 object ScreenshotBridge {
     private var pending: CompletableDeferred<String>? = null
 
-    fun register(): CompletableDeferred<String> =
-        CompletableDeferred<String>().also { pending = it }
+    fun register(): CompletableDeferred<String> {
+        pending?.complete("ERROR:截屏请求被新的请求覆盖")
+        return CompletableDeferred<String>().also { pending = it }
+    }
 
     fun complete(result: String) {
         pending?.complete(result)
@@ -50,16 +53,30 @@ class ScreenshotManager(private val context: Context) : ScreenshotProvider {
         resultData = data
     }
 
+    fun clearProjection() {
+        resultData = null
+    }
+
     fun hasProjection(): Boolean = resultData != null
 
     override suspend fun capture(): String {
         val data = resultData ?: return "ERROR:尚未授权截屏，请到应用设置页点击「截屏授权」"
         val deferred = ScreenshotBridge.register()
-        val intent = Intent(context, ScreenshotCaptureService::class.java)
-            .putExtra("resultCode", resultCode)
-            .putExtra("data", data)
-        context.startForegroundService(intent)
-        return deferred.await()
+        try {
+            val intent = Intent(context, ScreenshotCaptureService::class.java)
+                .putExtra("resultCode", resultCode)
+                .putExtra("data", data)
+            context.startForegroundService(intent)
+        } catch (e: Exception) {
+            clearProjection()
+            ScreenshotBridge.complete("ERROR:无法启动截屏服务（后台启动限制或服务异常），请回到应用后重试")
+            return deferred.await()
+        }
+        return withTimeoutOrNull(60_000) { deferred.await() }
+            ?: run {
+                clearProjection()
+                "ERROR:截屏超时，请重新授权后重试"
+            }
     }
 }
 
@@ -108,6 +125,9 @@ class ScreenshotCaptureService : Service() {
                 val density = metrics.densityDpi
                 val reader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
                 var virtualDisplay: VirtualDisplay? = null
+                var projectionStopped = false
+                var bitmap: Bitmap? = null
+                var crop: Bitmap? = null
                 try {
                     virtualDisplay = projection?.createVirtualDisplay(
                         "BetterAIChatShot",
@@ -132,22 +152,28 @@ class ScreenshotCaptureService : Service() {
                         val pixelStride = plane.pixelStride
                         val rowStride = plane.rowStride
                         val rowPadding = rowStride - pixelStride * width
-                        val bitmap = Bitmap.createBitmap(
+                        bitmap = Bitmap.createBitmap(
                             width + rowPadding / pixelStride, height, Bitmap.Config.ARGB_8888
                         )
-                        bitmap.copyPixelsFromBuffer(buffer)
-                        val crop = Bitmap.createBitmap(bitmap, 0, 0, width, height)
+                        bitmap!!.copyPixelsFromBuffer(buffer)
+                        crop = Bitmap.createBitmap(bitmap!!, 0, 0, width, height)
                         val dir = File(cacheDir, "screenshots").apply { mkdirs() }
                         val file = File(dir, "shot_${System.currentTimeMillis()}.png")
                         FileOutputStream(file).use { out ->
-                            crop.compress(Bitmap.CompressFormat.PNG, 100, out)
+                            crop!!.compress(Bitmap.CompressFormat.PNG, 100, out)
                         }
                         projection.stop()
+                        projectionStopped = true
                         "截屏成功：${file.absolutePath}（${width}x${height}）"
                     }
                 } finally {
+                    bitmap?.recycle()
+                    crop?.recycle()
                     virtualDisplay?.release()
                     reader.close()
+                    if (projection != null && !projectionStopped) {
+                        runCatching { projection.stop() }
+                    }
                 }
             }.getOrElse { e -> "ERROR:截屏失败：${e.message}" }
         }

@@ -55,6 +55,7 @@ data class GeminiInlineData(
 @Serializable
 data class GeminiFunctionCall(
     val name: String,
+    val id: String? = null,
     val args: JsonObject = JsonObject(emptyMap())
 )
 
@@ -154,35 +155,39 @@ class GeminiProvider : ChatProvider {
                 emit(StreamEvent.Error("空响应"))
                 return@flow
             }
-            val toolCalls = mutableListOf<ToolCall>()
-            var lastUsage: GeminiUsageMetadata? = null
-            SseParser.parse(respBody) { _, data ->
-                val resp = runCatching { json.decodeFromString(GeminiResponse.serializer(), data) }
-                    .getOrNull() ?: return@parse
-                resp.error?.message?.let {
-                    emit(StreamEvent.Error(it))
-                    return@parse
-                }
-                resp.usageMetadata?.let { lastUsage = it }
-                val parts = resp.candidates.firstOrNull()?.content?.parts ?: return@parse
-                for (part in parts) {
-                    if (part.thought && !part.text.isNullOrBlank()) {
-                        emit(StreamEvent.ThinkingDelta(part.text))
-                        continue
+            respBody.use { body ->
+                val toolCalls = mutableListOf<ToolCall>()
+                var lastUsage: GeminiUsageMetadata? = null
+                SseParser.parse(body) { _, data ->
+                    val resp = runCatching { json.decodeFromString(GeminiResponse.serializer(), data) }
+                        .getOrNull() ?: return@parse
+                    resp.error?.message?.let {
+                        emit(StreamEvent.Error(it))
+                        return@parse
                     }
-                    part.text?.let { emit(StreamEvent.Delta(it)) }
-                    part.functionCall?.let { fc ->
-                        val name = fc.name
-                        val args = fc.args.toString()
-                        if (toolCalls.none { it.name == name && it.arguments == args }) {
-                            toolCalls.add(ToolCall(id = "call_${toolCalls.size}", name = name, arguments = args))
+                    resp.usageMetadata?.let { lastUsage = it }
+                    val parts = resp.candidates.firstOrNull()?.content?.parts ?: return@parse
+                    for (part in parts) {
+                        if (part.thought && !part.text.isNullOrBlank()) {
+                            emit(StreamEvent.ThinkingDelta(part.text))
+                            continue
+                        }
+                        part.text?.let { emit(StreamEvent.Delta(it)) }
+                        part.functionCall?.let { fc ->
+                            toolCalls.add(
+                                ToolCall(
+                                    id = fc.id ?: "call_${toolCalls.size}",
+                                    name = fc.name,
+                                    arguments = fc.args.toString()
+                                )
+                            )
                         }
                     }
                 }
+                lastUsage?.let { emit(StreamEvent.Usage(it.promptTokenCount, it.candidatesTokenCount)) }
+                emit(StreamEvent.ToolCallsDone(toolCalls))
+                emit(StreamEvent.Done)
             }
-            lastUsage?.let { emit(StreamEvent.Usage(it.promptTokenCount, it.candidatesTokenCount)) }
-            emit(StreamEvent.ToolCallsDone(toolCalls))
-            emit(StreamEvent.Done)
         } finally {
             call.cancel()
         }
@@ -207,7 +212,7 @@ class GeminiProvider : ChatProvider {
                         m.toolCalls.forEach { tc ->
                             val args = runCatching { json.parseToJsonElement(tc.arguments).jsonObject }
                                 .getOrDefault(JsonObject(emptyMap()))
-                            add(GeminiPart(functionCall = GeminiFunctionCall(tc.name, args)))
+                            add(GeminiPart(functionCall = GeminiFunctionCall(name = tc.name, args = args)))
                         }
                     }
                     ChatRole.TOOL -> add(

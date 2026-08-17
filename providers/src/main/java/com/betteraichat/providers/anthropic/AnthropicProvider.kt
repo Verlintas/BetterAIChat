@@ -55,7 +55,9 @@ data class AnthropicBlock(
     val input: JsonObject? = null,
     @SerialName("tool_use_id") val toolUseId: String? = null,
     val content: String? = null,
-    val source: AnthropicImageSource? = null
+    val source: AnthropicImageSource? = null,
+    val signature: String? = null,
+    @SerialName("thinking") val thinkingText: String? = null
 )
 
 @Serializable
@@ -126,8 +128,8 @@ class AnthropicProvider : ChatProvider {
             model = config.model,
             maxTokens = config.maxTokens,
             system = system,
-            messages = messages.filter { it.role != ChatRole.SYSTEM }.map { it.toWire() },
-            temperature = config.temperature,
+            messages = messages.filter { it.role != ChatRole.SYSTEM }.map { it.toWire(reasoning) },
+            temperature = if (reasoning) null else config.temperature,
             thinking = if (reasoning) {
                 AnthropicThinking(budgetTokens = minOf(4096, config.maxTokens))
             } else null,
@@ -153,26 +155,41 @@ class AnthropicProvider : ChatProvider {
                 emit(StreamEvent.Error("空响应"))
                 return@flow
             }
-            val toolCalls = mutableListOf<ToolCall>()
+            respBody.use { body ->
+                val toolCalls = mutableListOf<ToolCall>()
             var currentBlockId: String? = null
             var currentBlockName: String? = null
             var currentBlockArgs = StringBuilder()
+            var thinkingSignature: String? = null
             var callsEmitted = false
             var doneEmitted = false
             var inputTokens = 0L
             var outputTokens = 0L
-            SseParser.parse(respBody) { _, data ->
+            var usageSeen = false
+            SseParser.parse(body) { _, data ->
                 val ev = runCatching { json.decodeFromString(AnthropicEvent.serializer(), data) }
                     .getOrNull() ?: return@parse
                 when (ev.type) {
-                    "message_start" -> ev.message?.usage?.let { inputTokens = it.inputTokens }
-                    "message_delta" -> ev.usage?.let { outputTokens = it.outputTokens }
+                    "message_start" -> ev.message?.usage?.let {
+                        inputTokens = it.inputTokens
+                        usageSeen = true
+                    }
+                    "message_delta" -> ev.usage?.let {
+                        outputTokens = it.outputTokens
+                        usageSeen = true
+                    }
                     "content_block_start" -> {
                         val block = ev.contentBlock
-                        if (block?.type == "tool_use") {
-                            currentBlockId = block.id
-                            currentBlockName = block.name
-                            currentBlockArgs = StringBuilder()
+                        when (block?.type) {
+                            "tool_use" -> {
+                                currentBlockId = block.id
+                                currentBlockName = block.name
+                                currentBlockArgs = StringBuilder()
+                            }
+                            "thinking" -> block.signature?.let {
+                                thinkingSignature = it
+                                emit(StreamEvent.ThinkingSignature(it))
+                            }
                         }
                     }
                     "content_block_delta" -> {
@@ -210,17 +227,18 @@ class AnthropicProvider : ChatProvider {
                     "error" -> ev.error?.message?.let { emit(StreamEvent.Error(it)) }
                 }
             }
-            emit(StreamEvent.Usage(inputTokens, outputTokens))
+            if (usageSeen) emit(StreamEvent.Usage(inputTokens, outputTokens))
             if (!callsEmitted) {
                 emit(StreamEvent.ToolCallsDone(toolCalls))
                 emit(StreamEvent.Done)
+            }
             }
         } finally {
             call.cancel()
         }
     }
 
-    private fun ChatMessage.toWire(): AnthropicMessage = when (role) {
+    private fun ChatMessage.toWire(reasoning: Boolean): AnthropicMessage = when (role) {
         ChatRole.USER -> {
             val blocks = mutableListOf<AnthropicBlock>()
             if (content.isNotBlank()) blocks.add(AnthropicBlock(type = "text", text = content))
@@ -245,6 +263,15 @@ class AnthropicProvider : ChatProvider {
         }
         ChatRole.ASSISTANT -> {
             val blocks = mutableListOf<AnthropicBlock>()
+            if (reasoning && !thinkingText.isNullOrBlank()) {
+                blocks.add(
+                    AnthropicBlock(
+                        type = "thinking",
+                        thinkingText = thinkingText,
+                        signature = thinkingSignature
+                    )
+                )
+            }
             if (content.isNotBlank()) blocks.add(AnthropicBlock(type = "text", text = content))
             toolCalls.forEach {
                 val input = runCatching { json.parseToJsonElement(it.arguments).jsonObject }

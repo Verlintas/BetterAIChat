@@ -25,7 +25,7 @@ class SetScreenTimeoutTool : DeviceTool {
         }
         val seconds = arguments["seconds"]?.jsonPrimitive?.content?.toLongOrNull()
             ?: return "seconds 参数无效"
-        if (seconds <= 0) return "seconds 必须大于 0"
+        if (seconds <= 0 || seconds > 86_400) return "seconds 需在 1-86400 之间"
         Settings.System.putInt(
             context.appContext.contentResolver,
             Settings.System.SCREEN_OFF_TIMEOUT,

@@ -57,11 +57,18 @@ class KeyStoreCrypto(context: Context) {
     }
 
     fun put(name: String, value: String) {
-        prefs.edit().putString(name, encrypt(value)).apply()
+        runCatching {
+            prefs.edit().putString(name, encrypt(value)).apply()
+        }
     }
 
     fun get(name: String): String {
         val v = prefs.getString(name, null) ?: return ""
-        return decrypt(v)
+        return try {
+            decrypt(v)
+        } catch (e: Exception) {
+            prefs.edit().remove(name).apply()
+            ""
+        }
     }
 }

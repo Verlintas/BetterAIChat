@@ -30,6 +30,9 @@ object AttachmentProcessor {
                 context.contentResolver.openInputStream(uri)?.use {
                     BitmapFactory.decodeStream(it, null, bounds)
                 }
+                if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+                    throw IllegalArgumentException("无法解码图片")
+                }
                 var sample = 1
                 var longEdge = maxOf(bounds.outWidth, bounds.outHeight)
                 while (longEdge / (sample * 2) >= MAX_IMAGE_EDGE) sample *= 2
@@ -37,31 +40,50 @@ object AttachmentProcessor {
                 val decoded = context.contentResolver.openInputStream(uri)?.use {
                     BitmapFactory.decodeStream(it, null, opts)
                 } ?: throw IllegalArgumentException("无法解码图片")
-                val bitmap = if (maxOf(decoded.width, decoded.height) > MAX_IMAGE_EDGE) {
-                    val scale = MAX_IMAGE_EDGE.toFloat() / maxOf(decoded.width, decoded.height)
+                val rotated = applyExifRotation(context, uri, decoded)
+                val source = rotated ?: decoded
+                val bitmap = if (maxOf(source.width, source.height) > MAX_IMAGE_EDGE) {
+                    val scale = MAX_IMAGE_EDGE.toFloat() / maxOf(source.width, source.height)
                     Bitmap.createScaledBitmap(
-                        decoded,
-                        (decoded.width * scale).toInt().coerceAtLeast(1),
-                        (decoded.height * scale).toInt().coerceAtLeast(1),
+                        source,
+                        (source.width * scale).toInt().coerceAtLeast(1),
+                        (source.height * scale).toInt().coerceAtLeast(1),
                         true
-                    ).also { if (it !== decoded) decoded.recycle() }
-                } else decoded
+                    ).also { if (it !== source) source.recycle() }
+                } else source
+                if (rotated != null && rotated !== bitmap) rotated.recycle()
+                if (decoded !== source && decoded !== bitmap) decoded.recycle()
                 val out = ByteArrayOutputStream()
                 bitmap.compress(Bitmap.CompressFormat.JPEG, 85, out)
                 bitmap.recycle()
-                val mime = if (out.size() > 1_500_000) {
-                    "image/jpeg"
-                } else {
-                    context.contentResolver.getType(uri)?.takeIf { it.startsWith("image/") } ?: "image/jpeg"
-                }
                 Attachment(
                     kind = "image",
                     name = name,
-                    mimeType = mime,
+                    mimeType = "image/jpeg",
                     dataBase64 = Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
                 )
             }
         }
+
+    private fun applyExifRotation(context: Context, uri: Uri, bitmap: Bitmap): Bitmap? {
+        return try {
+            val input = context.contentResolver.openInputStream(uri) ?: return null
+            val exif = input.use { androidx.exifinterface.media.ExifInterface(it) }
+            val rotation = when (exif.getAttributeInt(
+                androidx.exifinterface.media.ExifInterface.TAG_ORIENTATION,
+                androidx.exifinterface.media.ExifInterface.ORIENTATION_NORMAL
+            )) {
+                androidx.exifinterface.media.ExifInterface.ORIENTATION_ROTATE_90 -> 90f
+                androidx.exifinterface.media.ExifInterface.ORIENTATION_ROTATE_180 -> 180f
+                androidx.exifinterface.media.ExifInterface.ORIENTATION_ROTATE_270 -> 270f
+                else -> return null
+            }
+            val matrix = android.graphics.Matrix().apply { postRotate(rotation) }
+            Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+        } catch (e: Exception) {
+            null
+        }
+    }
 
     suspend fun docFromUri(context: Context, uri: Uri, name: String): Result<Attachment> {
         val ext = name.substringAfterLast('.', "").lowercase()
@@ -103,9 +125,13 @@ object AttachmentProcessor {
                         "文件过大（${size / 1024}KB），仅支持 1MB 以内的文本文件"
                     )
                 }
-                val text = context.contentResolver.openInputStream(uri)?.use {
-                    it.readBytes().toString(Charsets.UTF_8)
+                val bytes = context.contentResolver.openInputStream(uri)?.use {
+                    it.readBytes().takeIf { b -> b.size <= MAX_TEXT_BYTES }
                 } ?: throw IllegalArgumentException("无法读取文件")
+                if (bytes == null) {
+                    throw IllegalArgumentException("文件过大（超过 1MB），仅支持 1MB 以内的文本文件")
+                }
+                val text = String(bytes, Charsets.UTF_8)
                 if (text.isBlank()) throw IllegalArgumentException("文件内容为空")
                 val excerpt = if (text.length > MAX_TEXT_OUTPUT_CHARS) {
                     text.take(MAX_TEXT_OUTPUT_CHARS) + "\n…（内容过长，已截断，共 ${text.length} 字符）"

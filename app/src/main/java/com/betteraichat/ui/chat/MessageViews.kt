@@ -52,6 +52,7 @@ import java.util.Locale
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun MessageItem(msg: UiMessage) {
+    if (msg.role == ChatRole.TOOL) return
     val clipboard = LocalClipboardManager.current
     val copyAction = {
         if (msg.content.isNotBlank()) {

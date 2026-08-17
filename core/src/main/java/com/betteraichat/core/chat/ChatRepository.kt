@@ -74,7 +74,9 @@ class ChatRepository(private val db: AppDatabase) {
         mode = e.mode?.let { runCatching { AppMode.valueOf(it) }.getOrNull() },
         attachments = e.attachmentsJson?.let {
             runCatching { json.decodeFromString<List<Attachment>>(it) }.getOrDefault(emptyList())
-        } ?: emptyList()
+        } ?: emptyList(),
+        thinkingText = e.thinkingText,
+        thinkingSignature = e.thinkingSignature
     )
 
     fun domainToMessage(m: ChatMessage, conversationId: Long, status: String = "done"): MessageEntity = MessageEntity(
@@ -92,6 +94,8 @@ class ChatRepository(private val db: AppDatabase) {
         usageOutput = 0,
         attachmentsJson = m.attachments.takeIf { it.isNotEmpty() }
             ?.let { json.encodeToString(ListSerializer(Attachment.serializer()), it) },
+        thinkingText = m.thinkingText,
+        thinkingSignature = m.thinkingSignature,
         createdAt = System.currentTimeMillis()
     )
 }

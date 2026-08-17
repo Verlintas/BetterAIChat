@@ -11,10 +11,13 @@ import com.betteraichat.core.model.ToolCallStatus
 import com.betteraichat.core.model.ToolSpec
 import com.betteraichat.core.provider.ChatProvider
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.withTimeout
+import java.util.concurrent.ConcurrentHashMap
 
 interface ToolCatalog {
     fun specsFor(mode: AppMode): List<ToolSpec>
@@ -30,7 +33,7 @@ sealed interface EngineEvent {
     data class ThinkingDelta(val text: String) : EngineEvent
     data class ToolCallStarted(val call: ToolCall) : EngineEvent
     data class ToolCallFinished(val call: ToolCall) : EngineEvent
-    data class AssistantFinished(val content: String, val toolCalls: List<ToolCall>) : EngineEvent
+    data class AssistantFinished(val message: ChatMessage) : EngineEvent
     data class Usage(val promptTokens: Long, val completionTokens: Long) : EngineEvent
     data class ConfirmRequested(val call: ToolCall) : EngineEvent
     data object Completed : EngineEvent
@@ -43,9 +46,11 @@ class ChatEngine(
     private val toolRunner: ToolRunner
 ) {
 
-    private val pendingConfirms = mutableMapOf<String, CompletableDeferred<Boolean>>()
+    private val pendingConfirms = ConcurrentHashMap<String, CompletableDeferred<Boolean>>()
     private val confirmRequestsFlow = MutableSharedFlow<ToolCall>(extraBufferCapacity = 8)
     val confirmRequests: SharedFlow<ToolCall> = confirmRequestsFlow
+
+    private val confirmTimeoutMs = 300_000L
 
     fun respond(callId: String, allow: Boolean) {
         pendingConfirms.remove(callId)?.complete(allow)
@@ -59,12 +64,18 @@ class ChatEngine(
         val provider = providerFactory(config.provider)
         val effectiveConfig = config.copy(reasoning = config.reasoning && mode == AppMode.MAX)
         var history = messages
-        var rounds = 0
+        var toolRounds = 0
         val maxRounds = 8
         while (true) {
+            if (toolRounds >= maxRounds) {
+                emit(EngineEvent.Failed("工具调用轮次超过 $maxRounds 次，已停止"))
+                return@flow
+            }
             val tools = toolCatalog.specsFor(mode)
             val sys = ChatMessage(role = ChatRole.SYSTEM, content = systemPromptFor(mode))
             var text = StringBuilder()
+            var thinking = StringBuilder()
+            var thinkingSignature: String? = null
             var toolCalls = emptyList<ToolCall>()
             try {
                 provider.chatStream(listOf(sys) + history, effectiveConfig, tools).collect { ev ->
@@ -73,26 +84,38 @@ class ChatEngine(
                             text.append(ev.text)
                             emit(EngineEvent.Delta(ev.text))
                         }
-                        is StreamEvent.ThinkingDelta -> emit(EngineEvent.ThinkingDelta(ev.text))
+                        is StreamEvent.ThinkingDelta -> {
+                            thinking.append(ev.text)
+                            emit(EngineEvent.ThinkingDelta(ev.text))
+                        }
                         is StreamEvent.ToolCallsDone -> toolCalls = ev.calls
+                        is StreamEvent.ThinkingSignature -> thinkingSignature = ev.signature
                         is StreamEvent.Usage -> emit(EngineEvent.Usage(ev.promptTokens, ev.completionTokens))
                         is StreamEvent.Error -> throw IllegalStateException(ev.message)
                         StreamEvent.Done -> Unit
                     }
                 }
             } catch (e: Exception) {
-                if (e is kotlinx.coroutines.CancellationException) throw e
+                if (e is CancellationException) throw e
                 emit(EngineEvent.Failed(e.message ?: e.javaClass.simpleName))
                 return@flow
             }
-            emit(EngineEvent.AssistantFinished(text.toString(), toolCalls))
+            val assistantMsg = ChatMessage(
+                role = ChatRole.ASSISTANT,
+                content = text.toString(),
+                toolCalls = toolCalls,
+                model = config.model,
+                mode = mode,
+                thinkingText = thinking.toString().ifBlank { null },
+                thinkingSignature = thinkingSignature
+            )
+            emit(EngineEvent.AssistantFinished(assistantMsg))
             if (toolCalls.isEmpty()) break
-            rounds++
-            if (rounds >= maxRounds) {
-                emit(EngineEvent.Failed("工具调用轮次超过 $maxRounds 次，已停止"))
-                return@flow
-            }
+            toolRounds++
             val finishedCalls = mutableListOf<ToolCall>()
+            history = history + assistantMsg.copy(
+                toolCalls = toolCalls.map { it.copy(status = ToolCallStatus.PENDING) }
+            )
             for (call in toolCalls) {
                 val spec = toolCatalog.find(call.name)
                 val decision = gate(mode, spec, call)
@@ -104,10 +127,18 @@ class ChatEngine(
                         resultText = "工具被拒绝执行：${decision.reason}"
                     }
                     is GateResult.NeedsConfirm -> {
-                        pendingConfirms[call.id] = CompletableDeferred()
+                        val deferred = CompletableDeferred<Boolean>()
+                        pendingConfirms[call.id] = deferred
                         confirmRequestsFlow.tryEmit(call)
-                        val allow = pendingConfirms[call.id]?.await() ?: false
-                        pendingConfirms.remove(call.id)
+                        val allow = try {
+                            withTimeout(confirmTimeoutMs) { deferred.await() }
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            false
+                        } finally {
+                            pendingConfirms.remove(call.id)
+                        }
                         if (!allow) {
                             status = ToolCallStatus.REJECTED
                             resultText = "用户拒绝了该工具调用"
@@ -133,13 +164,6 @@ class ChatEngine(
                     toolName = call.name
                 )
             }
-            history = history + ChatMessage(
-                role = ChatRole.ASSISTANT,
-                content = text.toString(),
-                toolCalls = finishedCalls,
-                model = config.model,
-                mode = mode
-            )
         }
         emit(EngineEvent.Completed)
     }
@@ -153,6 +177,8 @@ class ChatEngine(
         return try {
             val result = toolRunner.run(call.name, call.arguments)
             ToolCallStatus.DONE to result
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             ToolCallStatus.FAILED to (e.message ?: "工具执行失败")
         }

@@ -73,40 +73,51 @@ fun SettingsScreen(onBack: () -> Unit) {
     var baseUrl by remember { mutableStateOf("") }
     var model by remember { mutableStateOf("") }
     var temperature by remember { mutableStateOf(0.7) }
-    var maxTokens by remember { mutableStateOf(4096) }
+    var maxTokens by remember { mutableStateOf("4096") }
     var reasoning by remember { mutableStateOf(true) }
     var defaultMode by remember { mutableStateOf(settings.getDefaultMode()) }
     var saved by remember { mutableStateOf(false) }
     var showKey by remember { mutableStateOf(false) }
+    var configLoaded by remember { mutableStateOf(false) }
+
+    var notificationEnabled by remember { mutableStateOf(
+        NotificationManagerCompat.from(context).areNotificationsEnabled()
+    ) }
+    var canWriteSettings by remember { mutableStateOf(Settings.System.canWrite(context)) }
+    var hasScreenshot by remember { mutableStateOf(container.screenshotManagerRef.hasProjection()) }
 
     LaunchedEffect(selectedProvider) {
+        configLoaded = false
         apiKey = settings.getApiKey(selectedProvider)
         baseUrl = settings.getBaseUrl(selectedProvider)
         model = settings.getModel(selectedProvider)
         temperature = settings.getTemperature(selectedProvider)
-        maxTokens = settings.getMaxTokens(selectedProvider)
+        maxTokens = settings.getMaxTokens(selectedProvider).toString()
         reasoning = settings.getReasoning(selectedProvider)
         saved = false
+        configLoaded = true
+    }
+
+    fun refreshPermissionStates() {
+        notificationEnabled = NotificationManagerCompat.from(context).areNotificationsEnabled()
+        canWriteSettings = Settings.System.canWrite(context)
+        hasScreenshot = container.screenshotManagerRef.hasProjection()
     }
 
     val notifPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { }
+    ) { refreshPermissionStates() }
     val writeSettingsLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
-    ) { }
+    ) { refreshPermissionStates() }
     val screenshotLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == android.app.Activity.RESULT_OK && result.data != null) {
             container.screenshotManagerRef.setProjectionResult(result.resultCode, result.data!!)
         }
+        refreshPermissionStates()
     }
-
-    val notificationEnabled = remember(context) {
-        NotificationManagerCompat.from(context).areNotificationsEnabled()
-    }
-    val canWriteSettings = Settings.System.canWrite(context)
 
     Scaffold(
         topBar = {
@@ -193,8 +204,8 @@ fun SettingsScreen(onBack: () -> Unit) {
             )
 
             OutlinedTextField(
-                value = maxTokens.toString(),
-                onValueChange = { v -> v.toIntOrNull()?.let { maxTokens = it } },
+                value = maxTokens,
+                onValueChange = { maxTokens = it.filter { c -> c.isDigit() } },
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text("Max Tokens") },
                 singleLine = true,
@@ -393,13 +404,14 @@ fun SettingsScreen(onBack: () -> Unit) {
             )
 
             Button(
+                enabled = configLoaded,
                 onClick = {
                     settings.setDefaultProvider(selectedProvider)
                     settings.setApiKey(selectedProvider, apiKey)
                     settings.setBaseUrl(selectedProvider, baseUrl)
                     settings.setModel(selectedProvider, model)
                     settings.setTemperature(selectedProvider, temperature)
-                    settings.setMaxTokens(selectedProvider, maxTokens)
+                    settings.setMaxTokens(selectedProvider, maxTokens.toIntOrNull() ?: 4096)
                     settings.setReasoning(selectedProvider, reasoning)
                     settings.setDefaultMode(defaultMode)
                     saved = true

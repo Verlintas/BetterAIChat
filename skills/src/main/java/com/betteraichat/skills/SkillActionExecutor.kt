@@ -47,10 +47,10 @@ class SkillActionExecutor(private val context: Context) {
         )
     }
 
-    private fun notify(title: String, content: String, id: Int = (System.currentTimeMillis() % Int.MAX_VALUE).toInt()) {
+    private fun notify(title: String, content: String, id: Int = (System.currentTimeMillis() % Int.MAX_VALUE).toInt()): Boolean {
         ensureChannel()
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        if (!nm.areNotificationsEnabled()) return
+        if (!nm.areNotificationsEnabled()) return false
         val notification = NotificationCompat.Builder(context, "betteraichat_ai")
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentTitle(title)
@@ -58,13 +58,18 @@ class SkillActionExecutor(private val context: Context) {
             .setAutoCancel(true)
             .build()
         nm.notify(id, notification)
+        return true
     }
 
     private fun doNotification(def: SkillToolDef, args: JsonObject): String {
         val title = render(def.config["title"] ?: "AI 通知", args)
         val content = render(def.config["content"] ?: def.description, args)
-        notify(title, content)
-        return "通知已发送（$title：$content）"
+        val sent = notify(title, content)
+        return if (sent) {
+            "通知已发送（$title：$content）"
+        } else {
+            "通知权限未开启，无法发送通知。请到应用设置页打开通知权限后重试。"
+        }
     }
 
     private fun doClipboard(def: SkillToolDef, args: JsonObject): String {
@@ -157,6 +162,7 @@ class SkillActionExecutor(private val context: Context) {
             return "没有「修改系统设置」权限，请到设置页授权后重试"
         }
         val seconds = value.toLongOrNull() ?: return "超时秒数无效"
+        if (seconds <= 0 || seconds > 86_400) return "超时秒数需在 1-86400 之间"
         Settings.System.putInt(context.contentResolver, Settings.System.SCREEN_OFF_TIMEOUT, (seconds * 1000).toInt())
         return "屏幕超时已设置为 $seconds 秒"
     }
@@ -164,10 +170,9 @@ class SkillActionExecutor(private val context: Context) {
 
 class SkillDefinedTool(
     val def: SkillToolDef,
+    val skillName: String,
     private val executor: SkillActionExecutor
 ) : DeviceTool {
-
-    val skillName: String get() = def.name
 
     override val name = def.name
     override val description = def.description

@@ -16,7 +16,7 @@ class DeviceToolRunner(
         val tool = registry.findTool(name)
             ?: throw IllegalArgumentException("未知工具：$name")
         val args: JsonObject = runCatching { json.parseToJsonElement(arguments).jsonObject }
-            .getOrDefault(JsonObject(emptyMap()))
+            .getOrElse { return "工具参数解析失败：${it.message}" }
         return tool.execute(context, args)
     }
 }

@@ -46,7 +46,9 @@ data class ChatMessage(
     val toolName: String? = null,
     val model: String? = null,
     val mode: AppMode? = null,
-    val attachments: List<Attachment> = emptyList()
+    val attachments: List<Attachment> = emptyList(),
+    val thinkingText: String? = null,
+    val thinkingSignature: String? = null
 )
 
 data class ProviderConfig(
@@ -69,6 +71,7 @@ data class ToolSpec(
 sealed interface StreamEvent {
     data class Delta(val text: String) : StreamEvent
     data class ThinkingDelta(val text: String) : StreamEvent
+    data class ThinkingSignature(val signature: String) : StreamEvent
     data class ToolCallsDone(val calls: List<ToolCall>) : StreamEvent
     data class Usage(val promptTokens: Long, val completionTokens: Long) : StreamEvent
     data object Done : StreamEvent

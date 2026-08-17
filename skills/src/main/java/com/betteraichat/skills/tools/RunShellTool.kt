@@ -7,10 +7,12 @@ import com.betteraichat.skills.ToolContext
 import com.betteraichat.skills.intProp
 import com.betteraichat.skills.schemaOf
 import com.betteraichat.skills.stringProp
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import moe.shizuku.server.IShizukuService
@@ -42,38 +44,40 @@ class RunShellTool(private val isShizukuGranted: () -> Boolean) : DeviceTool {
                     ?: return@withContext "无法连接 Shizuku 服务，请重启 Shizuku 后重试"
                 val proc = service.newProcess(arrayOf("sh", "-c", command), null, null)
                     ?: return@withContext "无法创建 shell 进程"
-                val outFuture = kotlinx.coroutines.coroutineScope {
-                    async(Dispatchers.IO) {
+                val ioScope = kotlinx.coroutines.CoroutineScope(Dispatchers.IO)
+                try {
+                    val outFuture = ioScope.async {
                         android.os.ParcelFileDescriptor.AutoCloseInputStream(proc.inputStream)
                             .bufferedReader().readText()
                     }
-                }
-                val errFuture = kotlinx.coroutines.coroutineScope {
-                    async(Dispatchers.IO) {
+                    val errFuture = ioScope.async {
                         android.os.ParcelFileDescriptor.AutoCloseInputStream(proc.errorStream)
                             .bufferedReader().readText()
                     }
-                }
-                val exited = proc.waitForTimeout(timeout.toLong(), "SECONDS")
-                if (!exited) {
-                    proc.destroy()
-                    return@withContext "命令超时（${timeout}s），已终止：$command"
-                }
-                val code = proc.exitValue()
-                val stdout = outFuture.await()
-                val stderr = errFuture.await()
-                val out = (stdout + if (stderr.isNotBlank()) "\n[stderr]\n$stderr" else "").trim()
-                if (out.length > 8000) {
-                    return@withContext buildString {
-                        appendLine("退出码: $code")
-                        append(out.take(8000))
-                        append("\n…（输出已截断，共 ${out.length} 字符）")
+                    val exited = proc.waitForTimeout(timeout.toLong(), "SECONDS")
+                    if (!exited) {
+                        proc.destroy()
+                        return@withContext "命令超时（${timeout}s），已终止：$command"
                     }
-                }
-                if (out.isBlank()) {
-                    "执行完成（退出码 $code）：$command"
-                } else {
-                    "退出码: $code\n$out"
+                    val stdout = withTimeoutOrNull(3_000) { outFuture.await() } ?: ""
+                    val stderr = withTimeoutOrNull(3_000) { errFuture.await() } ?: ""
+                    val code = proc.exitValue()
+                    val out = (stdout + if (stderr.isNotBlank()) "\n[stderr]\n$stderr" else "").trim()
+                    if (out.length > 8000) {
+                        return@withContext buildString {
+                            appendLine("退出码: $code")
+                            append(out.take(8000))
+                            append("\n…（输出已截断，共 ${out.length} 字符）")
+                        }
+                    }
+                    if (out.isBlank()) {
+                        "执行完成（退出码 $code）：$command"
+                    } else {
+                        "退出码: $code\n$out"
+                    }
+                } finally {
+                    ioScope.cancel()
+                    proc.destroy()
                 }
             } catch (e: SecurityException) {
                 "Shizuku 权限被拒绝，请到设置页重新授权"

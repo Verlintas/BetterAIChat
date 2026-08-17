@@ -76,12 +76,12 @@ class SkillRepository(private val context: Context) {
     }
 
     private fun parse(fileName: String, content: String): Skill? {
-        val trimmed = content.trim()
-        if (!trimmed.startsWith("---")) return null
-        val end = trimmed.indexOf("\n---", 3)
-        if (end < 0) return null
-        val frontmatter = trimmed.substring(3, end)
-        val body = trimmed.substring(end + 4).trim()
+        val lines = content.trim().lines()
+        if (lines.firstOrNull()?.trim() != "---") return null
+        val endIndex = lines.drop(1).indexOfFirst { it.trim() == "---" }
+        if (endIndex < 0) return null
+        val frontmatter = lines.drop(1).take(endIndex).joinToString("\n")
+        val body = lines.drop(endIndex + 2).joinToString("\n").trim()
 
         val map = runCatching {
             yaml.load<Any?>(frontmatter) as? Map<*, *>
@@ -141,7 +141,7 @@ class SkillRepository(private val context: Context) {
             "open_app", "send_notification", "set_brightness", "set_volume",
             "device_info", "take_screenshot", "web_search", "web_read", "load_skill",
             "set_clipboard", "get_clipboard", "set_alarm", "set_flashlight",
-            "open_settings", "set_screen_timeout"
+            "open_settings", "set_screen_timeout", "run_shell", "speak_text"
         )
     }
 }

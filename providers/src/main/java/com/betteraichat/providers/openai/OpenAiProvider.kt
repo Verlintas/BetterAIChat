@@ -19,6 +19,9 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -51,7 +54,7 @@ data class OpenAiChoice(
 
 @Serializable
 data class OpenAiDelta(
-    val content: String? = null,
+    val content: JsonElement? = null,
     val reasoning: String? = null,
     @SerialName("reasoning_content") val reasoningContent: String? = null,
     @SerialName("tool_calls") val toolCalls: List<OpenAiToolCallDelta>? = null
@@ -160,50 +163,61 @@ class OpenAiProvider : ChatProvider {
                 emit(StreamEvent.Error("空响应"))
                 return@flow
             }
-            val toolAcc = mutableMapOf<Int, ToolAcc>()
-            var callsEmitted = false
-            SseParser.parse(respBody) { _, data ->
-                if (data == "[DONE]") {
-                    if (!callsEmitted) {
+            respBody.use { body ->
+                val toolAcc = mutableMapOf<Int, ToolAcc>()
+                var callsEmitted = false
+                SseParser.parse(body) { _, data ->
+                    if (data == "[DONE]") {
+                        if (!callsEmitted) {
+                            callsEmitted = true
+                            emit(StreamEvent.ToolCallsDone(toolAcc.toToolCalls()))
+                        }
+                        emit(StreamEvent.Done)
+                        return@parse
+                    }
+                    val chunk = runCatching { json.decodeFromString(OpenAiChunk.serializer(), data) }
+                        .getOrNull() ?: return@parse
+                    chunk.usage?.let { usage ->
+                        if (usage.promptTokens > 0 || usage.completionTokens > 0) {
+                            emit(StreamEvent.Usage(usage.promptTokens, usage.completionTokens))
+                        }
+                    }
+                    val choice = chunk.choices.firstOrNull() ?: return@parse
+                    choice.delta?.content?.let { c ->
+                        when {
+                            c is JsonPrimitive -> c.content.takeIf { it.isNotBlank() }
+                                ?.let { emit(StreamEvent.Delta(it)) }
+                            c is JsonArray -> c.forEach { part ->
+                                val text = (part as? JsonObject)?.get("text")?.jsonPrimitive?.contentOrNull
+                                if (!text.isNullOrBlank()) emit(StreamEvent.Delta(text))
+                            }
+                        }
+                    }
+                    choice.delta?.reasoning?.let { if (it.isNotBlank()) emit(StreamEvent.ThinkingDelta(it)) }
+                    choice.delta?.reasoningContent?.let { if (it.isNotBlank()) emit(StreamEvent.ThinkingDelta(it)) }
+                    choice.delta?.toolCalls?.forEach { tc ->
+                        val idx = tc.index ?: 0
+                        val acc = toolAcc.getOrPut(idx) { ToolAcc() }
+                        tc.id?.let { acc.id = it }
+                        tc.function?.name?.let { acc.name = it }
+                        tc.function?.arguments?.let { arg ->
+                            when {
+                                arg == acc.args -> Unit
+                                arg.length > acc.args.length && arg.startsWith(acc.args) -> acc.args = arg
+                                acc.args.length > arg.length && acc.args.startsWith(arg) -> Unit
+                                else -> acc.args += arg
+                            }
+                        }
+                    }
+                    if (choice.finishReason == "tool_calls" && !callsEmitted) {
                         callsEmitted = true
                         emit(StreamEvent.ToolCallsDone(toolAcc.toToolCalls()))
                     }
-                    emit(StreamEvent.Done)
-                    return@parse
                 }
-                val chunk = runCatching { json.decodeFromString(OpenAiChunk.serializer(), data) }
-                    .getOrNull() ?: return@parse
-                chunk.usage?.let { usage ->
-                    if (usage.promptTokens > 0 || usage.completionTokens > 0) {
-                        emit(StreamEvent.Usage(usage.promptTokens, usage.completionTokens))
-                    }
-                }
-                val choice = chunk.choices.firstOrNull() ?: return@parse
-                choice.delta?.content?.let { emit(StreamEvent.Delta(it)) }
-                choice.delta?.reasoning?.let { if (it.isNotBlank()) emit(StreamEvent.ThinkingDelta(it)) }
-                choice.delta?.reasoningContent?.let { if (it.isNotBlank()) emit(StreamEvent.ThinkingDelta(it)) }
-                choice.delta?.toolCalls?.forEach { tc ->
-                    val idx = tc.index ?: 0
-                    val acc = toolAcc.getOrPut(idx) { ToolAcc() }
-                    tc.id?.let { acc.id = it }
-                    tc.function?.name?.let { acc.name = it }
-                    tc.function?.arguments?.let { arg ->
-                        when {
-                            arg == acc.args -> Unit
-                            arg.length > acc.args.length && arg.startsWith(acc.args) -> acc.args = arg
-                            acc.args.length > arg.length && acc.args.startsWith(arg) -> Unit
-                            else -> acc.args += arg
-                        }
-                    }
-                }
-                if (choice.finishReason == "tool_calls" && !callsEmitted) {
-                    callsEmitted = true
+                if (!callsEmitted) {
                     emit(StreamEvent.ToolCallsDone(toolAcc.toToolCalls()))
+                    emit(StreamEvent.Done)
                 }
-            }
-            if (!callsEmitted) {
-                emit(StreamEvent.ToolCallsDone(toolAcc.toToolCalls()))
-                emit(StreamEvent.Done)
             }
         } finally {
             call.cancel()
@@ -244,8 +258,7 @@ class OpenAiProvider : ChatProvider {
         ChatRole.TOOL -> OpenAiMessage(
             role = "tool",
             content = JsonPrimitive(content),
-            toolCallId = toolCallId,
-            name = toolName
+            toolCallId = toolCallId
         )
     }
 
