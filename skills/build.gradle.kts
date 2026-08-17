@@ -25,4 +25,5 @@ dependencies {
     api(project(":core"))
     api(libs.kotlinx.coroutines.android)
     api(libs.jsoup)
+    api(libs.shizuku)
 }

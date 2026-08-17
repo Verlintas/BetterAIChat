@@ -81,6 +81,9 @@ interface MessageDao {
 
     @Query("UPDATE messages SET content = :content WHERE id = :id")
     suspend fun updateContent(id: Long, content: String)
+
+    @Query("DELETE FROM messages WHERE conversationId = :conversationId")
+    suspend fun deleteAllForConversation(conversationId: Long)
 }
 
 @Database(entities = [ConversationEntity::class, MessageEntity::class], version = 3, exportSchema = false)

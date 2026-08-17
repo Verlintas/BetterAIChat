@@ -42,6 +42,7 @@ data class UiMessage(
     val usageInput: Long = 0,
     val usageOutput: Long = 0,
     val attachments: List<com.betteraichat.core.model.Attachment> = emptyList(),
+    val thinking: String = "",
     val createdAt: Long = 0
 )
 
@@ -251,6 +252,10 @@ class ChatViewModel(
                             streaming = streaming?.copy(content = (streaming?.content ?: "") + ev.text)
                             refresh()
                         }
+                        is EngineEvent.ThinkingDelta -> {
+                            streaming = streaming?.copy(thinking = (streaming?.thinking ?: "") + ev.text)
+                            refresh()
+                        }
                         is EngineEvent.ToolCallStarted -> {
                             streaming = streaming?.copy(
                                 toolCalls = upsertCall(
@@ -353,6 +358,19 @@ class ChatViewModel(
             }
             streaming = null
             _state.update { it.copy(isRunning = false) }
+            refresh()
+        }
+    }
+
+    fun clearContext() {
+        if (currentConversationId <= 0) return
+        viewModelScope.launch {
+            runJob?.cancel()
+            runJob = null
+            streaming = null
+            pendingAssistantEntity = null
+            repository.clearMessages(currentConversationId)
+            _state.update { it.copy(isRunning = false, error = null) }
             refresh()
         }
     }

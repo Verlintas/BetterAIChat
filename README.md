@@ -6,6 +6,7 @@ An Android app that lets you chat with leading LLMs using your **own API keys**,
 
 - **Multiple providers**: OpenAI-compatible (OpenAI / DeepSeek / Moonshot / Qwen / Ollama, etc.), Anthropic Claude, Google Gemini
 - **Streaming chat**: SSE streaming output, Markdown rendering, stop-generation control
+- **Reasoning visibility**: thinking process streamed and shown in a collapsible card (OpenAI reasoning / Anthropic thinking / Gemini thought)
 - **Image & file understanding**: attach photos (up to 4, auto-compressed) for vision models to analyze, or attach text files (up to 200KB) whose contents are read into the conversation
 - **Model selection**: built-in model catalog + custom model ID input + per-conversation model switching
 - **Context usage tracking**: live token usage shown as `117.3K (12%)` in the conversation header, like opencode
@@ -14,7 +15,8 @@ An Android app that lets you chat with leading LLMs using your **own API keys**,
   - `Plan` — read-only analysis, write tools forbidden
   - `Build` — default mode, every tool execution requires user confirmation
   - `Max` — autonomous multi-step tool calls + deep reasoning (`reasoning_effort` / `thinking` injected per model capability)
-- **Device tools**: open apps, send notifications, adjust brightness/volume, take screenshots (MediaProjection), query device info, clipboard read/write, scheduled reminders, flashlight, screen timeout, open system settings pages
+- **Device tools**: open apps, send notifications, adjust brightness/volume, take screenshots (MediaProjection), query device info, clipboard read/write, scheduled reminders, flashlight, screen timeout, open system settings pages, TTS speech
+- **Shell execution (Shizuku)**: with Shizuku granted, the AI can run arbitrary shell commands (`pm`/`am`/`dumpsys`/files, etc.) — root-level power, no root required
 - **Web search**: real-time web search (Bing with DuckDuckGo fallback) + web page content extraction — no API key required
 - **Custom Skills**: import opencode-style `SKILL.md` files; skills can define their own tools (alarm / notification / clipboard / intent / settings actions) that the AI registers and calls on demand
 - **Local-first security**: API keys encrypted with Android Keystore (AES-GCM); conversations stored in Room. No cloud sync, ever
@@ -103,6 +105,7 @@ Works in Plan/Build/Max modes (read-only tools).
 | Modify system settings | AI adjusts brightness / screen timeout |
 | Screen capture (MediaProjection) | AI takes screenshots |
 | Foreground service | Screenshot capture |
+| Shizuku (optional) | Root-level shell execution via `run_shell` — install the Shizuku app, start it, then grant in Settings |
 
 All permissions are granted manually in Settings; tools simply return an error when unauthorized.
 

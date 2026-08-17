@@ -40,6 +40,7 @@ data class GeminiContent(val role: String, val parts: List<GeminiPart>)
 @Serializable
 data class GeminiPart(
     val text: String? = null,
+    val thought: Boolean = false,
     @SerialName("inlineData") val inlineData: GeminiInlineData? = null,
     @SerialName("functionCall") val functionCall: GeminiFunctionCall? = null,
     @SerialName("functionResponse") val functionResponse: GeminiFunctionResponse? = null
@@ -165,6 +166,10 @@ class GeminiProvider : ChatProvider {
                 resp.usageMetadata?.let { lastUsage = it }
                 val parts = resp.candidates.firstOrNull()?.content?.parts ?: return@parse
                 for (part in parts) {
+                    if (part.thought && !part.text.isNullOrBlank()) {
+                        emit(StreamEvent.ThinkingDelta(part.text))
+                        continue
+                    }
                     part.text?.let { emit(StreamEvent.Delta(it)) }
                     part.functionCall?.let { fc ->
                         val name = fc.name

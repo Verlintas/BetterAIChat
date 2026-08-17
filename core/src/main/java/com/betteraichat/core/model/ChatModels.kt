@@ -68,6 +68,7 @@ data class ToolSpec(
 
 sealed interface StreamEvent {
     data class Delta(val text: String) : StreamEvent
+    data class ThinkingDelta(val text: String) : StreamEvent
     data class ToolCallsDone(val calls: List<ToolCall>) : StreamEvent
     data class Usage(val promptTokens: Long, val completionTokens: Long) : StreamEvent
     data object Done : StreamEvent

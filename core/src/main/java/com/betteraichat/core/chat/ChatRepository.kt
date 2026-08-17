@@ -60,6 +60,8 @@ class ChatRepository(private val db: AppDatabase) {
 
     suspend fun getHistory(conversationId: Long): List<MessageEntity> = db.messageDao().getForConversation(conversationId)
 
+    suspend fun clearMessages(conversationId: Long) = db.messageDao().deleteAllForConversation(conversationId)
+
     fun messageToDomain(e: MessageEntity): ChatMessage = ChatMessage(
         role = runCatching { ChatRole.valueOf(e.role) }.getOrDefault(ChatRole.USER),
         content = e.content,

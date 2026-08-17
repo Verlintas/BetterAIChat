@@ -179,8 +179,8 @@ class AnthropicProvider : ChatProvider {
                         val delta = ev.delta ?: return@parse
                         when (delta.type) {
                             "text_delta" -> delta.text?.let { emit(StreamEvent.Delta(it)) }
+                            "thinking_delta" -> delta.text?.let { emit(StreamEvent.ThinkingDelta(it)) }
                             "input_json_delta" -> delta.partialJson?.let { currentBlockArgs.append(it) }
-                            "thinking_delta" -> Unit
                         }
                     }
                     "content_block_stop" -> {

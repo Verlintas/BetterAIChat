@@ -52,6 +52,8 @@ data class OpenAiChoice(
 @Serializable
 data class OpenAiDelta(
     val content: String? = null,
+    val reasoning: String? = null,
+    @SerialName("reasoning_content") val reasoningContent: String? = null,
     @SerialName("tool_calls") val toolCalls: List<OpenAiToolCallDelta>? = null
 )
 
@@ -178,6 +180,8 @@ class OpenAiProvider : ChatProvider {
                 }
                 val choice = chunk.choices.firstOrNull() ?: return@parse
                 choice.delta?.content?.let { emit(StreamEvent.Delta(it)) }
+                choice.delta?.reasoning?.let { if (it.isNotBlank()) emit(StreamEvent.ThinkingDelta(it)) }
+                choice.delta?.reasoningContent?.let { if (it.isNotBlank()) emit(StreamEvent.ThinkingDelta(it)) }
                 choice.delta?.toolCalls?.forEach { tc ->
                     val idx = tc.index ?: 0
                     val acc = toolAcc.getOrPut(idx) { ToolAcc() }

@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
@@ -79,6 +80,7 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
     val listState = rememberLazyListState()
     val last = state.messages.lastOrNull()
     var showMaxConfirm by remember { mutableStateOf(false) }
+    var showClearContext by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
     val imagePicker = androidx.activity.compose.rememberLauncherForActivityResult(
@@ -145,6 +147,21 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                         }
                     )
                     ModelSelector(state.provider, state.model, vm::updateModel)
+                    Box {
+                        var menuOpen by remember { mutableStateOf(false) }
+                        IconButton(onClick = { menuOpen = true }) {
+                            Icon(Icons.Filled.MoreVert, contentDescription = "更多")
+                        }
+                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            DropdownMenuItem(
+                                text = { Text("清除上下文") },
+                                onClick = {
+                                    menuOpen = false
+                                    showClearContext = true
+                                }
+                            )
+                        }
+                    }
                 }
             )
         },
@@ -203,6 +220,28 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                 }
             }
         }
+    }
+
+    if (showClearContext) {
+        AlertDialog(
+            onDismissRequest = { showClearContext = false },
+            title = { Text("清除上下文？") },
+            text = {
+                Text(
+                    "将删除本会话全部消息，AI 将不再记得之前的对话内容（会话本身会保留）。",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    vm.clearContext()
+                    showClearContext = false
+                }) { Text("清除") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearContext = false }) { Text("取消") }
+            }
+        )
     }
 
     if (showMaxConfirm) {

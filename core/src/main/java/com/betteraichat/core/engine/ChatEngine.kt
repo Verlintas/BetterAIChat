@@ -27,6 +27,7 @@ interface ToolRunner {
 
 sealed interface EngineEvent {
     data class Delta(val text: String) : EngineEvent
+    data class ThinkingDelta(val text: String) : EngineEvent
     data class ToolCallStarted(val call: ToolCall) : EngineEvent
     data class ToolCallFinished(val call: ToolCall) : EngineEvent
     data class AssistantFinished(val content: String, val toolCalls: List<ToolCall>) : EngineEvent
@@ -72,6 +73,7 @@ class ChatEngine(
                             text.append(ev.text)
                             emit(EngineEvent.Delta(ev.text))
                         }
+                        is StreamEvent.ThinkingDelta -> emit(EngineEvent.ThinkingDelta(ev.text))
                         is StreamEvent.ToolCallsDone -> toolCalls = ev.calls
                         is StreamEvent.Usage -> emit(EngineEvent.Usage(ev.promptTokens, ev.completionTokens))
                         is StreamEvent.Error -> throw IllegalStateException(ev.message)

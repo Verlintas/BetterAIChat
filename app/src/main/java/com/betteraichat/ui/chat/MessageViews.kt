@@ -27,6 +27,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -118,6 +121,49 @@ fun MessageItem(msg: UiMessage) {
             msg.toolCalls.forEach { call ->
                 Spacer(Modifier.size(6.dp))
                 ToolCallCard(call)
+            }
+            if (msg.thinking.isNotBlank()) {
+                Spacer(Modifier.size(6.dp))
+                ThinkingCard(msg.thinking)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ThinkingCard(thinking: String) {
+    var expanded by remember { mutableStateOf(false) }
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(onClick = { expanded = !expanded }, onLongClick = { })
+    ) {
+        Column(modifier = Modifier.padding(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "思考过程",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.weight(1f))
+                Text(
+                    if (expanded) "收起" else "展开",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+            if (expanded) {
+                Spacer(Modifier.size(6.dp))
+                Text(
+                    thinking,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontFamily = FontFamily.Default,
+                    maxLines = 200
+                )
             }
         }
     }

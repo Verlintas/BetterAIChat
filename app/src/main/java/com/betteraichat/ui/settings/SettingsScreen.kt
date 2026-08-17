@@ -54,6 +54,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.core.app.NotificationManagerCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.betteraichat.core.catalog.ModelCatalog
 import com.betteraichat.core.mode.AppMode
 import com.betteraichat.core.model.ProviderId
@@ -306,6 +307,42 @@ fun SettingsScreen(onBack: () -> Unit) {
                     color = if (it.startsWith("导入失败")) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
                 )
             }
+
+            HorizontalDivider()
+
+            SectionTitle("Shizuku（高级权限）")
+            Text(
+                "授权后 AI 可通过 run_shell 工具执行任意 shell 命令（pm/am/dumpsys 等），达到 root 级操作能力。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            val shizukuGranted by container.shizukuManager.granted.collectAsStateWithLifecycle()
+            val shizukuInstalled = com.betteraichat.skills.tools.ShizukuSupport.isShizukuInstalled(context)
+            val shizukuBinder = com.betteraichat.skills.tools.ShizukuSupport.isBinderAlive()
+            LaunchedEffect(Unit) { container.shizukuManager.refresh() }
+            PermissionRow(
+                title = "Shizuku",
+                status = when {
+                    !shizukuInstalled -> "未安装 Shizuku 应用"
+                    !shizukuBinder -> "Shizuku 未启动"
+                    !shizukuGranted -> "未授权"
+                    else -> "已授权，可执行 shell 命令"
+                },
+                buttonText = when {
+                    !shizukuInstalled -> "下载"
+                    !shizukuBinder -> "打开"
+                    !shizukuGranted -> "授权"
+                    else -> "已授权"
+                },
+                onAction = {
+                    when {
+                        !shizukuInstalled -> com.betteraichat.skills.tools.ShizukuSupport.openShizukuDownload(context)
+                        !shizukuBinder -> com.betteraichat.skills.tools.ShizukuSupport.openShizukuApp(context)
+                        !shizukuGranted -> container.shizukuManager.requestPermission()
+                        else -> Unit
+                    }
+                }
+            )
 
             HorizontalDivider()
 
