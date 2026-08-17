@@ -172,6 +172,7 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                 mode = state.mode,
                 pendingAttachments = state.pendingAttachments,
                 attachmentError = state.attachmentError,
+                processing = state.processing,
                 onInputChange = vm::onInputChange,
                 onPickImages = {
                     imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
@@ -403,6 +404,7 @@ private fun InputBar(
     mode: AppMode,
     pendingAttachments: List<PendingAttachment>,
     attachmentError: String?,
+    processing: Boolean,
     onInputChange: (String) -> Unit,
     onPickImages: () -> Unit,
     onPickFile: () -> Unit,
@@ -440,6 +442,20 @@ private fun InputBar(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error
             )
+        }
+        if (processing) {
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    "正在解析文档…",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
         Row(
             modifier = Modifier
@@ -495,7 +511,7 @@ private fun InputBar(
             Spacer(Modifier.width(8.dp))
             FilledIconButton(
                 onClick = { if (isRunning) onStop() else onSend() },
-                enabled = isRunning || input.isNotBlank() || pendingAttachments.isNotEmpty()
+                enabled = !processing && (isRunning || input.isNotBlank() || pendingAttachments.isNotEmpty())
             ) {
                 if (isRunning) {
                     CircularProgressIndicator(

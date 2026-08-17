@@ -14,7 +14,8 @@ import java.io.ByteArrayOutputStream
 object AttachmentProcessor {
 
     private const val MAX_IMAGE_EDGE = 2048
-    private const val MAX_TEXT_BYTES = 200 * 1024
+    private const val MAX_TEXT_BYTES = 1 * 1024 * 1024
+    private const val MAX_TEXT_OUTPUT_CHARS = 300_000
 
     fun queryNameFromResolver(resolver: android.content.ContentResolver, uri: Uri): String {
         return resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
@@ -62,6 +63,33 @@ object AttachmentProcessor {
             }
         }
 
+    suspend fun docFromUri(context: Context, uri: Uri, name: String): Result<Attachment> {
+        val ext = name.substringAfterLast('.', "").lowercase()
+        return when (ext) {
+            "pdf" -> DocParser.extractPdf(context, uri, name).map {
+                Attachment(kind = "text_file", name = name, mimeType = "application/pdf", textContent = it)
+            }
+            "docx" -> DocParser.extractDocx(context, uri, name).map {
+                Attachment(
+                    kind = "text_file", name = name,
+                    mimeType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    textContent = it
+                )
+            }
+            "xlsx" -> DocParser.extractXlsx(context, uri, name).map {
+                Attachment(
+                    kind = "text_file", name = name,
+                    mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    textContent = it
+                )
+            }
+            "doc", "xls", "ppt", "pptx" -> Result.failure(
+                IllegalArgumentException("旧版 Office 格式（$ext）暂不支持，请另存为 docx/xlsx/pdf 后重试")
+            )
+            else -> textFromUri(context, uri, name)
+        }
+    }
+
     suspend fun textFromUri(context: Context, uri: Uri, name: String): Result<Attachment> =
         withContext(Dispatchers.IO) {
             runCatching {
@@ -72,18 +100,21 @@ object AttachmentProcessor {
                 } ?: -1L
                 if (size > MAX_TEXT_BYTES) {
                     throw IllegalArgumentException(
-                        "文件过大（${size / 1024}KB），仅支持 200KB 以内的文本文件"
+                        "文件过大（${size / 1024}KB），仅支持 1MB 以内的文本文件"
                     )
                 }
                 val text = context.contentResolver.openInputStream(uri)?.use {
                     it.readBytes().toString(Charsets.UTF_8)
                 } ?: throw IllegalArgumentException("无法读取文件")
                 if (text.isBlank()) throw IllegalArgumentException("文件内容为空")
+                val excerpt = if (text.length > MAX_TEXT_OUTPUT_CHARS) {
+                    text.take(MAX_TEXT_OUTPUT_CHARS) + "\n…（内容过长，已截断，共 ${text.length} 字符）"
+                } else text
                 Attachment(
                     kind = "text_file",
                     name = name,
                     mimeType = context.contentResolver.getType(uri) ?: "text/plain",
-                    textContent = text.take(150_000)
+                    textContent = excerpt
                 )
             }
         }

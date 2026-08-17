@@ -60,7 +60,8 @@ data class ChatUiState(
     val confirmRequest: ConfirmRequest? = null,
     val error: String? = null,
     val pendingAttachments: List<PendingAttachment> = emptyList(),
-    val attachmentError: String? = null
+    val attachmentError: String? = null,
+    val processing: Boolean = false
 )
 
 class ChatViewModel(
@@ -221,18 +222,24 @@ class ChatViewModel(
     }
 
     private suspend fun processPending(pending: List<PendingAttachment>): List<com.betteraichat.core.model.Attachment> {
+        if (pending.isEmpty()) return emptyList()
         val context = appContext ?: return emptyList()
-        val result = mutableListOf<com.betteraichat.core.model.Attachment>()
-        for (p in pending) {
-            val r = if (p.kind == "image") {
-                AttachmentProcessor.imageFromUri(context, p.uri, p.name)
-            } else {
-                AttachmentProcessor.textFromUri(context, p.uri, p.name)
+        _state.update { it.copy(processing = true) }
+        try {
+            val result = mutableListOf<com.betteraichat.core.model.Attachment>()
+            for (p in pending) {
+                val r = if (p.kind == "image") {
+                    AttachmentProcessor.imageFromUri(context, p.uri, p.name)
+                } else {
+                    AttachmentProcessor.docFromUri(context, p.uri, p.name)
+                }
+                r.onSuccess { result.add(it) }
+                    .onFailure { _state.update { st -> st.copy(attachmentError = it.message) } }
             }
-            r.onSuccess { result.add(it) }
-                .onFailure { _state.update { st -> st.copy(attachmentError = it.message) } }
+            return result
+        } finally {
+            _state.update { it.copy(processing = false) }
         }
-        return result
     }
 
     private fun runGeneration(cid: Long) {

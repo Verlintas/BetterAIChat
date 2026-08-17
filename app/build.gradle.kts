@@ -13,8 +13,8 @@ android {
         applicationId = "com.betteraichat"
         minSdk = 26
         targetSdk = 36
-        versionCode = 7
-        versionName = "0.7.0"
+        versionCode = 8
+        versionName = "0.8.0"
     }
 
     buildTypes {
@@ -65,6 +65,7 @@ dependencies {
     implementation(libs.androidx.compose.material.icons)
 
     implementation(libs.markdown.renderer)
+    implementation(libs.mlkit.text.recognition.chinese)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
 }

@@ -15,6 +15,7 @@ markdown = "0.37.0"
 jsoup = "1.18.3"
 snakeyaml = "2.3"
 shizuku = "13.1.5"
+mlkitChinese = "16.0.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -40,6 +41,7 @@ markdown-renderer = { group = "com.mikepenz", name = "multiplatform-markdown-ren
 jsoup = { group = "org.jsoup", name = "jsoup", version.ref = "jsoup" }
 snakeyaml = { group = "org.yaml", name = "snakeyaml", version.ref = "snakeyaml" }
 shizuku = { group = "dev.rikka.shizuku", name = "api", version.ref = "shizuku" }
+mlkit-text-recognition-chinese = { group = "com.google.mlkit", name = "text-recognition-chinese", version.ref = "mlkitChinese" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
