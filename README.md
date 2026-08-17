@@ -31,6 +31,10 @@ An Android app that lets you chat with leading LLMs using your **own API keys**,
 
 APK output: `app/build/outputs/apk/debug/app-debug.apk`
 
+## Downloading the APK
+
+> **Important**: the official GitHub **Android app** corrupts large APK downloads (the 53MB full build frequently gets truncated). Always download releases **in a browser** (or on a computer), then copy the file to the phone. If installation fails with "packageinfo is null" / "解析软件包时出现问题" on Xiaomi devices, the download was incomplete — verify with SHA-256 (printed in every release) and re-download, or use the 8.8MB lite build which rarely breaks.
+
 ## Getting Started
 
 1. Open the app → Settings
