@@ -11,6 +11,7 @@ import com.betteraichat.core.provider.ChatProvider
 import com.betteraichat.core.sse.SseParser
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.collect
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -230,7 +231,7 @@ class AnthropicProvider : ChatProvider {
                     }
                     "error" -> ev.error?.message?.let { emit(StreamEvent.Error(it)) }
                 }
-            }
+            }.collect { }
             if (usageSeen) emit(StreamEvent.Usage(inputTokens, outputTokens))
             if (!callsEmitted) {
                 emit(StreamEvent.ToolCallsDone(toolCalls))

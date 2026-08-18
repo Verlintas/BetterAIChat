@@ -10,6 +10,7 @@ import com.betteraichat.core.provider.ChatProvider
 import com.betteraichat.core.sse.SseParser
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.collect
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -185,9 +186,9 @@ class GeminiProvider : ChatProvider {
                                     arguments = fc.args.toString()
                                 )
                             )
-                        }
                     }
                 }
+            }.collect { }
                 lastUsage?.let { emit(StreamEvent.Usage(it.promptTokenCount, it.candidatesTokenCount)) }
                 emit(StreamEvent.ToolCallsDone(toolCalls))
                 emit(StreamEvent.Done)

@@ -11,6 +11,7 @@ import com.betteraichat.core.provider.ChatProvider
 import com.betteraichat.core.sse.SseParser
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.collect
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -170,8 +171,7 @@ class OpenAiProvider : ChatProvider {
             respBody.use { body ->
                 val toolAcc = mutableMapOf<Int, ToolAcc>()
                 var callsEmitted = false
-                SseParser.parse(body) { _, data ->
-                    if (data == "[DONE]") {
+                SseParser.parse(body) { _, data ->                    if (data == "[DONE]") {
                         if (!callsEmitted) {
                             callsEmitted = true
                             emit(StreamEvent.ToolCallsDone(toolAcc.toToolCalls()))
@@ -217,7 +217,7 @@ class OpenAiProvider : ChatProvider {
                         callsEmitted = true
                         emit(StreamEvent.ToolCallsDone(toolAcc.toToolCalls()))
                     }
-                }
+                }.collect { }
                 if (!callsEmitted) {
                     emit(StreamEvent.ToolCallsDone(toolAcc.toToolCalls()))
                     emit(StreamEvent.Done)
