@@ -405,6 +405,7 @@ private fun WelcomePanel(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun InputBar(
     input: String,

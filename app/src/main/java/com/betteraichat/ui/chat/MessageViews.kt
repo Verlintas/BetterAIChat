@@ -191,6 +191,7 @@ private fun MessageActionsDialog(
     )
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ThinkingCard(thinking: String) {
     var expanded by remember { mutableStateOf(false) }
