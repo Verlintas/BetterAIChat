@@ -4,6 +4,8 @@ import android.app.Application
 import com.betteraichat.core.chat.ChatRepository
 import com.betteraichat.core.db.AppDatabase
 import com.betteraichat.core.engine.ChatEngine
+import com.betteraichat.core.provider.ChatProvider
+import com.betteraichat.core.model.ProviderId
 import com.betteraichat.core.storage.SettingsRepository
 import com.betteraichat.core.skills.SkillRepository
 import com.betteraichat.providers.ProviderFactory
@@ -78,11 +80,13 @@ class AppContainer(context: Application) {
     )
     val registry = ToolRegistry(tools)
     val runner = DeviceToolRunner(registry, toolContext)
+    val providerFactory: (ProviderId) -> ChatProvider = { ProviderFactory.create(it) }
     val engine = ChatEngine(
-        { ProviderFactory.create(it) },
+        providerFactory,
         registry,
         runner
     )
+    val speechPlayer = com.betteraichat.tools.SpeechPlayer(context.applicationContext)
 
     val screenshotManagerRef = screenshotManager
 }

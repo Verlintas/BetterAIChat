@@ -19,6 +19,8 @@ data class ConversationEntity(
     val provider: String,
     val model: String,
     val mode: String,
+    val pinned: Boolean = false,
+    val archived: Boolean = false,
     val createdAt: Long,
     val updatedAt: Long
 )
@@ -45,8 +47,14 @@ data class MessageEntity(
 
 @Dao
 interface ConversationDao {
-    @Query("SELECT * FROM conversations ORDER BY updatedAt DESC")
+    @Query("SELECT * FROM conversations ORDER BY pinned DESC, updatedAt DESC")
     fun observeAll(): Flow<List<ConversationEntity>>
+
+    @Query("SELECT * FROM conversations WHERE archived = 0 ORDER BY pinned DESC, updatedAt DESC")
+    fun observeActive(): Flow<List<ConversationEntity>>
+
+    @Query("SELECT * FROM conversations WHERE archived = 1 ORDER BY updatedAt DESC")
+    fun observeArchived(): Flow<List<ConversationEntity>>
 
     @Query("SELECT * FROM conversations WHERE id = :id")
     fun observeById(id: Long): Flow<ConversationEntity?>
@@ -59,6 +67,12 @@ interface ConversationDao {
 
     @Update
     suspend fun update(conversation: ConversationEntity)
+
+    @Query("UPDATE conversations SET pinned = :pinned, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun updatePinned(id: Long, pinned: Boolean, updatedAt: Long = System.currentTimeMillis())
+
+    @Query("UPDATE conversations SET archived = :archived, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun updateArchived(id: Long, archived: Boolean, updatedAt: Long = System.currentTimeMillis())
 
     @Query("DELETE FROM conversations WHERE id = :id")
     suspend fun deleteById(id: Long)
@@ -87,6 +101,12 @@ interface MessageDao {
     @Query("DELETE FROM messages WHERE id = :id")
     suspend fun deleteById(id: Long)
 
+    @Query("DELETE FROM messages WHERE conversationId = :conversationId AND id >= :fromId")
+    suspend fun deleteFrom(conversationId: Long, fromId: Long)
+
+    @Query("DELETE FROM messages WHERE conversationId = :conversationId AND id >= :fromId AND id <= :toId")
+    suspend fun deleteRange(conversationId: Long, fromId: Long, toId: Long)
+
     @Query("DELETE FROM messages WHERE toolCallId IN (:toolCallIds)")
     suspend fun deleteByToolCallIds(toolCallIds: List<String>)
 
@@ -94,7 +114,7 @@ interface MessageDao {
     suspend fun deleteAllForConversation(conversationId: Long)
 }
 
-@Database(entities = [ConversationEntity::class, MessageEntity::class], version = 4, exportSchema = false)
+@Database(entities = [ConversationEntity::class, MessageEntity::class], version = 5, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun conversationDao(): ConversationDao
     abstract fun messageDao(): MessageDao
@@ -123,10 +143,17 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_4_5 = object : androidx.room.migration.Migration(4, 5) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE conversations ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE conversations ADD COLUMN archived INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "betteraichat.db")
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     .build()
                     .also { instance = it }
             }

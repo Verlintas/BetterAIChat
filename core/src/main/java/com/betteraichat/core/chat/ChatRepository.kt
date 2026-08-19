@@ -19,6 +19,10 @@ class ChatRepository(private val db: AppDatabase) {
 
     fun observeConversations(): Flow<List<ConversationEntity>> = db.conversationDao().observeAll()
 
+    fun observeActiveConversations(): Flow<List<ConversationEntity>> = db.conversationDao().observeActive()
+
+    fun observeArchivedConversations(): Flow<List<ConversationEntity>> = db.conversationDao().observeArchived()
+
     fun observeConversation(id: Long): Flow<ConversationEntity?> = db.conversationDao().observeById(id)
 
     fun observeMessages(conversationId: Long): Flow<List<MessageEntity>> = db.messageDao().observeForConversation(conversationId)
@@ -51,6 +55,16 @@ class ChatRepository(private val db: AppDatabase) {
         val c = db.conversationDao().getById(id) ?: return
         db.conversationDao().update(c.copy(model = model, mode = mode.name, updatedAt = System.currentTimeMillis()))
     }
+
+    suspend fun setPinned(id: Long, pinned: Boolean) = db.conversationDao().updatePinned(id, pinned)
+
+    suspend fun setArchived(id: Long, archived: Boolean) = db.conversationDao().updateArchived(id, archived)
+
+    suspend fun deleteMessagesFrom(conversationId: Long, fromId: Long) =
+        db.messageDao().deleteFrom(conversationId, fromId)
+
+    suspend fun deleteMessagesRange(conversationId: Long, fromId: Long, toId: Long) =
+        db.messageDao().deleteRange(conversationId, fromId, toId)
 
     suspend fun insertMessage(entity: MessageEntity): Long = db.messageDao().insert(entity)
 

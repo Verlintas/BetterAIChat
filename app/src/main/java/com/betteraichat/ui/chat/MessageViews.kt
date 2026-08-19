@@ -55,7 +55,12 @@ private val TIME_FORMAT = SimpleDateFormat("HH:mm", Locale.getDefault())
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun MessageItem(msg: UiMessage, onDelete: (Long) -> Unit) {
+fun MessageItem(
+    msg: UiMessage,
+    onDelete: (Long) -> Unit,
+    onSpeak: (String) -> Unit = {},
+    onEdit: (Long) -> Unit = {}
+) {
     if (msg.role == ChatRole.TOOL) return
     val clipboard = LocalClipboardManager.current
     var showActions by remember { mutableStateOf(false) }
@@ -72,6 +77,11 @@ fun MessageItem(msg: UiMessage, onDelete: (Long) -> Unit) {
             MessageActionsDialog(
                 content = msg.content,
                 onCopy = copyAction,
+                onSpeak = { onSpeak(msg.content) },
+                onEdit = {
+                    showActions = false
+                    onEdit(msg.id)
+                },
                 onDelete = {
                     showActions = false
                     onDelete(msg.id)
@@ -151,6 +161,8 @@ fun MessageItem(msg: UiMessage, onDelete: (Long) -> Unit) {
         MessageActionsDialog(
             content = msg.content,
             onCopy = copyAction,
+            onSpeak = { onSpeak(msg.content) },
+            onEdit = null,
             onDelete = {
                 showActions = false
                 onDelete(msg.id)
@@ -164,6 +176,8 @@ fun MessageItem(msg: UiMessage, onDelete: (Long) -> Unit) {
 private fun MessageActionsDialog(
     content: String,
     onCopy: () -> Unit,
+    onSpeak: () -> Unit,
+    onEdit: (() -> Unit)?,
     onDelete: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -182,6 +196,10 @@ private fun MessageActionsDialog(
         },
         dismissButton = {
             Row {
+                TextButton(onClick = onSpeak) { Text("朗读") }
+                if (onEdit != null) {
+                    TextButton(onClick = onEdit) { Text("编辑") }
+                }
                 TextButton(onClick = onDismiss) { Text("取消") }
                 TextButton(onClick = onDelete) {
                     Text("删除", color = MaterialTheme.colorScheme.error)

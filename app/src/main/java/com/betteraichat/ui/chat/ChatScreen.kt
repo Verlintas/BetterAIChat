@@ -1,5 +1,6 @@
 package com.betteraichat.ui.chat
 
+import android.content.Intent
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -81,6 +82,9 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
     val last = state.messages.lastOrNull()
     var showMaxConfirm by remember { mutableStateOf(false) }
     var showClearContext by remember { mutableStateOf(false) }
+    var showCompressConfirm by remember { mutableStateOf(false) }
+    var editingMessage by remember { mutableStateOf<com.betteraichat.ui.chat.UiMessage?>(null) }
+    var editText by remember { mutableStateOf("") }
     val context = LocalContext.current
 
     val imagePicker = androidx.activity.compose.rememberLauncherForActivityResult(
@@ -168,6 +172,20 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                         }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                             DropdownMenuItem(
+                                text = { Text("压缩上下文") },
+                                onClick = {
+                                    menuOpen = false
+                                    showCompressConfirm = true
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("导出对话") },
+                                onClick = {
+                                    menuOpen = false
+                                    shareConversationInternal(context, vm.buildExportText())
+                                }
+                            )
+                            DropdownMenuItem(
                                 text = { Text("清除上下文") },
                                 onClick = {
                                     menuOpen = false
@@ -216,7 +234,19 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 items(state.messages.size, key = { state.messages[it].id }) { idx ->
-                    MessageItem(state.messages[idx], vm::deleteMessage)
+                    val msg = state.messages[idx]
+                    MessageItem(
+                        msg = msg,
+                        onDelete = vm::deleteMessage,
+                        onSpeak = { container.speechPlayer.speak(it) },
+                        onEdit = { id ->
+                            val target = state.messages.firstOrNull { it.id == id }
+                            if (target != null) {
+                                editingMessage = target
+                                editText = target.content
+                            }
+                        }
+                    )
                 }
                 state.error?.let { error ->
                     item {
@@ -235,6 +265,51 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                 }
             }
         }
+    }
+
+    if (showCompressConfirm) {
+        AlertDialog(
+            onDismissRequest = { showCompressConfirm = false },
+            title = { Text("压缩上下文？") },
+            text = {
+                Text(
+                    "将总结之前对话并保留最近一轮，AI 将基于摘要继续。适合长对话节省上下文。",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    vm.compressContext()
+                    showCompressConfirm = false
+                }) { Text("压缩") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCompressConfirm = false }) { Text("取消") }
+            }
+        )
+    }
+
+    editingMessage?.let { msg ->
+        AlertDialog(
+            onDismissRequest = { editingMessage = null },
+            title = { Text("编辑消息") },
+            text = {
+                OutlinedTextField(
+                    value = editText,
+                    onValueChange = { editText = it },
+                    minLines = 3
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    vm.editAndResend(msg.id, editText)
+                    editingMessage = null
+                }) { Text("重发") }
+            },
+            dismissButton = {
+                TextButton(onClick = { editingMessage = null }) { Text("取消") }
+            }
+        )
     }
 
     if (showClearContext) {
@@ -404,12 +479,42 @@ private fun WelcomePanel(
         }
         Spacer(Modifier.size(16.dp))
         Text(
-            "长按消息可复制内容",
+            "长按消息可复制/朗读/编辑",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
         )
+        Spacer(Modifier.size(24.dp))
+        Text(
+            "提示词模板：",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.size(12.dp))
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            PromptTemplates.forEach { template ->
+                AssistChip(
+                    onClick = { onPickExample(template.prompt) },
+                    label = { Text(template.label, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                )
+            }
+        }
     }
 }
+
+private data class PromptTemplate(val label: String, val prompt: String)
+
+private val PromptTemplates = listOf(
+    PromptTemplate("翻译", "请将以下内容翻译成英文（保持原意和语气）：\n\n"),
+    PromptTemplate("总结", "请用 3 句话总结以下内容的要点：\n\n"),
+    PromptTemplate("润色", "请润色以下文字，使其更通顺专业，保持原意：\n\n"),
+    PromptTemplate("写作", "请帮我写一篇关于以下主题的文章（300 字左右）：\n\n"),
+    PromptTemplate("代码解释", "请解释以下代码的功能和关键逻辑：\n\n"),
+    PromptTemplate("头脑风暴", "请针对以下主题给出 10 个创意想法：\n\n")
+)
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -676,6 +781,15 @@ private fun ModelSelector(
 }
 
 private val prettyJson = Json { prettyPrint = true; ignoreUnknownKeys = true }
+
+private fun shareConversationInternal(context: android.content.Context, text: String) {
+    if (text.isBlank()) return
+    val intent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_TEXT, text)
+    }
+    context.startActivity(Intent.createChooser(intent, "导出对话"))
+}
 
 private fun formatTokens(n: Long): String = when {
     n >= 1_000_000 -> "%.1fM".format(n / 1_000_000.0)

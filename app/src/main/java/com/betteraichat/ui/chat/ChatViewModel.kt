@@ -12,6 +12,7 @@ import com.betteraichat.core.mode.AppMode
 import com.betteraichat.core.model.ChatMessage
 import com.betteraichat.core.model.ChatRole
 import com.betteraichat.core.model.ProviderId
+import com.betteraichat.core.model.StreamEvent
 import com.betteraichat.core.model.ToolCall
 import com.betteraichat.core.model.ToolCallStatus
 import com.betteraichat.core.storage.SettingsRepository
@@ -71,6 +72,7 @@ class ChatViewModel(
     private val repository: ChatRepository,
     private val settings: SettingsRepository,
     private val engine: ChatEngine,
+    private val providerFactory: (ProviderId) -> com.betteraichat.core.provider.ChatProvider,
     private val appContext: android.content.Context
 ) : ViewModel() {
 
@@ -505,6 +507,122 @@ class ChatViewModel(
         }
     }
 
+    fun compressContext() {
+        if (currentConversationId <= 0 || _state.value.isRunning) return
+        viewModelScope.launch {
+            val cid = currentConversationId
+            val history = repository.getHistory(cid)
+            if (history.size < 6) {
+                _state.update { it.copy(error = "消息太少（少于 6 条），暂不需要压缩") }
+                return@launch
+            }
+            _state.update { it.copy(processing = true) }
+            try {
+                val keepCount = 2
+                val toSummarize = history.dropLast(keepCount)
+                val keep = history.takeLast(keepCount)
+                val config = settings.configFor(_state.value.provider)
+                val summary = summarize(toSummarize, config)
+                if (summary.isBlank()) {
+                    _state.update { it.copy(processing = false, error = "压缩失败：未获得摘要") }
+                    return@launch
+                }
+                repository.deleteMessagesRange(
+                    cid, toSummarize.first().id, toSummarize.last().id
+                )
+                repository.insertMessage(
+                    repository.domainToMessage(
+                        ChatMessage(
+                            role = ChatRole.USER,
+                            content = "以下是此前对话的摘要，请以此为基础继续对话：\n\n$summary",
+                            model = _state.value.model,
+                            mode = _state.value.mode
+                        ),
+                        cid
+                    )
+                )
+                _state.update { it.copy(processing = false, error = null) }
+                refresh()
+            } catch (e: Exception) {
+                _state.update { it.copy(processing = false, error = "压缩失败：${e.message}") }
+            }
+        }
+    }
+
+    private suspend fun summarize(
+        history: List<MessageEntity>,
+        config: com.betteraichat.core.model.ProviderConfig
+    ): String {
+        val provider = providerFactory(config.provider)
+        val sys = ChatMessage(
+            role = ChatRole.SYSTEM,
+            content = "请用简洁的中文总结以下对话的关键内容（保留重要事实、用户需求、结论），200 字以内，不要寒暄。"
+        )
+        val sb = StringBuilder()
+        val messages = listOf(sys) + history.map { repository.messageToDomain(it) }
+        provider.chatStream(messages, config, emptyList()).collect { ev ->
+            when (ev) {
+                is StreamEvent.Delta -> sb.append(ev.text)
+                is StreamEvent.Error -> throw IllegalStateException(ev.message)
+                else -> Unit
+            }
+        }
+        return sb.toString().trim()
+    }
+
+    fun editAndResend(messageId: Long, newText: String) {
+        val text = newText.trim()
+        if (text.isEmpty() || currentConversationId <= 0 || _state.value.isRunning) return
+        viewModelScope.launch {
+            val cid = currentConversationId
+            runJob?.cancel()
+            runJob = null
+            streamTickerJob?.cancel()
+            streamTickerJob = null
+            pendingAssistantEntity = null
+            _state.update { it.copy(confirmRequest = null) }
+            repository.deleteMessagesFrom(cid, messageId)
+            repository.insertMessage(
+                repository.domainToMessage(
+                    ChatMessage(role = ChatRole.USER, content = text, model = _state.value.model, mode = _state.value.mode),
+                    cid
+                )
+            )
+            _state.update {
+                it.copy(input = "", error = null, sendTick = it.sendTick + 1)
+            }
+            runGeneration(cid)
+        }
+    }
+
+    fun buildExportText(): String {
+        val sb = StringBuilder()
+        sb.appendLine("# ${_state.value.title}")
+        sb.appendLine()
+        dbMessages.forEach { msg ->
+            when (msg.role) {
+                ChatRole.USER -> {
+                    sb.appendLine("## 用户")
+                    if (msg.attachments.isNotEmpty()) {
+                        sb.appendLine("（附件：${msg.attachments.joinToString { a -> a.name }}）")
+                    }
+                    sb.appendLine(msg.content)
+                    sb.appendLine()
+                }
+                ChatRole.ASSISTANT -> {
+                    sb.appendLine("## AI")
+                    sb.appendLine(msg.content)
+                    msg.toolCalls.forEach { call ->
+                        sb.appendLine("- 工具 [${call.name}]：${call.result ?: ""}")
+                    }
+                    sb.appendLine()
+                }
+                else -> Unit
+            }
+        }
+        return sb.toString()
+    }
+
     fun respondConfirm(allow: Boolean) {
         val req = _state.value.confirmRequest ?: return
         engine.respond(req.call.id, allow)
@@ -541,6 +659,7 @@ class ChatViewModelFactory(
             container.repository,
             container.settings,
             container.engine,
+            container.providerFactory,
             container.appContext
         ) as T
 }

@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
@@ -63,10 +64,26 @@ fun ConversationListScreen(
 ) {
     val container = rememberContainer()
     val scope = rememberCoroutineScope()
-    val conversations by container.repository.observeConversations()
+    val activeConversations by container.repository.observeActiveConversations()
+        .collectAsStateWithLifecycle(initialValue = emptyList())
+    val archivedConversations by container.repository.observeArchivedConversations()
         .collectAsStateWithLifecycle(initialValue = emptyList())
     var renameTarget by remember { mutableStateOf<ConversationEntity?>(null) }
     var renameText by remember { mutableStateOf("") }
+    var searchQuery by remember { mutableStateOf("") }
+    var showArchived by remember { mutableStateOf(false) }
+
+    val query = searchQuery.trim()
+    val filteredActive = if (query.isEmpty()) activeConversations
+    else activeConversations.filter {
+        it.title.contains(query, ignoreCase = true) ||
+            it.model.contains(query, ignoreCase = true)
+    }
+    val filteredArchived = if (query.isEmpty()) archivedConversations
+    else archivedConversations.filter {
+        it.title.contains(query, ignoreCase = true) ||
+            it.model.contains(query, ignoreCase = true)
+    }
 
     Scaffold(
         topBar = {
@@ -85,29 +102,83 @@ fun ConversationListScreen(
             }
         }
     ) { padding ->
-        if (conversations.isEmpty()) {
-            EmptyHint(modifier = Modifier.fillMaxSize().padding(padding))
-        } else {
-            LazyColumn(
+        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(conversations, key = { it.id }) { c ->
-                    SwipeableConversationCard(
-                        conversation = c,
-                        onClick = { onOpenChat(c.id) },
-                        onRename = {
-                            renameTarget = c
-                            renameText = c.title
-                        },
-                        onClearMessages = {
-                            scope.launch { container.repository.clearMessages(c.id) }
-                        },
-                        onDelete = { scope.launch { container.repository.deleteConversation(c.id) } }
-                    )
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                placeholder = { Text("搜索会话…") },
+                singleLine = true,
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { searchQuery = "" }) {
+                            Icon(Icons.Filled.Close, contentDescription = "清空")
+                        }
+                    }
+                }
+            )
+            if (filteredActive.isEmpty() && filteredArchived.isEmpty()) {
+                EmptyHint(modifier = Modifier.fillMaxSize())
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(filteredActive, key = { "a${it.id}" }) { c ->
+                        SwipeableConversationCard(
+                            conversation = c,
+                            onClick = { onOpenChat(c.id) },
+                            onRename = {
+                                renameTarget = c
+                                renameText = c.title
+                            },
+                            onTogglePin = {
+                                scope.launch { container.repository.setPinned(c.id, !c.pinned) }
+                            },
+                            onToggleArchive = {
+                                scope.launch { container.repository.setArchived(c.id, !c.archived) }
+                            },
+                            onClearMessages = {
+                                scope.launch { container.repository.clearMessages(c.id) }
+                            },
+                            onDelete = { scope.launch { container.repository.deleteConversation(c.id) } }
+                        )
+                    }
+                    if (archivedConversations.isNotEmpty() && query.isEmpty()) {
+                        item {
+                            TextButton(onClick = { showArchived = !showArchived }) {
+                                Text(
+                                    if (showArchived) "收起已归档（${archivedConversations.size}）"
+                                    else "已归档（${archivedConversations.size}）"
+                                )
+                            }
+                        }
+                        if (showArchived) {
+                            items(filteredArchived, key = { "r${it.id}" }) { c ->
+                                SwipeableConversationCard(
+                                    conversation = c,
+                                    onClick = { onOpenChat(c.id) },
+                                    onRename = {
+                                        renameTarget = c
+                                        renameText = c.title
+                                    },
+                                    onTogglePin = {
+                                        scope.launch { container.repository.setPinned(c.id, !c.pinned) }
+                                    },
+                                    onToggleArchive = {
+                                        scope.launch { container.repository.setArchived(c.id, !c.archived) }
+                                    },
+                                    onClearMessages = {
+                                        scope.launch { container.repository.clearMessages(c.id) }
+                                    },
+                                    onDelete = { scope.launch { container.repository.deleteConversation(c.id) } }
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -162,6 +233,8 @@ private fun SwipeableConversationCard(
     conversation: ConversationEntity,
     onClick: () -> Unit,
     onRename: () -> Unit,
+    onTogglePin: () -> Unit,
+    onToggleArchive: () -> Unit,
     onClearMessages: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -233,6 +306,20 @@ private fun SwipeableConversationCard(
             }
         }
         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            DropdownMenuItem(
+                text = { Text(if (conversation.pinned) "取消置顶" else "置顶") },
+                onClick = {
+                    menuOpen = false
+                    onTogglePin()
+                }
+            )
+            DropdownMenuItem(
+                text = { Text(if (conversation.archived) "取消归档" else "归档") },
+                onClick = {
+                    menuOpen = false
+                    onToggleArchive()
+                }
+            )
             DropdownMenuItem(
                 text = { Text("重命名") },
                 onClick = {
