@@ -62,7 +62,8 @@ data class ChatUiState(
     val error: String? = null,
     val pendingAttachments: List<PendingAttachment> = emptyList(),
     val attachmentError: String? = null,
-    val processing: Boolean = false
+    val processing: Boolean = false,
+    val sendTick: Int = 0
 )
 
 class ChatViewModel(
@@ -84,11 +85,17 @@ class ChatViewModel(
     private var runJob: Job? = null
     private var streamTickerJob: Job? = null
     private var pendingAssistantEntity: MessageEntity? = null
+    private var roundCounter = 0
+    private var streamingRound = -1
+    private var pendingRound = -1
+    private var sendCancelled = false
 
     init {
         viewModelScope.launch {
             engine.confirmRequests.collect { call ->
-                _state.update { it.copy(confirmRequest = ConfirmRequest(call, it.mode)) }
+                if (runJob?.isActive == true) {
+                    _state.update { it.copy(confirmRequest = ConfirmRequest(call, it.mode)) }
+                }
             }
         }
         if (conversationId > 0) {
@@ -209,6 +216,7 @@ class ChatViewModel(
         val text = _state.value.input.trim()
         val pending = _state.value.pendingAttachments
         if ((text.isEmpty() && pending.isEmpty()) || _state.value.isRunning) return
+        sendCancelled = false
         _state.update { it.copy(isRunning = true) }
         viewModelScope.launch {
             if (currentConversationId <= 0) {
@@ -222,6 +230,11 @@ class ChatViewModel(
             val cid = currentConversationId
             val s = _state.value
             val attachments = processPending(s.pendingAttachments)
+            if (sendCancelled) {
+                sendCancelled = false
+                _state.update { it.copy(isRunning = false, pendingAttachments = emptyList()) }
+                return@launch
+            }
             if (attachments.isEmpty() && text.isEmpty()) {
                 _state.update { it.copy(isRunning = false, pendingAttachments = emptyList()) }
                 return@launch
@@ -241,7 +254,9 @@ class ChatViewModel(
                     cid
                 )
             )
-            _state.update { it.copy(input = "", error = null, pendingAttachments = emptyList()) }
+            _state.update {
+                it.copy(input = "", error = null, pendingAttachments = emptyList(), sendTick = it.sendTick + 1)
+            }
             runGeneration(cid)
         }
     }
@@ -267,13 +282,18 @@ class ChatViewModel(
         }
     }
 
-    private fun runGeneration(cid: Long) {
-        val s = _state.value
-        val config = settings.configFor(s.provider)
-        streaming = UiMessage(
+    private fun newStreamingMessage(config: com.betteraichat.core.model.ProviderConfig, s: ChatUiState): UiMessage {
+        streamingRound = roundCounter
+        return UiMessage(
             id = -1, role = ChatRole.ASSISTANT, content = "",
             model = config.model, mode = s.mode, streaming = true
         )
+    }
+
+    private fun runGeneration(cid: Long) {
+        val s = _state.value
+        val config = settings.configFor(s.provider)
+        streaming = newStreamingMessage(config, s)
         refresh()
         var currentJob: Job? = null
         currentJob = viewModelScope.launch {
@@ -289,28 +309,19 @@ class ChatViewModel(
                     when (ev) {
                         is EngineEvent.Delta -> {
                             if (streaming == null) {
-                                streaming = UiMessage(
-                                    id = -1, role = ChatRole.ASSISTANT, content = "",
-                                    model = config.model, mode = s.mode, streaming = true
-                                )
+                                streaming = newStreamingMessage(config, s)
                             }
                             streaming = streaming?.copy(content = (streaming?.content ?: "") + ev.text)
                         }
                         is EngineEvent.ThinkingDelta -> {
                             if (streaming == null) {
-                                streaming = UiMessage(
-                                    id = -1, role = ChatRole.ASSISTANT, content = "",
-                                    model = config.model, mode = s.mode, streaming = true
-                                )
+                                streaming = newStreamingMessage(config, s)
                             }
                             streaming = streaming?.copy(thinking = (streaming?.thinking ?: "") + ev.text)
                         }
                         is EngineEvent.ToolCallStarted -> {
                             if (streaming == null) {
-                                streaming = UiMessage(
-                                    id = -1, role = ChatRole.ASSISTANT, content = "",
-                                    model = config.model, mode = s.mode, streaming = true
-                                )
+                                streaming = newStreamingMessage(config, s)
                             }
                             streaming = streaming?.copy(
                                 toolCalls = upsertCall(
@@ -321,10 +332,7 @@ class ChatViewModel(
                         }
                         is EngineEvent.ToolCallFinished -> {
                             if (streaming == null) {
-                                streaming = UiMessage(
-                                    id = -1, role = ChatRole.ASSISTANT, content = "",
-                                    model = config.model, mode = s.mode, streaming = true
-                                )
+                                streaming = newStreamingMessage(config, s)
                             }
                             streaming = streaming?.copy(
                                 toolCalls = upsertCall(streaming?.toolCalls ?: emptyList(), ev.call)
@@ -334,10 +342,7 @@ class ChatViewModel(
                         }
                         is EngineEvent.Usage -> {
                             if (streaming == null) {
-                                streaming = UiMessage(
-                                    id = -1, role = ChatRole.ASSISTANT, content = "",
-                                    model = config.model, mode = s.mode, streaming = true
-                                )
+                                streaming = newStreamingMessage(config, s)
                             }
                             streaming = streaming?.copy(usageInput = ev.promptTokens, usageOutput = ev.completionTokens)
                         }
@@ -360,6 +365,8 @@ class ChatViewModel(
                             )
                             val id = repository.insertMessage(entity)
                             pendingAssistantEntity = entity.copy(id = id)
+                            pendingRound = roundCounter
+                            roundCounter++
                             streaming = null
                             refresh()
                         }
@@ -432,7 +439,8 @@ class ChatViewModel(
     private suspend fun persistStreamingPartial(cid: Long) {
         val st = streaming ?: return
         if (st.content.isBlank() && st.toolCalls.isEmpty()) return
-        if (pendingAssistantEntity != null) {
+        val sameRound = pendingAssistantEntity != null && pendingRound == streamingRound
+        if (sameRound) {
             repository.updateMessage(pendingAssistantEntity!!.copy(content = st.content))
         } else {
             repository.insertMessage(
@@ -451,6 +459,7 @@ class ChatViewModel(
     }
 
     fun stop() {
+        sendCancelled = true
         runJob?.cancel()
         runJob = null
         streamTickerJob?.cancel()
@@ -483,7 +492,14 @@ class ChatViewModel(
     fun deleteMessage(messageId: Long) {
         if (messageId <= 0) return
         viewModelScope.launch {
-            if (pendingAssistantEntity?.id == messageId) pendingAssistantEntity = null
+            if (pendingAssistantEntity?.id == messageId) {
+                pendingAssistantEntity = null
+                pendingRound = -1
+            }
+            val target = dbMessages.firstOrNull { it.id == messageId }
+            if (target != null && target.role == ChatRole.ASSISTANT && target.toolCalls.isNotEmpty()) {
+                repository.deleteToolMessages(target.toolCalls.map { it.id })
+            }
             repository.deleteMessage(messageId)
             refresh()
         }

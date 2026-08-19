@@ -163,15 +163,22 @@ class GeminiProvider : ChatProvider {
             respBody.use { body ->
                 val toolCalls = mutableListOf<ToolCall>()
                 var lastUsage: GeminiUsageMetadata? = null
+                var sawCandidate = false
+                var finished = false
                 SseParser.parse(body) { _, data ->
                     val resp = runCatching { json.decodeFromString(GeminiResponse.serializer(), data) }
-                        .getOrNull() ?: return@parse
+                        .getOrNull() ?: return@parse true
                     resp.error?.message?.let {
                         emit(StreamEvent.Error(it))
-                        return@parse
+                        return@parse false
                     }
                     resp.usageMetadata?.let { lastUsage = it }
-                    val parts = resp.candidates.firstOrNull()?.content?.parts ?: return@parse
+                    val parts = resp.candidates.firstOrNull()?.content?.parts ?: return@parse true
+                    sawCandidate = true
+                    val reason = resp.candidates.firstOrNull()?.finishReason
+                    if (reason == "STOP" || reason == "MAX_TOKENS" || reason == "SAFETY" || reason == "RECITATION") {
+                        finished = true
+                    }
                     for (part in parts) {
                         if (part.thought && !part.text.isNullOrBlank()) {
                             emit(StreamEvent.ThinkingDelta(part.text))
@@ -186,12 +193,17 @@ class GeminiProvider : ChatProvider {
                                     arguments = fc.args.toString()
                                 )
                             )
+                        }
                     }
-                }
-            }.collect { }
+                    true
+                }.collect { }
                 lastUsage?.let { emit(StreamEvent.Usage(it.promptTokenCount, it.candidatesTokenCount)) }
-                emit(StreamEvent.ToolCallsDone(toolCalls))
-                emit(StreamEvent.Done)
+                if (sawCandidate && !finished) {
+                    emit(StreamEvent.Error("流意外中断（未收到完成标记）"))
+                } else {
+                    emit(StreamEvent.ToolCallsDone(toolCalls))
+                    emit(StreamEvent.Done)
+                }
             }
         } finally {
             call.cancel()

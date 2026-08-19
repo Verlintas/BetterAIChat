@@ -8,6 +8,8 @@ import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
+import com.betteraichat.BetterAIChatApp
+import com.betteraichat.core.storage.ThemeMode
 
 private val LightColors = lightColorScheme()
 private val DarkColors = darkColorScheme()
@@ -18,12 +20,19 @@ fun BetterAIChatTheme(
     dynamicColor: Boolean = true,
     content: @Composable () -> Unit
 ) {
+    val context = LocalContext.current
+    val app = context.applicationContext as BetterAIChatApp
+    val themeMode = app.container.settings.getThemeMode()
+    val effectiveDark = when (themeMode) {
+        ThemeMode.SYSTEM -> darkTheme
+        ThemeMode.LIGHT -> false
+        ThemeMode.DARK -> true
+    }
     val colorScheme = when {
         dynamicColor && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S -> {
-            val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+            if (effectiveDark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
-        darkTheme -> DarkColors
+        effectiveDark -> DarkColors
         else -> LightColors
     }
     MaterialTheme(colorScheme = colorScheme, content = content)

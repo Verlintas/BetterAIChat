@@ -109,7 +109,7 @@ fun MessageItem(msg: UiMessage, onDelete: (Long) -> Unit) {
                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
                 modifier = Modifier
                     .widthIn(max = 480.dp)
-                    .combinedClickable(onClick = {}, onLongClick = copyAction)
+                    .combinedClickable(onClick = {}, onLongClick = onLongPress)
             ) {
                 Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
                     if (msg.streaming && msg.content.isEmpty()) {

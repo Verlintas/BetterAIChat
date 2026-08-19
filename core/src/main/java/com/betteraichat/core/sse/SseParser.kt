@@ -8,7 +8,7 @@ import okhttp3.ResponseBody
 
 object SseParser {
 
-    fun parse(body: ResponseBody, onEvent: suspend (event: String, data: String) -> Unit): Flow<Unit> = flow<Unit> {
+    fun parse(body: ResponseBody, onEvent: suspend (event: String, data: String) -> Boolean): Flow<Unit> = flow<Unit> {
         val source = body.source()
         val dataBuffer = StringBuilder()
         var eventName = ""
@@ -17,9 +17,10 @@ object SseParser {
             when {
                 line.isBlank() -> {
                     if (dataBuffer.isNotEmpty()) {
-                        onEvent(eventName, dataBuffer.toString())
+                        val shouldContinue = onEvent(eventName, dataBuffer.toString())
                         dataBuffer.clear()
                         eventName = ""
+                        if (!shouldContinue) break
                     }
                 }
                 line.startsWith("event:") -> eventName = line.removePrefix("event:").trim()

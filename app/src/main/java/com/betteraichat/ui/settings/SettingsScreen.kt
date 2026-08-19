@@ -223,13 +223,17 @@ fun SettingsScreen(onBack: () -> Unit) {
                         if (apiKey.isBlank()) {
                             scope.launch { snackbar.showSnackbar("请先填写 API Key") }
                         } else {
+                            val providerAtClick = selectedProvider
+                            val baseUrlAtClick = baseUrl
+                            val apiKeyAtClick = apiKey
                             scope.launch {
                                 probing = true
-                                val result = ModelProbe.probe(selectedProvider, baseUrl, apiKey)
+                                val result = ModelProbe.probe(providerAtClick, baseUrlAtClick, apiKeyAtClick)
                                 probing = false
+                                if (selectedProvider != providerAtClick) return@launch
                                 if (result.ok) {
                                     if (result.models.isNotEmpty()) {
-                                        settings.setCustomModels(selectedProvider, result.models)
+                                        settings.setCustomModels(providerAtClick, result.models)
                                         model = result.models.first()
                                     }
                                     scope.launch { snackbar.showSnackbar(result.message) }
@@ -245,6 +249,11 @@ fun SettingsScreen(onBack: () -> Unit) {
                     defaultMode = defaultMode,
                     onDefaultModeChange = { defaultMode = it },
                     onSave = ::saveConfig,
+                    themeMode = container.settings.getThemeMode(),
+                    onThemeModeChange = { mode ->
+                        container.settings.setThemeMode(mode)
+                        scope.launch { snackbar.showSnackbar("外观已切换") }
+                    },
                     skills = skills,
                     onImportSkill = { skillLauncher.launch(arrayOf("*/*")) },
                     onDeleteSkill = { skill ->
@@ -427,6 +436,8 @@ private fun SmartTab(
     defaultMode: AppMode,
     onDefaultModeChange: (AppMode) -> Unit,
     onSave: () -> Unit,
+    themeMode: com.betteraichat.core.storage.ThemeMode,
+    onThemeModeChange: (com.betteraichat.core.storage.ThemeMode) -> Unit,
     skills: List<com.betteraichat.core.skills.Skill>,
     onImportSkill: () -> Unit,
     onDeleteSkill: (com.betteraichat.core.skills.Skill) -> Unit
@@ -438,6 +449,24 @@ private fun SmartTab(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        SectionTitle("外观")
+        Text(
+            "切换应用的黑白（深色/浅色）模式",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            com.betteraichat.core.storage.ThemeMode.entries.forEach { mode ->
+                FilterChip(
+                    selected = themeMode == mode,
+                    onClick = { onThemeModeChange(mode) },
+                    label = { Text(mode.displayName) }
+                )
+            }
+        }
+
+        HorizontalDivider()
+
         SectionTitle("默认模式")
         Text(
             "新建对话时使用的模式：Chat 纯对话 / Plan 只读分析 / Build 工具需确认 / Max 自主执行",

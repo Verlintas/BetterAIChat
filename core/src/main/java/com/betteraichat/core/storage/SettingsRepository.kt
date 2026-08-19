@@ -6,6 +6,12 @@ import com.betteraichat.core.mode.AppMode
 import com.betteraichat.core.model.ProviderConfig
 import com.betteraichat.core.model.ProviderId
 
+enum class ThemeMode(val displayName: String) {
+    SYSTEM("跟随系统"),
+    LIGHT("浅色"),
+    DARK("深色")
+}
+
 class SettingsRepository(context: Context) {
 
     private val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
@@ -88,6 +94,14 @@ class SettingsRepository(context: Context) {
 
     fun setDefaultProvider(provider: ProviderId) {
         prefs.edit().putString("default_provider", provider.name).apply()
+    }
+
+    fun getThemeMode(): ThemeMode = runCatching {
+        ThemeMode.valueOf(prefs.getString("theme_mode", ThemeMode.SYSTEM.name)!!)
+    }.getOrDefault(ThemeMode.SYSTEM)
+
+    fun setThemeMode(mode: ThemeMode) {
+        prefs.edit().putString("theme_mode", mode.name).apply()
     }
 
     fun configFor(provider: ProviderId): ProviderConfig = ProviderConfig(

@@ -142,7 +142,7 @@ class OpenAiProvider : ChatProvider {
             ModelCatalog.entryFor(config.provider, config.model).supportsReasoning
         val body = OpenAiRequest(
             model = config.model,
-            messages = messages.map { it.toWire() },
+            messages = messages.mapNotNull { it.toWire() },
             temperature = if (reasoning) null else config.temperature,
             maxTokens = config.maxTokens,
             reasoningEffort = if (reasoning) "high" else null,
@@ -171,22 +171,25 @@ class OpenAiProvider : ChatProvider {
             respBody.use { body ->
                 val toolAcc = mutableMapOf<Int, ToolAcc>()
                 var callsEmitted = false
-                SseParser.parse(body) { _, data ->                    if (data == "[DONE]") {
+                var completed = false
+                SseParser.parse(body) { _, data ->
+                    if (data == "[DONE]") {
                         if (!callsEmitted) {
                             callsEmitted = true
                             emit(StreamEvent.ToolCallsDone(toolAcc.toToolCalls()))
                         }
                         emit(StreamEvent.Done)
-                        return@parse
+                        completed = true
+                        return@parse false
                     }
                     val chunk = runCatching { json.decodeFromString(OpenAiChunk.serializer(), data) }
-                        .getOrNull() ?: return@parse
+                        .getOrNull() ?: return@parse true
                     chunk.usage?.let { usage ->
                         if (usage.promptTokens > 0 || usage.completionTokens > 0) {
                             emit(StreamEvent.Usage(usage.promptTokens, usage.completionTokens))
                         }
                     }
-                    val choice = chunk.choices.firstOrNull() ?: return@parse
+                    val choice = chunk.choices.firstOrNull() ?: return@parse true
                     choice.delta?.content?.let { c ->
                         when {
                             c is JsonPrimitive -> c.content.takeIf { it.isNotBlank() }
@@ -217,9 +220,15 @@ class OpenAiProvider : ChatProvider {
                         callsEmitted = true
                         emit(StreamEvent.ToolCallsDone(toolAcc.toToolCalls()))
                     }
+                    if (choice.finishReason == "stop") completed = true
+                    true
                 }.collect { }
-                if (!callsEmitted) {
-                    emit(StreamEvent.ToolCallsDone(toolAcc.toToolCalls()))
+                if (!completed) {
+                    emit(StreamEvent.Error("流意外中断（未收到完成标记）"))
+                } else {
+                    if (!callsEmitted) {
+                        emit(StreamEvent.ToolCallsDone(toolAcc.toToolCalls()))
+                    }
                     emit(StreamEvent.Done)
                 }
             }
@@ -243,22 +252,25 @@ class OpenAiProvider : ChatProvider {
             )
         }
 
-    private fun ChatMessage.toWire(): OpenAiMessage = when (role) {
+    private fun ChatMessage.toWire(): OpenAiMessage? = when (role) {
         ChatRole.SYSTEM -> OpenAiMessage(role = "system", content = JsonPrimitive(content))
         ChatRole.USER -> OpenAiMessage(
             role = "user",
             content = buildUserContent()
         )
-        ChatRole.ASSISTANT -> OpenAiMessage(
-            role = "assistant",
-            content = content.ifEmpty { null }?.let { JsonPrimitive(it) },
-            toolCalls = toolCalls.map {
-                OpenAiToolCall(
-                    id = it.id,
-                    function = OpenAiFunction(name = it.name, arguments = it.arguments)
-                )
-            }.takeIf { it.isNotEmpty() }
-        )
+        ChatRole.ASSISTANT -> {
+            if (content.isBlank() && toolCalls.isEmpty()) return null
+            OpenAiMessage(
+                role = "assistant",
+                content = content.ifEmpty { null }?.let { JsonPrimitive(it) },
+                toolCalls = toolCalls.map {
+                    OpenAiToolCall(
+                        id = it.id,
+                        function = OpenAiFunction(name = it.name, arguments = it.arguments)
+                    )
+                }.takeIf { it.isNotEmpty() }
+            )
+        }
         ChatRole.TOOL -> OpenAiMessage(
             role = "tool",
             content = JsonPrimitive(content),

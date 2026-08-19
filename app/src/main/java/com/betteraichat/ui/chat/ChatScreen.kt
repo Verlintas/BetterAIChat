@@ -94,7 +94,7 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
         if (uri != null) vm.addPendingFile(uri, context.contentResolver)
     }
 
-    val totalPromptTokens = state.messages.sumOf { it.usageInput }
+    val totalPromptTokens = state.messages.lastOrNull { it.usageInput > 0 }?.usageInput ?: 0
     val contextWindow = ModelCatalog.entryFor(state.provider, state.model).contextWindow
     val usagePercent = if (contextWindow > 0 && totalPromptTokens > 0) {
         ((totalPromptTokens * 100) / contextWindow).toInt().coerceIn(0, 100)
@@ -119,7 +119,13 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
         }
     }
 
-    LaunchedEffect(state.messages.size, last?.content?.length, shouldAutoScroll) {
+    LaunchedEffect(state.sendTick) {
+        if (state.sendTick > 0 && state.messages.isNotEmpty()) {
+            listState.animateScrollToItem(state.messages.size - 1)
+        }
+    }
+
+    LaunchedEffect(state.messages.size, shouldAutoScroll) {
         if (shouldAutoScroll && state.messages.isNotEmpty() && initialScrollDone) {
             listState.animateScrollToItem(state.messages.size - 1)
         }

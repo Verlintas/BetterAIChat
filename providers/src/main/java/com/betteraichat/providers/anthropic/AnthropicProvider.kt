@@ -135,8 +135,8 @@ class AnthropicProvider : ChatProvider {
             system = system,
             messages = messages.filter { it.role != ChatRole.SYSTEM }.map { it.toWire(reasoning) },
             temperature = if (reasoning) null else config.temperature,
-            thinking = if (reasoning) {
-                AnthropicThinking(budgetTokens = minOf(4096, config.maxTokens))
+            thinking = if (reasoning && config.maxTokens >= 2048) {
+                AnthropicThinking(budgetTokens = minOf(4096, config.maxTokens / 2).coerceAtLeast(1024))
             } else null,
             tools = tools.map {
                 AnthropicTool(it.name, it.description, it.parameters)
@@ -171,9 +171,10 @@ class AnthropicProvider : ChatProvider {
             var inputTokens = 0L
             var outputTokens = 0L
             var usageSeen = false
+            var completed = false
             SseParser.parse(body) { _, data ->
                 val ev = runCatching { json.decodeFromString(AnthropicEvent.serializer(), data) }
-                    .getOrNull() ?: return@parse
+                    .getOrNull() ?: return@parse true
                 when (ev.type) {
                     "message_start" -> ev.message?.usage?.let {
                         inputTokens = it.inputTokens
@@ -191,14 +192,19 @@ class AnthropicProvider : ChatProvider {
                                 currentBlockName = block.name
                                 currentBlockArgs = StringBuilder()
                             }
-                            "thinking" -> block.signature?.let {
-                                thinkingSignature = it
-                                emit(StreamEvent.ThinkingSignature(it))
+                            "thinking" -> {
+                                block.signature?.let {
+                                    thinkingSignature = it
+                                    emit(StreamEvent.ThinkingSignature(it))
+                                }
+                                if (!block.thinkingText.isNullOrBlank()) {
+                                    emit(StreamEvent.ThinkingDelta(block.thinkingText))
+                                }
                             }
                         }
                     }
                     "content_block_delta" -> {
-                        val delta = ev.delta ?: return@parse
+                        val delta = ev.delta ?: return@parse true
                         when (delta.type) {
                             "text_delta" -> delta.text?.let { emit(StreamEvent.Delta(it)) }
                             "thinking_delta" -> delta.text?.let { emit(StreamEvent.ThinkingDelta(it)) }
@@ -220,6 +226,7 @@ class AnthropicProvider : ChatProvider {
                         }
                     }
                     "message_stop" -> {
+                        completed = true
                         if (!callsEmitted) {
                             callsEmitted = true
                             emit(StreamEvent.ToolCallsDone(toolCalls))
@@ -228,12 +235,16 @@ class AnthropicProvider : ChatProvider {
                             doneEmitted = true
                             emit(StreamEvent.Done)
                         }
+                        return@parse false
                     }
                     "error" -> ev.error?.message?.let { emit(StreamEvent.Error(it)) }
                 }
+                true
             }.collect { }
             if (usageSeen) emit(StreamEvent.Usage(inputTokens, outputTokens))
-            if (!callsEmitted) {
+            if (!completed) {
+                emit(StreamEvent.Error("流意外中断（未收到 message_stop）"))
+            } else if (!callsEmitted) {
                 emit(StreamEvent.ToolCallsDone(toolCalls))
                 emit(StreamEvent.Done)
             }
