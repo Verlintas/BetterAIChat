@@ -10,6 +10,9 @@ import android.content.Intent
 import android.provider.Settings
 import androidx.core.app.NotificationCompat
 import com.betteraichat.core.skills.SkillToolDef
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
@@ -220,6 +223,13 @@ class AlarmReceiver : BroadcastReceiver() {
                         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                     )
                     am.cancel(pi)
+                    kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                        try {
+                            com.betteraichat.core.db.AppDatabase.get(context)
+                                .repeatTaskDao().deleteByRequestCode(requestCode)
+                        } catch (e: Exception) {
+                        }
+                    }
                 }
                 val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                 nm.cancelAll()

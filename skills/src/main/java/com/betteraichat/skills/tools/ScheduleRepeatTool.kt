@@ -88,6 +88,23 @@ class ScheduleRepeatTool : DeviceTool {
         } else {
             am.setInexactRepeating(AlarmManager.RTC_WAKEUP, triggerAt, intervalMs, pi)
         }
+        runCatching {
+            com.betteraichat.core.db.AppDatabase.get(context.appContext)
+                .repeatTaskDao()
+                .insert(
+                    com.betteraichat.core.db.RepeatTaskEntity(
+                        title = title,
+                        content = content,
+                        interval = interval,
+                        time = arguments["time"]?.jsonPrimitive?.content ?: "",
+                        weekday = arguments["weekday"]?.jsonPrimitive?.content?.toIntOrNull() ?: 0,
+                        everyHours = arguments["every_hours"]?.jsonPrimitive?.content?.toIntOrNull() ?: 1,
+                        requestCode = requestCode,
+                        nextTriggerAt = triggerAt,
+                        createdAt = now
+                    )
+                )
+        }
         val precision = if (exact) "" else "（非精确模式，可能延迟数分钟）"
         return "已创建定时提醒：$label$precision\n内容：$title：$content\n到达时会发通知，通知上可点击「停止」取消。"
     }

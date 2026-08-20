@@ -156,35 +156,43 @@ fun MessageItem(
                         } else 1f
                         Box(modifier = Modifier.alpha(blinkAlpha)) {
                             Markdown(
-                                msg.content + if (msg.streaming) "▋" else "",
+                                stripCodeBlocks(msg.content) + if (msg.streaming) "▋" else "",
                                 modifier = Modifier.fillMaxWidth()
                             )
                         }
                     }
                 }
             }
-            msg.toolCalls.forEach { call ->
+            msg.toolCalls.forEachIndexed { index, call ->
                 Spacer(Modifier.size(6.dp))
-                ToolCallCard(call)
+                ToolCallCard(call, stepNumber = index + 1)
+            }
+            if (msg.streaming && msg.toolCalls.isNotEmpty()) {
+                val done = msg.toolCalls.count {
+                    it.status == ToolCallStatus.DONE || it.status == ToolCallStatus.FAILED
+                }
+                val running = msg.toolCalls.count { it.status == ToolCallStatus.RUNNING }
+                Spacer(Modifier.size(6.dp))
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
+                ) {
+                    Text(
+                        "执行步骤：已完成 $done / ${msg.toolCalls.size}${if (running > 0) "，执行中…" else ""}",
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
             }
             val codeBlocks = extractCodeBlocks(msg.content)
             if (codeBlocks.isNotEmpty() && !msg.streaming) {
-                Spacer(Modifier.size(6.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
-                        onClick = {
-                            clipboard.setText(AnnotatedString(codeBlocks.joinToString("\n\n")))
-                        }
-                    ) {
-                        Text(
-                            "复制代码（${codeBlocks.size} 段）",
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
+                codeBlocks.forEach { code ->
+                    Spacer(Modifier.size(6.dp))
+                    HighlightedCodeCard(
+                        code = code,
+                        onCopy = { clipboard.setText(AnnotatedString(code)) }
+                    )
                 }
             }
             val links = extractLinks(msg.content)
@@ -382,7 +390,7 @@ private fun AiAvatar() {
 }
 
 @Composable
-private fun ToolCallCard(call: ToolCall) {
+private fun ToolCallCard(call: ToolCall, stepNumber: Int = 0) {
     Surface(
         shape = RoundedCornerShape(10.dp),
         color = MaterialTheme.colorScheme.surfaceVariant,
@@ -397,6 +405,20 @@ private fun ToolCallCard(call: ToolCall) {
                     modifier = Modifier.size(16.dp)
                 )
                 Spacer(Modifier.width(6.dp))
+                if (stepNumber > 0) {
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                    ) {
+                        Text(
+                            "第 $stepNumber 步",
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    Spacer(Modifier.width(4.dp))
+                }
                 Text(call.name, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.weight(1f))
                 StatusBadge(call.status)
@@ -444,5 +466,41 @@ private fun StatusBadge(status: ToolCallStatus) {
             style = MaterialTheme.typography.labelSmall,
             color = color
         )
+    }
+}
+
+
+private val CODE_BLOCK_STRIP_REGEX = Regex("```[^`\n]*\n[\\s\\S]*?```")
+
+private fun stripCodeBlocks(content: String): String =
+    CODE_BLOCK_STRIP_REGEX.replace(content, "````")
+
+@Composable
+private fun HighlightedCodeCard(code: String, onCopy: () -> Unit) {
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = androidx.compose.ui.graphics.Color(0xFF1E1E1E),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "代码",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFF9CDCFE)
+                )
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = onCopy) {
+                    Text("复制", color = Color(0xFF9CDCFE))
+                }
+            }
+            Text(
+                MiniHighlighter.highlight(code),
+                style = MaterialTheme.typography.bodySmall,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 30,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
     }
 }

@@ -48,6 +48,9 @@ data class MessageEntity(
 
 @Dao
 interface ConversationDao {
+    @Query("SELECT COUNT(*) FROM conversations")
+    suspend fun getAllCount(): Long
+
     @Query("SELECT * FROM conversations ORDER BY pinned DESC, updatedAt DESC")
     fun observeAll(): Flow<List<ConversationEntity>>
 
@@ -105,6 +108,18 @@ interface MessageDao {
     @Query("SELECT * FROM messages WHERE starred = 1 ORDER BY id DESC")
     fun observeStarred(): Flow<List<MessageEntity>>
 
+    @Query("SELECT COUNT(*) FROM messages WHERE role = 'USER'")
+    suspend fun countUserMessages(): Long
+
+    @Query("SELECT COUNT(*) FROM messages WHERE role = 'ASSISTANT'")
+    suspend fun countAssistantMessages(): Long
+
+    @Query("SELECT COALESCE(SUM(usageInput), 0) AS totalInput, COALESCE(SUM(usageOutput), 0) AS totalOutput FROM messages")
+    suspend fun tokenTotals(): TokenTotalsRow
+
+    @Query("SELECT COUNT(*) FROM messages WHERE role = 'ASSISTANT' AND toolCallsJson IS NOT NULL")
+    suspend fun countToolCallMessages(): Long
+
     @Query("DELETE FROM messages WHERE id = :id")
     suspend fun deleteById(id: Long)
 
@@ -121,10 +136,55 @@ interface MessageDao {
     suspend fun deleteAllForConversation(conversationId: Long)
 }
 
-@Database(entities = [ConversationEntity::class, MessageEntity::class], version = 6, exportSchema = false)
+@Entity(tableName = "repeat_tasks")
+data class RepeatTaskEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val title: String,
+    val content: String,
+    val interval: String,
+    val time: String = "",
+    val weekday: Int = 0,
+    val everyHours: Int = 1,
+    val requestCode: Int,
+    val nextTriggerAt: Long,
+    val createdAt: Long
+)
+
+@Dao
+interface RepeatTaskDao {
+    @Query("SELECT * FROM repeat_tasks ORDER BY nextTriggerAt ASC")
+    fun observeAll(): Flow<List<RepeatTaskEntity>>
+
+    @Query("SELECT COUNT(*) FROM repeat_tasks")
+    fun observeCount(): Flow<Int>
+
+    @Query("SELECT COUNT(*) FROM repeat_tasks")
+    suspend fun getCount(): Long
+
+    @Insert
+    suspend fun insert(task: RepeatTaskEntity): Long
+
+    @Query("DELETE FROM repeat_tasks WHERE requestCode = :requestCode")
+    suspend fun deleteByRequestCode(requestCode: Int)
+
+    @Query("UPDATE repeat_tasks SET nextTriggerAt = :nextTriggerAt WHERE requestCode = :requestCode")
+    suspend fun updateNextTrigger(requestCode: Int, nextTriggerAt: Long)
+}
+
+data class TokenTotalsRow(
+    val totalInput: Long = 0,
+    val totalOutput: Long = 0
+)
+
+@Database(
+    entities = [ConversationEntity::class, MessageEntity::class, RepeatTaskEntity::class],
+    version = 7,
+    exportSchema = false
+)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun conversationDao(): ConversationDao
     abstract fun messageDao(): MessageDao
+    abstract fun repeatTaskDao(): RepeatTaskDao
 
     companion object {
         @Volatile
@@ -163,10 +223,25 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_6_7 = object : androidx.room.migration.Migration(6, 7) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS repeat_tasks (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "title TEXT NOT NULL, content TEXT NOT NULL, interval TEXT NOT NULL, " +
+                        "time TEXT NOT NULL, weekday INTEGER NOT NULL, everyHours INTEGER NOT NULL, " +
+                        "requestCode INTEGER NOT NULL, nextTriggerAt INTEGER NOT NULL, createdAt INTEGER NOT NULL)"
+                )
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "betteraichat.db")
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                    .addMigrations(
+                        MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4,
+                        MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7
+                    )
                     .build()
                     .also { instance = it }
             }

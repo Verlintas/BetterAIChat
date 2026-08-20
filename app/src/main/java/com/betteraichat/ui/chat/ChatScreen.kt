@@ -1,9 +1,11 @@
 package com.betteraichat.ui.chat
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.media.projection.MediaProjectionManager
 import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -53,13 +55,16 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
@@ -72,6 +77,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.betteraichat.core.catalog.ModelCatalog
 import com.betteraichat.core.mode.AppMode
 import com.betteraichat.ui.rememberContainer
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -91,6 +97,60 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
     var editingMessage by remember { mutableStateOf<com.betteraichat.ui.chat.UiMessage?>(null) }
     var editText by remember { mutableStateOf("") }
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    var speechActive by remember { mutableStateOf(false) }
+    val speechHelper = remember { com.betteraichat.tools.SpeechInputHelper(context) }
+    val recordPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            speechActive = true
+            speechHelper.start(
+                onPartial = { vm.onInputChange(it) },
+                onFinal = { text ->
+                    speechActive = false
+                    vm.onInputChange(text)
+                },
+                onError = { message ->
+                    speechActive = false
+                    scope.launch { snackbarHostState.showSnackbar(message) }
+                }
+            )
+        } else {
+            scope.launch { snackbarHostState.showSnackbar("需要录音权限才能语音输入") }
+        }
+    }
+    DisposableEffect(Unit) {
+        onDispose { speechHelper.destroy() }
+    }
+    val toggleSpeech: () -> Unit = {
+        if (speechActive) {
+            speechHelper.stop()
+            speechActive = false
+        } else {
+            if (androidx.core.content.ContextCompat.checkSelfPermission(
+                    context, Manifest.permission.RECORD_AUDIO
+                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) {
+                speechActive = true
+                speechHelper.start(
+                    onPartial = { vm.onInputChange(it) },
+                    onFinal = { text ->
+                        speechActive = false
+                        vm.onInputChange(text)
+                    },
+                    onError = { message ->
+                        speechActive = false
+                        scope.launch { snackbarHostState.showSnackbar(message) }
+                    }
+                )
+            } else {
+                recordPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            }
+        }
+    }
 
     val imagePicker = androidx.activity.compose.rememberLauncherForActivityResult(
         ActivityResultContracts.PickMultipleVisualMedia(4)
@@ -151,7 +211,6 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
         }
     }
 
-    val snackbarHostState = remember { SnackbarHostState() }
     LaunchedEffect(state.notification) {
         state.notification?.let {
             snackbarHostState.showSnackbar(it)
@@ -254,6 +313,8 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                 pendingAttachments = state.pendingAttachments,
                 attachmentError = state.attachmentError,
                 processing = state.processing,
+                speechActive = speechActive,
+                onToggleSpeech = toggleSpeech,
                 onInputChange = vm::onInputChange,
                 onPickImages = {
                     imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
@@ -584,6 +645,8 @@ private fun InputBar(
     pendingAttachments: List<PendingAttachment>,
     attachmentError: String?,
     processing: Boolean,
+    speechActive: Boolean,
+    onToggleSpeech: () -> Unit,
     onInputChange: (String) -> Unit,
     onPickImages: () -> Unit,
     onPickFile: () -> Unit,
@@ -636,6 +699,24 @@ private fun InputBar(
                 )
             }
         }
+        if (speechActive) {
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(14.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.error
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    "正在聆听…",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+        }
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -663,6 +744,14 @@ private fun InputBar(
                         }
                     )
                 }
+            }
+            IconButton(onClick = onToggleSpeech) {
+                Icon(
+                    MicIcon,
+                    contentDescription = if (speechActive) "停止语音输入" else "语音输入",
+                    tint = if (speechActive) MaterialTheme.colorScheme.error
+                    else MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
             OutlinedTextField(
                 value = input,
@@ -840,6 +929,40 @@ private fun ModelSelector(
 }
 
 private val prettyJson = Json { prettyPrint = true; ignoreUnknownKeys = true }
+
+private val MicIcon: androidx.compose.ui.graphics.vector.ImageVector by lazy {
+    androidx.compose.ui.graphics.vector.ImageVector.Builder(
+        name = "Mic",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f
+    ).apply {
+        path(
+            fill = androidx.compose.ui.graphics.SolidColor(androidx.compose.ui.graphics.Color.Black)
+        ) {
+            moveTo(12f, 14f)
+            curveTo(13.66f, 14f, 15f, 12.66f, 15f, 11f)
+            verticalLineTo(5f)
+            curveTo(15f, 3.34f, 13.66f, 2f, 12f, 2f)
+            curveTo(10.34f, 2f, 9f, 3.34f, 9f, 5f)
+            verticalLineTo(11f)
+            curveTo(9f, 12.66f, 10.34f, 14f, 12f, 14f)
+            close()
+            moveTo(17f, 11f)
+            curveTo(17f, 13.76f, 14.76f, 16f, 12f, 16f)
+            curveTo(9.24f, 16f, 7f, 13.76f, 7f, 11f)
+            horizontalLineTo(5f)
+            curveTo(5f, 14.53f, 7.61f, 17.43f, 11f, 17.92f)
+            verticalLineTo(21f)
+            horizontalLineTo(13f)
+            verticalLineTo(17.92f)
+            curveTo(16.39f, 17.43f, 19f, 14.53f, 19f, 11f)
+            horizontalLineTo(17f)
+            close()
+        }
+    }.build()
+}
 
 private fun shareConversationInternal(context: android.content.Context, text: String) {
     if (text.isBlank()) return

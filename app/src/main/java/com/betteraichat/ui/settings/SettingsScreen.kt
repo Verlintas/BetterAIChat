@@ -27,11 +27,14 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -83,7 +86,9 @@ private enum class SettingsSection(val title: String) {
     PROVIDER("服务商与模型"),
     CONVERSATION("对话"),
     SKILLS("技能"),
-    PERMISSIONS("权限")
+    PERMISSIONS("权限"),
+    REPEAT_TASKS("定时任务"),
+    STATS("使用统计")
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -138,6 +143,16 @@ fun SettingsScreen(onBack: () -> Unit) {
                 scope = scope,
                 snackbar = snackbar
             )
+            SettingsSection.REPEAT_TASKS -> RepeatTasksSection(
+                modifier = Modifier.fillMaxSize().padding(padding),
+                container = container,
+                scope = scope,
+                snackbar = snackbar
+            )
+            SettingsSection.STATS -> StatsSection(
+                modifier = Modifier.fillMaxSize().padding(padding),
+                container = container
+            )
         }
     }
 }
@@ -181,6 +196,22 @@ private fun SettingsMenu(
                 subtitle = "Shizuku · 系统权限授权",
                 icon = { Icon(Icons.Filled.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
                 onClick = { onOpenSection(SettingsSection.PERMISSIONS) }
+            )
+        }
+        item {
+            SettingsMenuItem(
+                title = "定时任务",
+                subtitle = "查看 · 取消重复提醒",
+                icon = { Icon(Icons.Filled.Notifications, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                onClick = { onOpenSection(SettingsSection.REPEAT_TASKS) }
+            )
+        }
+        item {
+            SettingsMenuItem(
+                title = "使用统计",
+                subtitle = "会话 · 消息 · Token · 工具调用",
+                icon = { Icon(Icons.Filled.List, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                onClick = { onOpenSection(SettingsSection.STATS) }
             )
         }
     }
@@ -705,6 +736,158 @@ private fun PermissionsSection(
         }
         Spacer(Modifier.height(24.dp))
     }
+}
+
+@Composable
+private fun RepeatTasksSection(
+    modifier: Modifier,
+    container: AppContainer,
+    scope: kotlinx.coroutines.CoroutineScope,
+    snackbar: SnackbarHostState
+) {
+    val tasks by container.db.repeatTaskDao().observeAll()
+        .collectAsStateWithLifecycle(initialValue = emptyList())
+
+    Column(
+        modifier = modifier.verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text(
+            "AI 创建的重复提醒任务（每天/每周/每小时）。可在通知里一键停止，也可在此删除。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        if (tasks.isEmpty()) {
+            Text(
+                "暂无定时任务。可在 Build/Max 模式让 AI 设置，例如「每天 9 点提醒我喝水」。",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else {
+            tasks.forEach { task ->
+                Surface(
+                    shape = MaterialTheme.shapes.medium,
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                "${task.title}：${task.content}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                maxLines = 2
+                            )
+                            Text(
+                                "${intervalLabel(task)} · 下次：${formatNext(task.nextTriggerAt)}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        TextButton(onClick = {
+                            val am = container.appContext.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
+                            val pi = android.app.PendingIntent.getBroadcast(
+                                container.appContext,
+                                task.requestCode,
+                                Intent(container.appContext, com.betteraichat.skills.AlarmReceiver::class.java)
+                                    .setAction(com.betteraichat.skills.AlarmReceiver.ACTION_REPEAT),
+                                android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+                            )
+                            am.cancel(pi)
+                            scope.launch { container.db.repeatTaskDao().deleteByRequestCode(task.requestCode) }
+                            scope.launch { snackbar.showSnackbar("定时任务已删除") }
+                        }) {
+                            Text("删除", color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(24.dp))
+    }
+}
+
+private fun intervalLabel(task: com.betteraichat.core.db.RepeatTaskEntity): String = when (task.interval) {
+    "daily" -> "每天 ${task.time}"
+    "weekly" -> "每周周${task.weekday} ${task.time}"
+    else -> "每 ${task.everyHours} 小时"
+}
+
+private fun formatNext(ts: Long): String =
+    java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.getDefault())
+        .format(java.util.Date(ts))
+
+@Composable
+private fun StatsSection(
+    modifier: Modifier,
+    container: AppContainer
+) {
+    val db = container.db
+    var conversations by remember { mutableStateOf(0L) }
+    var userMessages by remember { mutableStateOf(0L) }
+    var assistantMessages by remember { mutableStateOf(0L) }
+    var inputTokens by remember { mutableStateOf(0L) }
+    var outputTokens by remember { mutableStateOf(0L) }
+    var toolCalls by remember { mutableStateOf(0L) }
+    var repeatTasks by remember { mutableStateOf(0L) }
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val c = db.conversationDao().getAllCount()
+            val userM = db.messageDao().countUserMessages()
+            val assistantM = db.messageDao().countAssistantMessages()
+            val t = db.messageDao().tokenTotals()
+            val tc = db.messageDao().countToolCallMessages()
+            val rt = db.repeatTaskDao().getCount()
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                conversations = c
+                userMessages = userM
+                assistantMessages = assistantM
+                inputTokens = t.totalInput
+                outputTokens = t.totalOutput
+                toolCalls = tc
+                repeatTasks = rt
+            }
+        }
+    }
+
+    Column(
+        modifier = modifier.verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        StatRow("会话数", conversations.toString())
+        StatRow("用户消息", userMessages.toString())
+        StatRow("AI 回复", assistantMessages.toString())
+        StatRow("输入 Token 累计", formatCount(inputTokens))
+        StatRow("输出 Token 累计", formatCount(outputTokens))
+        StatRow("工具调用次数", toolCalls.toString())
+        StatRow("定时任务", repeatTasks.toString())
+        Spacer(Modifier.height(24.dp))
+    }
+}
+
+@Composable
+private fun StatRow(label: String, value: String) {
+    Surface(
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+private fun formatCount(n: Long): String = when {
+    n >= 1_000_000 -> "%.1fM".format(n / 1_000_000.0)
+    n >= 1_000 -> "%.1fK".format(n / 1000.0)
+    else -> n.toString()
 }
 
 @Composable
