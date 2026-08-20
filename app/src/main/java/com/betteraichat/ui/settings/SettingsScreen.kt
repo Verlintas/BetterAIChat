@@ -437,6 +437,8 @@ private fun ConversationSection(
     var defaultMode by remember { mutableStateOf(settings.getDefaultMode()) }
     var themeMode by remember { mutableStateOf(settings.getThemeMode()) }
     var autoSpeak by remember { mutableStateOf(settings.getAutoSpeak()) }
+    var voiceAssistant by remember { mutableStateOf(settings.getVoiceAssistant()) }
+    var accentColor by remember { mutableStateOf(settings.getAccentColor()) }
 
     Column(
         modifier = modifier.verticalScroll(rememberScrollState()).padding(16.dp),
@@ -475,6 +477,42 @@ private fun ConversationSection(
                     label = { Text(mode.displayName) }
                 )
             }
+        }
+
+        HorizontalDivider()
+
+        Text("强调色", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            com.betteraichat.core.storage.AccentColor.entries.forEach { c ->
+                FilterChip(
+                    selected = accentColor == c,
+                    onClick = {
+                        accentColor = c
+                        settings.setAccentColor(c)
+                    },
+                    label = { Text(c.displayName) }
+                )
+            }
+        }
+
+        HorizontalDivider()
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("语音助手模式", style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    "免提对话：AI 回复自动朗读，说完自动开麦，识别到内容自动发送",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Switch(
+                checked = voiceAssistant,
+                onCheckedChange = {
+                    voiceAssistant = it
+                    settings.setVoiceAssistant(it)
+                }
+            )
         }
 
         HorizontalDivider()

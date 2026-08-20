@@ -39,8 +39,18 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleShareIntent(intent: Intent?) {
-        if (intent?.action != Intent.ACTION_SEND) return
+        if (intent == null) return
         val container = (application as BetterAIChatApp).container
+        if (intent.action == Intent.ACTION_VIEW && intent.data?.scheme == "betteraichat") {
+            val text = intent.data?.getQueryParameter("text")?.trim()
+            if (!text.isNullOrBlank()) {
+                container.pendingShareText = text
+                container.shareNavTick.value = container.shareNavTick.value + 1
+            }
+            intent.action = Intent.ACTION_MAIN
+            return
+        }
+        if (intent.action != Intent.ACTION_SEND) return
         when (intent.type) {
             "text/plain" -> {
                 val text = intent.getStringExtra(Intent.EXTRA_TEXT)?.trim()

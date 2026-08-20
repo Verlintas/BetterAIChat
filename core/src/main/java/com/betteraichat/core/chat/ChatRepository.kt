@@ -67,6 +67,9 @@ class ChatRepository(private val db: AppDatabase) {
     suspend fun deleteMessagesFrom(conversationId: Long, fromId: Long) =
         db.messageDao().deleteFrom(conversationId, fromId)
 
+    suspend fun searchByContent(query: String): List<Long> =
+        db.messageDao().searchConversationsByContent(query)
+
     suspend fun deleteMessagesRange(conversationId: Long, fromId: Long, toId: Long) =
         db.messageDao().deleteRange(conversationId, fromId, toId)
 

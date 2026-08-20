@@ -12,6 +12,13 @@ enum class ThemeMode(val displayName: String) {
     DARK("深色")
 }
 
+enum class AccentColor(val displayName: String) {
+    BLUE("蓝"),
+    PURPLE("紫"),
+    GREEN("绿"),
+    TEAL("青")
+}
+
 class SettingsRepository(context: Context) {
 
     private val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
@@ -108,6 +115,20 @@ class SettingsRepository(context: Context) {
 
     fun setAutoSpeak(enabled: Boolean) {
         prefs.edit().putBoolean("auto_speak", enabled).apply()
+    }
+
+    fun getVoiceAssistant(): Boolean = prefs.getBoolean("voice_assistant", false)
+
+    fun setVoiceAssistant(enabled: Boolean) {
+        prefs.edit().putBoolean("voice_assistant", enabled).apply()
+    }
+
+    fun getAccentColor(): AccentColor = runCatching {
+        AccentColor.valueOf(prefs.getString("accent_color", AccentColor.BLUE.name)!!)
+    }.getOrDefault(AccentColor.BLUE)
+
+    fun setAccentColor(accent: AccentColor) {
+        prefs.edit().putString("accent_color", accent.name).apply()
     }
 
     fun configFor(provider: ProviderId): ProviderConfig = ProviderConfig(

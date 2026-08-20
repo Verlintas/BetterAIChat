@@ -101,6 +101,29 @@ class ChatViewModel(
     private var pendingRound = -1
     private var sendCancelled = false
     private var titleGenerated = false
+    private var voiceInputHelper: com.betteraichat.tools.SpeechInputHelper? = null
+    private var voiceListening = false
+    private var toolCallRoundsThisRun = 0
+
+    private fun appInForeground(): Boolean =
+        (appContext.applicationContext as com.betteraichat.BetterAIChatApp).container.appInForeground
+
+    private fun sendTaskDoneNotification() {
+        val container = (appContext.applicationContext as com.betteraichat.BetterAIChatApp).container
+        val nm = appContext.getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+        nm.createNotificationChannel(
+            android.app.NotificationChannel(
+                "betteraichat_task", "AI 任务", android.app.NotificationManager.IMPORTANCE_DEFAULT
+            )
+        )
+        val notification = android.app.Notification.Builder(appContext, "betteraichat_task")
+            .setSmallIcon(android.R.drawable.ic_popup_sync)
+            .setContentTitle("BetterAIChat")
+            .setContentText("AI 任务已完成：${_state.value.title}")
+            .setAutoCancel(true)
+            .build()
+        nm.notify((System.currentTimeMillis() % Int.MAX_VALUE).toInt(), notification)
+    }
 
     init {
         viewModelScope.launch {
@@ -251,9 +274,47 @@ class ChatViewModel(
         _state.update { it.copy(pendingAttachments = it.pendingAttachments.filterNot { a -> a.id == id }) }
     }
 
+    private fun speakAndListen(text: String) {
+        stopVoiceInput()
+        speechPlayer.speakWithCallback(text) {
+            startVoiceInput()
+        }
+    }
+
+    private fun startVoiceInput() {
+        if (!settings.getVoiceAssistant() || voiceListening || _state.value.isRunning) return
+        voiceListening = true
+        val helper = voiceInputHelper ?: com.betteraichat.tools.SpeechInputHelper(appContext).also {
+            voiceInputHelper = it
+        }
+        _state.update { it.copy(notification = "正在聆听…") }
+        helper.start(
+            onPartial = { _state.update { st -> st.copy(input = it) } },
+            onFinal = { text ->
+                voiceListening = false
+                _state.update { it.copy(input = text) }
+                if (text.isNotBlank()) {
+                    send()
+                }
+            },
+            onError = {
+                voiceListening = false
+                _state.update { it.copy(notification = "语音识别失败：$it") }
+            }
+        )
+    }
+
+    private fun stopVoiceInput() {
+        if (voiceListening) {
+            voiceInputHelper?.stop()
+            voiceListening = false
+        }
+    }
+
     fun send() {
         val text = _state.value.input.trim()
         val pending = _state.value.pendingAttachments
+        stopVoiceInput()
         if ((text.isEmpty() && pending.isEmpty()) || _state.value.isRunning) return
         sendCancelled = false
         _state.update { it.copy(isRunning = true) }
@@ -307,8 +368,9 @@ class ChatViewModel(
     private fun runGeneration(cid: Long) {
         val s = _state.value
         val config = settings.configFor(s.provider)
-        streaming = newStreamingMessage(config, s)
-        refresh()
+            streaming = newStreamingMessage(config, s)
+            toolCallRoundsThisRun = 0
+            refresh()
         var currentJob: Job? = null
         currentJob = viewModelScope.launch {
             streamTickerJob = viewModelScope.launch {
@@ -348,6 +410,7 @@ class ChatViewModel(
                             if (streaming == null) {
                                 streaming = newStreamingMessage(config, s)
                             }
+                            toolCallRoundsThisRun++
                             streaming = streaming?.copy(
                                 toolCalls = upsertCall(streaming?.toolCalls ?: emptyList(), ev.call)
                             )
@@ -386,6 +449,9 @@ class ChatViewModel(
                             if (settings.getAutoSpeak() && msg.content.isNotBlank()) {
                                 speechPlayer.speak(msg.content)
                             }
+                            if (settings.getVoiceAssistant() && msg.content.isNotBlank()) {
+                                speakAndListen(msg.content)
+                            }
                             if (!titleGenerated && cid == currentConversationId &&
                                 repository.getHistory(cid).size >= 3
                             ) {
@@ -400,7 +466,11 @@ class ChatViewModel(
                             refresh()
                         }
                         is EngineEvent.ConfirmRequested -> Unit
-                        EngineEvent.Completed -> Unit
+                        EngineEvent.Completed -> {
+                            if (toolCallRoundsThisRun > 0 && !appInForeground()) {
+                                sendTaskDoneNotification()
+                            }
+                        }
                     }
                 }
             } finally {

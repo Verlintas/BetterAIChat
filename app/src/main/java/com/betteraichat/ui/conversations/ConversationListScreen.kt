@@ -36,6 +36,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -76,10 +77,22 @@ fun ConversationListScreen(
     var showArchived by remember { mutableStateOf(false) }
 
     val query = searchQuery.trim()
+    var contentMatchIds by remember { mutableStateOf(emptyList<Long>()) }
+    LaunchedEffect(query) {
+        if (query.isNotEmpty()) {
+            contentMatchIds = container.repository.searchByContent(query)
+        } else {
+            contentMatchIds = emptyList()
+        }
+    }
     val filteredActive = if (query.isEmpty()) activeConversations
-    else activeConversations.filter {
-        it.title.contains(query, ignoreCase = true) ||
-            it.model.contains(query, ignoreCase = true)
+    else {
+        val byTitle = activeConversations.filter {
+            it.title.contains(query, ignoreCase = true) ||
+                it.model.contains(query, ignoreCase = true)
+        }
+        val byContent = activeConversations.filter { it.id in contentMatchIds }
+        (byTitle + byContent).distinctBy { it.id }
     }
     val filteredArchived = if (query.isEmpty()) archivedConversations
     else archivedConversations.filter {

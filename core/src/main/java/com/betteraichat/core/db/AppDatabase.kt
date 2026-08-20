@@ -102,6 +102,9 @@ interface MessageDao {
     @Query("UPDATE messages SET content = :content WHERE id = :id")
     suspend fun updateContent(id: Long, content: String)
 
+    @Query("SELECT DISTINCT conversationId FROM messages WHERE content LIKE '%' || :query || '%' ORDER BY conversationId DESC")
+    suspend fun searchConversationsByContent(query: String): List<Long>
+
     @Query("UPDATE messages SET starred = :starred WHERE id = :id")
     suspend fun updateStarred(id: Long, starred: Boolean)
 

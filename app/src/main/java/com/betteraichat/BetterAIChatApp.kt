@@ -43,12 +43,28 @@ class BetterAIChatApp : Application() {
     override fun onCreate() {
         super.onCreate()
         container = AppContainer(this)
+        registerActivityLifecycleCallbacks(object : android.app.Application.ActivityLifecycleCallbacks {
+            override fun onActivityCreated(activity: android.app.Activity, savedInstanceState: android.os.Bundle?) {}
+            override fun onActivityStarted(activity: android.app.Activity) {}
+            override fun onActivityResumed(activity: android.app.Activity) { container.setAppInForeground(true) }
+            override fun onActivityPaused(activity: android.app.Activity) { container.setAppInForeground(false) }
+            override fun onActivityStopped(activity: android.app.Activity) {}
+            override fun onActivityDestroyed(activity: android.app.Activity) {}
+            override fun onActivitySaveInstanceState(activity: android.app.Activity, outState: android.os.Bundle) {}
+        })
     }
 }
 
 class AppContainer(context: Application) {
 
     val appContext = context.applicationContext
+    @Volatile
+    var appInForeground = false
+        private set
+
+    fun setAppInForeground(value: Boolean) {
+        appInForeground = value
+    }
     var pendingShareText: String? = null
     var pendingShareImage: android.net.Uri? = null
     val shareNavTick = kotlinx.coroutines.flow.MutableStateFlow(0)
