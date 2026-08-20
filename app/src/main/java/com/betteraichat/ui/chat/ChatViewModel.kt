@@ -724,9 +724,6 @@ class ChatViewModel(
     }
 
     private fun sendWithContent(text: String, attachments: List<com.betteraichat.core.model.Attachment>) {
-        if (_state.value.isRunning) return
-        sendCancelled = false
-        _state.update { it.copy(isRunning = true) }
         viewModelScope.launch {
             if (currentConversationId <= 0) {
                 val s = _state.value
