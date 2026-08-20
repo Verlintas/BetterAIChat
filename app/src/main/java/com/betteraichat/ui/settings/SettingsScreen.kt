@@ -254,6 +254,11 @@ fun SettingsScreen(onBack: () -> Unit) {
                         container.settings.setThemeMode(mode)
                         scope.launch { snackbar.showSnackbar("外观已切换") }
                     },
+                    autoSpeak = container.settings.getAutoSpeak(),
+                    onAutoSpeakChange = { enabled ->
+                        container.settings.setAutoSpeak(enabled)
+                        scope.launch { snackbar.showSnackbar(if (enabled) "AI 回复将自动朗读" else "已关闭自动朗读") }
+                    },
                     skills = skills,
                     onImportSkill = { skillLauncher.launch(arrayOf("*/*")) },
                     onDeleteSkill = { skill ->
@@ -438,6 +443,8 @@ private fun SmartTab(
     onSave: () -> Unit,
     themeMode: com.betteraichat.core.storage.ThemeMode,
     onThemeModeChange: (com.betteraichat.core.storage.ThemeMode) -> Unit,
+    autoSpeak: Boolean,
+    onAutoSpeakChange: (Boolean) -> Unit,
     skills: List<com.betteraichat.core.skills.Skill>,
     onImportSkill: () -> Unit,
     onDeleteSkill: (com.betteraichat.core.skills.Skill) -> Unit
@@ -463,6 +470,20 @@ private fun SmartTab(
                     label = { Text(mode.displayName) }
                 )
             }
+        }
+
+        HorizontalDivider()
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("自动朗读回复", style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    "AI 回复完成后自动用语音朗读（可配合 Max 模式当语音助手用）",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Switch(checked = autoSpeak, onCheckedChange = onAutoSpeakChange)
         }
 
         HorizontalDivider()

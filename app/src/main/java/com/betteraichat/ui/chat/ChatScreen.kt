@@ -43,6 +43,8 @@ import androidx.compose.material3.InputChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -135,6 +137,14 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
         }
     }
 
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(state.notification) {
+        state.notification?.let {
+            snackbarHostState.showSnackbar(it)
+            vm.dismissNotification()
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -171,6 +181,20 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                             Icon(Icons.Filled.MoreVert, contentDescription = "更多")
                         }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            DropdownMenuItem(
+                                text = { Text("分析屏幕") },
+                                onClick = {
+                                    menuOpen = false
+                                    vm.analyzeScreen()
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("保存为技能") },
+                                onClick = {
+                                    menuOpen = false
+                                    vm.saveAsSkill()
+                                }
+                            )
                             DropdownMenuItem(
                                 text = { Text("压缩上下文") },
                                 onClick = {
@@ -214,7 +238,8 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                 onSend = vm::send,
                 onStop = vm::stop
             )
-        }
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
         if (state.messages.isEmpty() && state.error == null) {
             WelcomePanel(

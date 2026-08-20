@@ -26,44 +26,65 @@ object AttachmentProcessor {
     suspend fun imageFromUri(context: Context, uri: Uri, name: String): Result<Attachment> =
         withContext(Dispatchers.IO) {
             runCatching {
-                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                context.contentResolver.openInputStream(uri)?.use {
-                    BitmapFactory.decodeStream(it, null, bounds)
-                }
-                if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
-                    throw IllegalArgumentException("无法解码图片")
-                }
-                var sample = 1
-                var longEdge = maxOf(bounds.outWidth, bounds.outHeight)
-                while (longEdge / (sample * 2) >= MAX_IMAGE_EDGE) sample *= 2
-                val opts = BitmapFactory.Options().apply { inSampleSize = sample }
-                val decoded = context.contentResolver.openInputStream(uri)?.use {
-                    BitmapFactory.decodeStream(it, null, opts)
-                } ?: throw IllegalArgumentException("无法解码图片")
+                val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                    ?: throw IllegalArgumentException("无法读取图片")
+                val decoded = decodeScaled(bytes)
                 val rotated = applyExifRotation(context, uri, decoded)
                 val source = rotated ?: decoded
-                val bitmap = if (maxOf(source.width, source.height) > MAX_IMAGE_EDGE) {
-                    val scale = MAX_IMAGE_EDGE.toFloat() / maxOf(source.width, source.height)
-                    Bitmap.createScaledBitmap(
-                        source,
-                        (source.width * scale).toInt().coerceAtLeast(1),
-                        (source.height * scale).toInt().coerceAtLeast(1),
-                        true
-                    ).also { if (it !== source) source.recycle() }
-                } else source
+                val bitmap = scaleIfNeeded(source)
                 if (rotated != null && rotated !== bitmap) rotated.recycle()
                 if (decoded !== source && decoded !== bitmap) decoded.recycle()
-                val out = ByteArrayOutputStream()
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 85, out)
-                bitmap.recycle()
-                Attachment(
-                    kind = "image",
-                    name = name,
-                    mimeType = "image/jpeg",
-                    dataBase64 = Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
-                )
+                compressToAttachment(bitmap, name)
             }
         }
+
+    suspend fun imageFromFile(path: String, name: String): Result<Attachment> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val bytes = java.io.File(path).readBytes()
+                val decoded = decodeScaled(bytes)
+                val bitmap = scaleIfNeeded(decoded)
+                if (decoded !== bitmap) decoded.recycle()
+                compressToAttachment(bitmap, name)
+            }
+        }
+
+    private fun decodeScaled(bytes: ByteArray): Bitmap {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+            throw IllegalArgumentException("无法解码图片")
+        }
+        var sample = 1
+        var longEdge = maxOf(bounds.outWidth, bounds.outHeight)
+        while (longEdge / (sample * 2) >= MAX_IMAGE_EDGE) sample *= 2
+        val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+        return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
+            ?: throw IllegalArgumentException("无法解码图片")
+    }
+
+    private fun scaleIfNeeded(source: Bitmap): Bitmap =
+        if (maxOf(source.width, source.height) > MAX_IMAGE_EDGE) {
+            val scale = MAX_IMAGE_EDGE.toFloat() / maxOf(source.width, source.height)
+            Bitmap.createScaledBitmap(
+                source,
+                (source.width * scale).toInt().coerceAtLeast(1),
+                (source.height * scale).toInt().coerceAtLeast(1),
+                true
+            ).also { if (it !== source) source.recycle() }
+        } else source
+
+    private fun compressToAttachment(bitmap: Bitmap, name: String): Attachment {
+        val out = ByteArrayOutputStream()
+        bitmap.compress(Bitmap.CompressFormat.JPEG, 85, out)
+        bitmap.recycle()
+        return Attachment(
+            kind = "image",
+            name = name,
+            mimeType = "image/jpeg",
+            dataBase64 = Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
+        )
+    }
 
     private fun applyExifRotation(context: Context, uri: Uri, bitmap: Bitmap): Bitmap? {
         return try {

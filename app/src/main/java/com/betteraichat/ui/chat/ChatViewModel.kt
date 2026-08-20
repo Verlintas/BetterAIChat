@@ -65,7 +65,8 @@ data class ChatUiState(
     val pendingAttachments: List<PendingAttachment> = emptyList(),
     val attachmentError: String? = null,
     val processing: Boolean = false,
-    val sendTick: Int = 0
+    val sendTick: Int = 0,
+    val notification: String? = null
 )
 
 class ChatViewModel(
@@ -77,7 +78,14 @@ class ChatViewModel(
     private val appContext: android.content.Context
 ) : ViewModel() {
 
+    private val speechPlayer: com.betteraichat.tools.SpeechPlayer
+        get() = (appContext.applicationContext as com.betteraichat.BetterAIChatApp).container.speechPlayer
+
     private val json = Json { ignoreUnknownKeys = true }
+
+    private companion object {
+        val SCREENSHOT_PATH_REGEX = Regex("截屏成功：([^（\\s]+)")
+    }
 
     private val _state = MutableStateFlow(ChatUiState())
     val state = _state.asStateFlow()
@@ -250,17 +258,7 @@ class ChatViewModel(
         sendCancelled = false
         _state.update { it.copy(isRunning = true) }
         viewModelScope.launch {
-            if (currentConversationId <= 0) {
-                val s = _state.value
-                val cid = repository.createConversation(s.provider, s.model, s.mode)
-                currentConversationId = cid
-                repository.updateTitle(cid, text.take(30).ifBlank { "对话" })
-                _state.update { it.copy(conversationId = cid, title = text.take(30).ifBlank { "对话" }) }
-                startObserving(cid)
-            }
-            val cid = currentConversationId
-            val s = _state.value
-            val attachments = processPending(s.pendingAttachments)
+            val attachments = processPending(pending)
             if (sendCancelled) {
                 sendCancelled = false
                 _state.update { it.copy(isRunning = false, pendingAttachments = emptyList()) }
@@ -273,22 +271,7 @@ class ChatViewModel(
             if (attachments.isNotEmpty() && text.isEmpty()) {
                 _state.update { it.copy(attachmentError = null) }
             }
-            repository.insertMessage(
-                repository.domainToMessage(
-                    ChatMessage(
-                        role = ChatRole.USER,
-                        content = text,
-                        model = s.model,
-                        mode = s.mode,
-                        attachments = attachments
-                    ),
-                    cid
-                )
-            )
-            _state.update {
-                it.copy(input = "", error = null, pendingAttachments = emptyList(), sendTick = it.sendTick + 1)
-            }
-            runGeneration(cid)
+            sendWithContent(text, attachments)
         }
     }
 
@@ -400,6 +383,9 @@ class ChatViewModel(
                             roundCounter++
                             streaming = null
                             refresh()
+                            if (settings.getAutoSpeak() && msg.content.isNotBlank()) {
+                                speechPlayer.speak(msg.content)
+                            }
                             if (!titleGenerated && cid == currentConversationId &&
                                 repository.getHistory(cid).size >= 3
                             ) {
@@ -429,8 +415,7 @@ class ChatViewModel(
         runJob = currentJob
     }
 
-    private fun smartError(raw: String): String = when {
-        raw.contains("401") -> "API Key 无效或已过期，请到设置页检查（HTTP 401）"
+    private fun smartError(raw: String): String = when {        raw.contains("401") -> "API Key 无效或已过期，请到设置页检查（HTTP 401）"
         raw.contains("403") -> "API Key 无权限访问该资源（HTTP 403）"
         raw.contains("404") -> "模型不存在或 Base URL 不正确，请到设置页检测连接（HTTP 404）"
         raw.contains("429") -> "请求过于频繁或额度不足，请稍后重试（HTTP 429）"
@@ -695,6 +680,113 @@ class ChatViewModel(
             }
         } catch (e: Exception) {
             titleGenerated = false
+        }
+    }
+
+    fun dismissNotification() {
+        _state.update { it.copy(notification = null) }
+    }
+
+    fun analyzeScreen() {
+        if (_state.value.isRunning) return
+        val container = (appContext.applicationContext as com.betteraichat.BetterAIChatApp).container
+        val screenshotManager = container.screenshotManagerRef
+        viewModelScope.launch {
+            _state.update { it.copy(processing = true) }
+            val result = screenshotManager.capture()
+            if (result.startsWith("ERROR:")) {
+                _state.update { it.copy(processing = false, error = result.removePrefix("ERROR:")) }
+                return@launch
+            }
+            val path = SCREENSHOT_PATH_REGEX.find(result)?.groupValues?.get(1)
+            _state.update { it.copy(processing = false) }
+            if (path == null) {
+                _state.update { it.copy(error = "截屏结果解析失败") }
+                return@launch
+            }
+            val attachment = AttachmentProcessor.imageFromFile(path, "屏幕截图.png").getOrNull()
+            if (attachment == null) {
+                _state.update { it.copy(error = "屏幕截图处理失败") }
+                return@launch
+            }
+            sendWithContent(
+                text = "请分析这张屏幕截图：描述界面上有什么内容，并针对用户可能的困惑给出操作建议。",
+                attachments = listOf(attachment)
+            )
+        }
+    }
+
+    private fun sendWithContent(text: String, attachments: List<com.betteraichat.core.model.Attachment>) {
+        if (_state.value.isRunning) return
+        sendCancelled = false
+        _state.update { it.copy(isRunning = true) }
+        viewModelScope.launch {
+            if (currentConversationId <= 0) {
+                val s = _state.value
+                val cid = repository.createConversation(s.provider, s.model, s.mode)
+                currentConversationId = cid
+                repository.updateTitle(cid, text.take(30).ifBlank { "对话" })
+                _state.update { it.copy(conversationId = cid, title = text.take(30).ifBlank { "对话" }) }
+                startObserving(cid)
+            }
+            val cid = currentConversationId
+            val s = _state.value
+            repository.insertMessage(
+                repository.domainToMessage(
+                    ChatMessage(
+                        role = ChatRole.USER,
+                        content = text,
+                        model = s.model,
+                        mode = s.mode,
+                        attachments = attachments
+                    ),
+                    cid
+                )
+            )
+            _state.update {
+                it.copy(input = "", error = null, pendingAttachments = emptyList(), sendTick = it.sendTick + 1)
+            }
+            runGeneration(cid)
+        }
+    }
+
+    fun saveAsSkill() {
+        if (currentConversationId <= 0) return
+        val container = (appContext.applicationContext as com.betteraichat.BetterAIChatApp).container
+        viewModelScope.launch {
+            val history = repository.getHistory(currentConversationId)
+            val toolUses = history.mapNotNull { m ->
+                m.toolCallsJson?.let {
+                    runCatching { json.decodeFromString<List<ToolCall>>(it) }.getOrDefault(emptyList())
+                }
+            }.flatten()
+            if (toolUses.isEmpty()) {
+                _state.update { it.copy(notification = "当前对话没有工具调用，无法生成技能") }
+                return@launch
+            }
+            val names = toolUses.map { it.name }.distinct()
+            val skillName = "skill_${System.currentTimeMillis() % 100000}"
+            val description = "自动录制的技能：使用 ${names.joinToString("、")} 完成多步操作"
+            val md = buildString {
+                appendLine("---")
+                appendLine("name: $skillName")
+                appendLine("description: $description")
+                appendLine("allowed-tools:")
+                names.forEach { appendLine("  - $it") }
+                appendLine("---")
+                appendLine("1. 先向用户确认任务目标。")
+                appendLine("2. 按顺序执行以下步骤（可在必要时调整参数）：")
+                toolUses.take(10).forEachIndexed { i, call ->
+                    appendLine("   ${i + 1}. 调用 ${call.name}（参数示例：${call.arguments.take(80)}）")
+                }
+                appendLine("3. 完成后向用户总结执行结果。")
+            }
+            val result = container.skillRepository.import("$skillName.md", md)
+            result.onSuccess {
+                _state.update { it.copy(notification = "已保存为技能「$skillName」，可在设置页查看，AI 可通过 load_skill 复用") }
+            }.onFailure { e ->
+                _state.update { it.copy(notification = "技能保存失败：${e.message}") }
+            }
         }
     }
 

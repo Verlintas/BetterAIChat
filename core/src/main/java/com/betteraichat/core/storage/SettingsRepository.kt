@@ -104,6 +104,12 @@ class SettingsRepository(context: Context) {
         prefs.edit().putString("theme_mode", mode.name).apply()
     }
 
+    fun getAutoSpeak(): Boolean = prefs.getBoolean("auto_speak", false)
+
+    fun setAutoSpeak(enabled: Boolean) {
+        prefs.edit().putBoolean("auto_speak", enabled).apply()
+    }
+
     fun configFor(provider: ProviderId): ProviderConfig = ProviderConfig(
         provider = provider,
         baseUrl = getBaseUrl(provider),
