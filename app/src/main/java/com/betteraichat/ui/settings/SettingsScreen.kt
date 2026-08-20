@@ -1,7 +1,6 @@
 package com.betteraichat.ui.settings
 
 import android.Manifest
-import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.media.projection.MediaProjectionManager
@@ -20,13 +19,22 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -41,15 +49,12 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -65,15 +70,19 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.betteraichat.AppContainer
 import com.betteraichat.core.catalog.ModelCatalog
 import com.betteraichat.core.mode.AppMode
 import com.betteraichat.core.model.ProviderId
+import com.betteraichat.core.storage.SettingsRepository
+import com.betteraichat.core.storage.ThemeMode
 import com.betteraichat.ui.rememberContainer
 import kotlinx.coroutines.launch
 
-private enum class SettingsTab(val title: String) {
-    CONNECTION("连接"),
-    SMART("智能"),
+private enum class SettingsSection(val title: String) {
+    PROVIDER("服务商与模型"),
+    CONVERSATION("对话"),
+    SKILLS("技能"),
     PERMISSIONS("权限")
 }
 
@@ -82,11 +91,146 @@ private enum class SettingsTab(val title: String) {
 fun SettingsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val container = rememberContainer()
-    val settings = container.settings
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
-    var selectedTab by remember { mutableIntStateOf(0) }
+    var section by remember { mutableStateOf<SettingsSection?>(null) }
 
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(section?.title ?: "设置") },
+                navigationIcon = {
+                    IconButton(onClick = { if (section == null) onBack() else section = null }) {
+                        Icon(Icons.Filled.ArrowBack, contentDescription = "返回")
+                    }
+                }
+            )
+        },
+        snackbarHost = { SnackbarHost(snackbar) }
+    ) { padding ->
+        when (section) {
+            null -> SettingsMenu(
+                modifier = Modifier.fillMaxSize().padding(padding),
+                onOpenSection = { section = it }
+            )
+            SettingsSection.PROVIDER -> ProviderSection(
+                modifier = Modifier.fillMaxSize().padding(padding),
+                container = container,
+                settings = container.settings,
+                scope = scope,
+                snackbar = snackbar
+            )
+            SettingsSection.CONVERSATION -> ConversationSection(
+                modifier = Modifier.fillMaxSize().padding(padding),
+                settings = container.settings,
+                scope = scope,
+                snackbar = snackbar
+            )
+            SettingsSection.SKILLS -> SkillsSection(
+                modifier = Modifier.fillMaxSize().padding(padding),
+                container = container,
+                scope = scope,
+                snackbar = snackbar
+            )
+            SettingsSection.PERMISSIONS -> PermissionsSection(
+                modifier = Modifier.fillMaxSize().padding(padding),
+                container = container,
+                scope = scope,
+                snackbar = snackbar
+            )
+        }
+    }
+}
+
+@Composable
+private fun SettingsMenu(
+    modifier: Modifier,
+    onOpenSection: (SettingsSection) -> Unit
+) {
+    LazyColumn(
+        modifier = modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        item {
+            SettingsMenuItem(
+                title = "服务商与模型",
+                subtitle = "API Key · Base URL · 模型 · 连接检测",
+                icon = { Icon(Icons.Filled.Settings, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                onClick = { onOpenSection(SettingsSection.PROVIDER) }
+            )
+        }
+        item {
+            SettingsMenuItem(
+                title = "对话",
+                subtitle = "默认模式 · 外观 · 自动朗读",
+                icon = { Icon(Icons.Filled.Face, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                onClick = { onOpenSection(SettingsSection.CONVERSATION) }
+            )
+        }
+        item {
+            SettingsMenuItem(
+                title = "技能",
+                subtitle = "导入 · 管理 SKILL.md",
+                icon = { Icon(Icons.Filled.Build, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                onClick = { onOpenSection(SettingsSection.SKILLS) }
+            )
+        }
+        item {
+            SettingsMenuItem(
+                title = "权限",
+                subtitle = "Shizuku · 系统权限授权",
+                icon = { Icon(Icons.Filled.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                onClick = { onOpenSection(SettingsSection.PERMISSIONS) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun SettingsMenuItem(
+    title: String,
+    subtitle: String,
+    icon: @Composable () -> Unit,
+    onClick: () -> Unit
+) {
+    Card(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                shape = MaterialTheme.shapes.medium,
+                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
+                modifier = Modifier.size(40.dp)
+            ) {
+                androidx.compose.foundation.layout.Box(contentAlignment = Alignment.Center) { icon() }
+            }
+            Spacer(Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleMedium)
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Icon(
+                Icons.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun ProviderSection(
+    modifier: Modifier,
+    container: AppContainer,
+    settings: SettingsRepository,
+    scope: kotlinx.coroutines.CoroutineScope,
+    snackbar: SnackbarHostState
+) {
     var selectedProvider by remember { mutableStateOf(settings.getDefaultProvider()) }
     var apiKey by remember { mutableStateOf("") }
     var baseUrl by remember { mutableStateOf("") }
@@ -94,69 +238,246 @@ fun SettingsScreen(onBack: () -> Unit) {
     var temperature by remember { mutableStateOf(0.7) }
     var maxTokens by remember { mutableStateOf("4096") }
     var reasoning by remember { mutableStateOf(true) }
-    var defaultMode by remember { mutableStateOf(settings.getDefaultMode()) }
     var showKey by remember { mutableStateOf(false) }
     var configLoaded by remember { mutableStateOf(false) }
     var probing by remember { mutableStateOf(false) }
 
-    var notificationEnabled by remember { mutableStateOf(
-        NotificationManagerCompat.from(context).areNotificationsEnabled()
-    ) }
-    var canWriteSettings by remember { mutableStateOf(Settings.System.canWrite(context)) }
-    var hasScreenshot by remember { mutableStateOf(container.screenshotManagerRef.hasProjection()) }
-
-    var skills by remember { mutableStateOf(container.skillRepository.loadAll()) }
-
-    fun refreshPermissionStates() {
-        notificationEnabled = NotificationManagerCompat.from(context).areNotificationsEnabled()
-        canWriteSettings = Settings.System.canWrite(context)
-        hasScreenshot = container.screenshotManagerRef.hasProjection()
-    }
-
-    fun loadProviderConfig(provider: ProviderId) {
+    LaunchedEffect(selectedProvider) {
         configLoaded = false
-        apiKey = settings.getApiKey(provider)
-        baseUrl = settings.getBaseUrl(provider)
-        model = settings.getModel(provider)
-        temperature = settings.getTemperature(provider)
-        maxTokens = settings.getMaxTokens(provider).toString()
-        reasoning = settings.getReasoning(provider)
+        apiKey = settings.getApiKey(selectedProvider)
+        baseUrl = settings.getBaseUrl(selectedProvider)
+        model = settings.getModel(selectedProvider)
+        temperature = settings.getTemperature(selectedProvider)
+        maxTokens = settings.getMaxTokens(selectedProvider).toString()
+        reasoning = settings.getReasoning(selectedProvider)
         configLoaded = true
     }
 
-    LaunchedEffect(selectedProvider) {
-        loadProviderConfig(selectedProvider)
-    }
-
-    fun saveConfig() {
-        settings.setDefaultProvider(selectedProvider)
-        settings.setApiKey(selectedProvider, apiKey)
-        settings.setBaseUrl(selectedProvider, baseUrl)
-        settings.setModel(selectedProvider, model)
-        settings.setTemperature(selectedProvider, temperature)
-        settings.setMaxTokens(selectedProvider, maxTokens.toIntOrNull() ?: 4096)
-        settings.setReasoning(selectedProvider, reasoning)
-        settings.setDefaultMode(defaultMode)
-        scope.launch { snackbar.showSnackbar("配置已保存") }
-    }
-
-    val notifPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { refreshPermissionStates() }
-    val cameraPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { refreshPermissionStates() }
-    val writeSettingsLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { refreshPermissionStates() }
-    val screenshotLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == android.app.Activity.RESULT_OK && result.data != null) {
-            container.screenshotManagerRef.setProjectionResult(result.resultCode, result.data!!)
+    Column(
+        modifier = modifier.verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text("服务商", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ProviderId.entries.forEach { p ->
+                FilterChip(
+                    selected = selectedProvider == p,
+                    onClick = { selectedProvider = p },
+                    label = { Text(p.displayName) }
+                )
+            }
         }
-        refreshPermissionStates()
+
+        HorizontalDivider()
+
+        Text("${selectedProvider.displayName} 配置", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        OutlinedTextField(
+            value = apiKey,
+            onValueChange = { apiKey = it },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("API Key（本地加密存储）") },
+            singleLine = true,
+            visualTransformation = if (showKey) VisualTransformation.None else PasswordVisualTransformation(),
+            trailingIcon = {
+                TextButton(onClick = { showKey = !showKey }) { Text(if (showKey) "隐藏" else "显示") }
+            }
+        )
+        OutlinedTextField(
+            value = baseUrl,
+            onValueChange = { baseUrl = it },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Base URL（默认 ${ModelCatalog.defaultBaseUrl(selectedProvider)}）") },
+            singleLine = true
+        )
+        OutlinedButton(
+            onClick = {
+                if (apiKey.isBlank()) {
+                    scope.launch { snackbar.showSnackbar("请先填写 API Key") }
+                } else {
+                    val providerAtClick = selectedProvider
+                    val baseUrlAtClick = baseUrl
+                    val apiKeyAtClick = apiKey
+                    scope.launch {
+                        probing = true
+                        val result = ModelProbe.probe(providerAtClick, baseUrlAtClick, apiKeyAtClick)
+                        probing = false
+                        if (selectedProvider != providerAtClick) return@launch
+                        if (result.ok) {
+                            if (result.models.isNotEmpty()) {
+                                settings.setCustomModels(providerAtClick, result.models)
+                                model = result.models.first()
+                            }
+                        }
+                        scope.launch { snackbar.showSnackbar(result.message) }
+                    }
+                }
+            },
+            enabled = configLoaded && !probing,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            if (probing) {
+                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.width(8.dp))
+                Text("正在检测…")
+            } else {
+                Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("测试连接并获取模型")
+            }
+        }
+
+        HorizontalDivider()
+
+        Text("模型", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            items(ModelCatalog.modelsFor(selectedProvider).size) { i ->
+                val entry = ModelCatalog.modelsFor(selectedProvider)[i]
+                FilterChip(
+                    selected = model == entry.id,
+                    onClick = { model = entry.id },
+                    label = { Text(entry.label, maxLines = 1) }
+                )
+            }
+        }
+        OutlinedTextField(
+            value = model,
+            onValueChange = { model = it },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("模型 ID（可手动输入或点击上方检测）") },
+            singleLine = true
+        )
+
+        Text("温度 ${"%.1f".format(temperature)}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        androidx.compose.material3.Slider(
+            value = temperature.toFloat(),
+            onValueChange = { temperature = it.toDouble() },
+            valueRange = 0f..2f
+        )
+
+        OutlinedTextField(
+            value = maxTokens,
+            onValueChange = { maxTokens = it.filter { c -> c.isDigit() } },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Max Tokens") },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+        )
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Max 模式深度推理", style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    "Max 模式下向模型发送高推理强度参数（按模型能力自动适配）",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Switch(checked = reasoning, onCheckedChange = { reasoning = it })
+        }
+
+        Spacer(Modifier.height(8.dp))
+        Button(
+            enabled = configLoaded,
+            onClick = {
+                settings.setDefaultProvider(selectedProvider)
+                settings.setApiKey(selectedProvider, apiKey)
+                settings.setBaseUrl(selectedProvider, baseUrl)
+                settings.setModel(selectedProvider, model)
+                settings.setTemperature(selectedProvider, temperature)
+                settings.setMaxTokens(selectedProvider, maxTokens.toIntOrNull() ?: 4096)
+                settings.setReasoning(selectedProvider, reasoning)
+                scope.launch { snackbar.showSnackbar("配置已保存") }
+            },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("保存配置")
+        }
+        Spacer(Modifier.height(24.dp))
     }
+}
+
+@Composable
+private fun ConversationSection(
+    modifier: Modifier,
+    settings: SettingsRepository,
+    scope: kotlinx.coroutines.CoroutineScope,
+    snackbar: SnackbarHostState
+) {
+    var defaultMode by remember { mutableStateOf(settings.getDefaultMode()) }
+    var themeMode by remember { mutableStateOf(settings.getThemeMode()) }
+    var autoSpeak by remember { mutableStateOf(settings.getAutoSpeak()) }
+
+    Column(
+        modifier = modifier.verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text("默认模式", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text(
+            "新建对话时使用的模式：Chat 纯对话 / Plan 只读分析 / Build 工具需确认 / Max 自主执行",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            AppMode.entries.forEach { m ->
+                FilterChip(
+                    selected = defaultMode == m,
+                    onClick = {
+                        defaultMode = m
+                        settings.setDefaultMode(m)
+                    },
+                    label = { Text(m.displayName) }
+                )
+            }
+        }
+
+        HorizontalDivider()
+
+        Text("外观", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ThemeMode.entries.forEach { mode ->
+                FilterChip(
+                    selected = themeMode == mode,
+                    onClick = {
+                        themeMode = mode
+                        settings.setThemeMode(mode)
+                    },
+                    label = { Text(mode.displayName) }
+                )
+            }
+        }
+
+        HorizontalDivider()
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("自动朗读回复", style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    "AI 回复完成后自动用语音朗读（可配合 Max 模式当语音助手用）",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Switch(
+                checked = autoSpeak,
+                onCheckedChange = {
+                    autoSpeak = it
+                    settings.setAutoSpeak(it)
+                }
+            )
+        }
+        Spacer(Modifier.height(24.dp))
+    }
+}
+
+@Composable
+private fun SkillsSection(
+    modifier: Modifier,
+    container: AppContainer,
+    scope: kotlinx.coroutines.CoroutineScope,
+    snackbar: SnackbarHostState
+) {
+    val context = LocalContext.current
+    var skills by remember { mutableStateOf(container.skillRepository.loadAll()) }
     val skillLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
@@ -176,351 +497,21 @@ fun SettingsScreen(onBack: () -> Unit) {
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("设置") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = "返回")
-                    }
-                }
-            )
-        },
-        snackbarHost = { SnackbarHost(snackbar) }
-    ) { padding ->
-        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
-            TabRow(selectedTabIndex = selectedTab) {
-                SettingsTab.entries.forEachIndexed { index, tab ->
-                    Tab(
-                        selected = selectedTab == index,
-                        onClick = { selectedTab = index },
-                        text = { Text(tab.title) }
-                    )
-                }
-            }
-            when (SettingsTab.entries[selectedTab]) {
-                SettingsTab.CONNECTION -> ConnectionTab(
-                    selectedProvider = selectedProvider,
-                    onSelectProvider = { selectedProvider = it },
-                    apiKey = apiKey,
-                    onApiKeyChange = { apiKey = it },
-                    showKey = showKey,
-                    onToggleShowKey = { showKey = !showKey },
-                    baseUrl = baseUrl,
-                    onBaseUrlChange = { baseUrl = it },
-                    model = model,
-                    onModelChange = { model = it },
-                    temperature = temperature,
-                    onTemperatureChange = { temperature = it },
-                    maxTokens = maxTokens,
-                    onMaxTokensChange = { maxTokens = it },
-                    reasoning = reasoning,
-                    onReasoningChange = { reasoning = it },
-                    configLoaded = configLoaded,
-                    probing = probing,
-                    onProbe = {
-                        if (apiKey.isBlank()) {
-                            scope.launch { snackbar.showSnackbar("请先填写 API Key") }
-                        } else {
-                            val providerAtClick = selectedProvider
-                            val baseUrlAtClick = baseUrl
-                            val apiKeyAtClick = apiKey
-                            scope.launch {
-                                probing = true
-                                val result = ModelProbe.probe(providerAtClick, baseUrlAtClick, apiKeyAtClick)
-                                probing = false
-                                if (selectedProvider != providerAtClick) return@launch
-                                if (result.ok) {
-                                    if (result.models.isNotEmpty()) {
-                                        settings.setCustomModels(providerAtClick, result.models)
-                                        model = result.models.first()
-                                    }
-                                    scope.launch { snackbar.showSnackbar(result.message) }
-                                } else {
-                                    scope.launch { snackbar.showSnackbar(result.message) }
-                                }
-                            }
-                        }
-                    },
-                    onSave = ::saveConfig
-                )
-                SettingsTab.SMART -> SmartTab(
-                    defaultMode = defaultMode,
-                    onDefaultModeChange = { defaultMode = it },
-                    onSave = ::saveConfig,
-                    themeMode = container.settings.getThemeMode(),
-                    onThemeModeChange = { mode ->
-                        container.settings.setThemeMode(mode)
-                        scope.launch { snackbar.showSnackbar("外观已切换") }
-                    },
-                    autoSpeak = container.settings.getAutoSpeak(),
-                    onAutoSpeakChange = { enabled ->
-                        container.settings.setAutoSpeak(enabled)
-                        scope.launch { snackbar.showSnackbar(if (enabled) "AI 回复将自动朗读" else "已关闭自动朗读") }
-                    },
-                    skills = skills,
-                    onImportSkill = { skillLauncher.launch(arrayOf("*/*")) },
-                    onDeleteSkill = { skill ->
-                        container.registry.unregisterSkillTools(skill.name)
-                        container.skillRepository.delete(skill.name)
-                        skills = container.skillRepository.loadAll()
-                        scope.launch { snackbar.showSnackbar("Skill「${skill.name}」已删除") }
-                    }
-                )
-                SettingsTab.PERMISSIONS -> PermissionTab(
-                    notificationEnabled = notificationEnabled,
-                    canWriteSettings = canWriteSettings,
-                    hasScreenshot = hasScreenshot,
-                    onRequestNotification = {
-                        if (Build.VERSION.SDK_INT >= 33) {
-                            notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                        } else {
-                            scope.launch { snackbar.showSnackbar("Android 12 及以下通知默认已授权") }
-                        }
-                    },
-                    onRequestCamera = {
-                        cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
-                    },
-                    onRequestWriteSettings = {
-                        writeSettingsLauncher.launch(
-                            Intent(
-                                Settings.ACTION_MANAGE_WRITE_SETTINGS,
-                                Uri.parse("package:${context.packageName}")
-                            )
-                        )
-                    },
-                    onRequestScreenshot = {
-                        val mpm = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-                        screenshotLauncher.launch(mpm.createScreenCaptureIntent())
-                    },
-                    onRefresh = ::refreshPermissionStates
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ConnectionTab(
-    selectedProvider: ProviderId,
-    onSelectProvider: (ProviderId) -> Unit,
-    apiKey: String,
-    onApiKeyChange: (String) -> Unit,
-    showKey: Boolean,
-    onToggleShowKey: () -> Unit,
-    baseUrl: String,
-    onBaseUrlChange: (String) -> Unit,
-    model: String,
-    onModelChange: (String) -> Unit,
-    temperature: Double,
-    onTemperatureChange: (Double) -> Unit,
-    maxTokens: String,
-    onMaxTokensChange: (String) -> Unit,
-    reasoning: Boolean,
-    onReasoningChange: (Boolean) -> Unit,
-    configLoaded: Boolean,
-    probing: Boolean,
-    onProbe: () -> Unit,
-    onSave: () -> Unit
-) {
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
+        modifier = modifier.verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        SectionTitle("服务商")
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            ProviderId.entries.forEach { p ->
-                FilterChip(
-                    selected = selectedProvider == p,
-                    onClick = { onSelectProvider(p) },
-                    label = { Text(p.displayName) }
-                )
-            }
-        }
-
-        HorizontalDivider()
-
-        SectionTitle("${selectedProvider.displayName} 配置")
-        OutlinedTextField(
-            value = apiKey,
-            onValueChange = onApiKeyChange,
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("API Key（本地加密存储）") },
-            singleLine = true,
-            visualTransformation = if (showKey) VisualTransformation.None else PasswordVisualTransformation(),
-            trailingIcon = {
-                TextButton(onClick = onToggleShowKey) { Text(if (showKey) "隐藏" else "显示") }
-            }
-        )
-        OutlinedTextField(
-            value = baseUrl,
-            onValueChange = onBaseUrlChange,
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("Base URL（默认 ${ModelCatalog.defaultBaseUrl(selectedProvider)}）") },
-            singleLine = true
-        )
-        OutlinedButton(
-            onClick = onProbe,
-            enabled = configLoaded && !probing,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            if (probing) {
-                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                Spacer(Modifier.width(8.dp))
-                Text("正在检测…")
-            } else {
-                Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("测试连接并获取模型")
-            }
-        }
-
-        HorizontalDivider()
-
-        Text("模型", style = MaterialTheme.typography.labelLarge)
-        androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            items(ModelCatalog.modelsFor(selectedProvider).size) { i ->
-                val entry = ModelCatalog.modelsFor(selectedProvider)[i]
-                FilterChip(
-                    selected = model == entry.id,
-                    onClick = { onModelChange(entry.id) },
-                    label = { Text(entry.label, maxLines = 1) }
-                )
-            }
-        }
-        OutlinedTextField(
-            value = model,
-            onValueChange = onModelChange,
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("模型 ID（可手动输入或点击上方检测）") },
-            singleLine = true
-        )
-
-        Text("温度 ${"%.1f".format(temperature)}", style = MaterialTheme.typography.labelLarge)
-        androidx.compose.material3.Slider(
-            value = temperature.toFloat(),
-            onValueChange = { onTemperatureChange(it.toDouble()) },
-            valueRange = 0f..2f
-        )
-
-        OutlinedTextField(
-            value = maxTokens,
-            onValueChange = onMaxTokensChange,
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("Max Tokens") },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-        )
-
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text("Max 模式深度推理", style = MaterialTheme.typography.bodyMedium)
-                Text(
-                    "Max 模式下向模型发送高推理强度参数（按模型能力自动适配）",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Switch(checked = reasoning, onCheckedChange = onReasoningChange)
-        }
-
-        Spacer(Modifier.height(8.dp))
-        Button(onClick = onSave, enabled = configLoaded, modifier = Modifier.fillMaxWidth()) {
-            Text("保存配置")
-        }
-        Spacer(Modifier.height(24.dp))
-    }
-}
-
-@Composable
-private fun SmartTab(
-    defaultMode: AppMode,
-    onDefaultModeChange: (AppMode) -> Unit,
-    onSave: () -> Unit,
-    themeMode: com.betteraichat.core.storage.ThemeMode,
-    onThemeModeChange: (com.betteraichat.core.storage.ThemeMode) -> Unit,
-    autoSpeak: Boolean,
-    onAutoSpeakChange: (Boolean) -> Unit,
-    skills: List<com.betteraichat.core.skills.Skill>,
-    onImportSkill: () -> Unit,
-    onDeleteSkill: (com.betteraichat.core.skills.Skill) -> Unit
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        SectionTitle("外观")
-        Text(
-            "切换应用的黑白（深色/浅色）模式",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            com.betteraichat.core.storage.ThemeMode.entries.forEach { mode ->
-                FilterChip(
-                    selected = themeMode == mode,
-                    onClick = { onThemeModeChange(mode) },
-                    label = { Text(mode.displayName) }
-                )
-            }
-        }
-
-        HorizontalDivider()
-
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text("自动朗读回复", style = MaterialTheme.typography.bodyMedium)
-                Text(
-                    "AI 回复完成后自动用语音朗读（可配合 Max 模式当语音助手用）",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Switch(checked = autoSpeak, onCheckedChange = onAutoSpeakChange)
-        }
-
-        HorizontalDivider()
-
-        SectionTitle("默认模式")
-        Text(
-            "新建对话时使用的模式：Chat 纯对话 / Plan 只读分析 / Build 工具需确认 / Max 自主执行",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            AppMode.entries.forEach { m ->
-                FilterChip(
-                    selected = defaultMode == m,
-                    onClick = { onDefaultModeChange(m) },
-                    label = { Text(m.displayName) }
-                )
-            }
-        }
-        OutlinedButton(onClick = onSave, modifier = Modifier.fillMaxWidth()) {
-            Text("保存默认模式")
-        }
-
-        HorizontalDivider()
-
-        SectionTitle("Skills")
         Text(
             "导入 opencode 风格的 SKILL.md（含 name/description frontmatter），AI 可通过 load_skill 工具加载执行，技能可自带工具。",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        Button(onClick = onImportSkill, modifier = Modifier.fillMaxWidth()) {
+        Button(onClick = { skillLauncher.launch(arrayOf("*/*")) }, modifier = Modifier.fillMaxWidth()) {
             Text("导入 Skill 文件")
         }
         if (skills.isEmpty()) {
             Text(
-                "暂无技能。导入后可在 Build/Max 模式对 AI 说「加载 xx 技能」执行。",
+                "暂无技能。导入后可在 Build/Max 模式对 AI 说「加载 xx 技能」执行；也可在对话里用「保存为技能」自动录制。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -544,7 +535,12 @@ private fun SmartTab(
                                 maxLines = 2
                             )
                         }
-                        TextButton(onClick = { onDeleteSkill(skill) }) {
+                        TextButton(onClick = {
+                            container.registry.unregisterSkillTools(skill.name)
+                            container.skillRepository.delete(skill.name)
+                            skills = container.skillRepository.loadAll()
+                            scope.launch { snackbar.showSnackbar("Skill「${skill.name}」已删除") }
+                        }) {
                             Text("删除", color = MaterialTheme.colorScheme.error)
                         }
                     }
@@ -556,31 +552,63 @@ private fun SmartTab(
 }
 
 @Composable
-private fun PermissionTab(
-    notificationEnabled: Boolean,
-    canWriteSettings: Boolean,
-    hasScreenshot: Boolean,
-    onRequestNotification: () -> Unit,
-    onRequestCamera: () -> Unit,
-    onRequestWriteSettings: () -> Unit,
-    onRequestScreenshot: () -> Unit,
-    onRefresh: () -> Unit
+private fun PermissionsSection(
+    modifier: Modifier,
+    container: AppContainer,
+    scope: kotlinx.coroutines.CoroutineScope,
+    snackbar: SnackbarHostState
 ) {
     val context = LocalContext.current
-    val container = rememberContainer()
+    var notificationEnabled by remember {
+        mutableStateOf(NotificationManagerCompat.from(context).areNotificationsEnabled())
+    }
+    var canWriteSettings by remember { mutableStateOf(Settings.System.canWrite(context)) }
+    var hasScreenshot by remember { mutableStateOf(container.screenshotManagerRef.hasProjection()) }
+    var hasCamera by remember {
+        mutableStateOf(
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                context, Manifest.permission.CAMERA
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        )
+    }
+
+    fun refresh() {
+        notificationEnabled = NotificationManagerCompat.from(context).areNotificationsEnabled()
+        canWriteSettings = Settings.System.canWrite(context)
+        hasScreenshot = container.screenshotManagerRef.hasProjection()
+        hasCamera = androidx.core.content.ContextCompat.checkSelfPermission(
+            context, Manifest.permission.CAMERA
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+    }
+
+    val notifPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { refresh() }
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { refresh() }
+    val writeSettingsLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { refresh() }
+    val screenshotLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK && result.data != null) {
+            container.screenshotManagerRef.setProjectionResult(result.resultCode, result.data!!)
+        }
+        refresh()
+    }
+
     val shizukuGranted by container.shizukuManager.granted.collectAsStateWithLifecycle()
     val shizukuInstalled = com.betteraichat.skills.tools.ShizukuSupport.isShizukuInstalled(context)
     val shizukuBinder = com.betteraichat.skills.tools.ShizukuSupport.isBinderAlive()
     LaunchedEffect(Unit) { container.shizukuManager.refresh() }
 
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
+        modifier = modifier.verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        SectionTitle("Shizuku（高级权限）")
+        Text("Shizuku（高级权限）", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         Text(
             "授权后 AI 可通过 run_shell 工具执行任意 shell 命令（pm/am/dumpsys 等），达到 root 级操作能力。",
             style = MaterialTheme.typography.bodySmall,
@@ -612,45 +640,49 @@ private fun PermissionTab(
 
         HorizontalDivider()
 
-        SectionTitle("系统权限")
-        val hasCamera = androidx.core.content.ContextCompat.checkSelfPermission(
-            context, Manifest.permission.CAMERA
-        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        Text("系统权限", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         PermissionRow(
             title = "通知",
             status = if (notificationEnabled) "已授权" else "未授权",
             buttonText = "授权",
-            onAction = onRequestNotification
+            onAction = {
+                if (Build.VERSION.SDK_INT >= 33) {
+                    notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                } else {
+                    scope.launch { snackbar.showSnackbar("Android 12 及以下通知默认已授权") }
+                }
+            }
         )
         PermissionRow(
             title = "相机（闪光灯/手电筒）",
             status = if (hasCamera) "已授权" else "未授权",
             buttonText = "授权",
-            onAction = onRequestCamera
+            onAction = { cameraPermissionLauncher.launch(Manifest.permission.CAMERA) }
         )
         PermissionRow(
             title = "修改系统设置（亮度等）",
             status = if (canWriteSettings) "已授权" else "未授权",
             buttonText = "授权",
-            onAction = onRequestWriteSettings
+            onAction = {
+                writeSettingsLauncher.launch(
+                    Intent(
+                        Settings.ACTION_MANAGE_WRITE_SETTINGS,
+                        Uri.parse("package:${context.packageName}")
+                    )
+                )
+            }
         )
         PermissionRow(
             title = "截屏（MediaProjection）",
             status = if (hasScreenshot) "已授权" else "未授权",
             buttonText = "授权",
-            onAction = onRequestScreenshot
+            onAction = {
+                val mpm = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+                screenshotLauncher.launch(mpm.createScreenCaptureIntent())
+            }
         )
         Spacer(Modifier.height(24.dp))
     }
-}
-
-@Composable
-private fun SectionTitle(text: String) {
-    Text(
-        text,
-        style = MaterialTheme.typography.titleMedium,
-        fontWeight = FontWeight.Bold
-    )
 }
 
 @Composable
