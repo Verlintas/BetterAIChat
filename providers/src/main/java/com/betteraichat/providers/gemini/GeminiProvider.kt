@@ -8,6 +8,7 @@ import com.betteraichat.core.model.ToolCall
 import com.betteraichat.core.model.ToolSpec
 import com.betteraichat.core.provider.ChatProvider
 import com.betteraichat.core.sse.SseParser
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.collect
@@ -151,9 +152,12 @@ class GeminiProvider : ChatProvider {
             .build()
         val call = client.newCall(request)
         try {
-            val response = call.execute()
+            var response = executeWithRetry(call)
             if (!response.isSuccessful) {
-                emit(StreamEvent.Error("HTTP ${response.code}: ${response.body?.string().orEmpty()}"))
+                val code = response.code
+                val body = response.body?.string().orEmpty()
+                response.close()
+                emit(StreamEvent.Error("HTTP $code: $body"))
                 return@flow
             }
             val respBody = response.body ?: run {
@@ -208,6 +212,21 @@ class GeminiProvider : ChatProvider {
         } finally {
             call.cancel()
         }
+    }
+
+    private suspend fun executeWithRetry(call: okhttp3.Call): okhttp3.Response {
+        val retryableCodes = setOf(429, 502, 503, 504)
+        repeat(2) { attempt ->
+            try {
+                val response = call.execute()
+                if (response.isSuccessful || response.code !in retryableCodes) return response
+                response.close()
+                if (attempt == 0) delay(500)
+            } catch (e: java.io.IOException) {
+                if (attempt == 0) delay(500) else throw e
+            }
+        }
+        return call.execute()
     }
 
     private fun List<ChatMessage>.toGeminiContents(): List<GeminiContent> {

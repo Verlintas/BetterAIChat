@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenu
@@ -60,7 +61,8 @@ private val CONV_TIME_FORMAT = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault
 @Composable
 fun ConversationListScreen(
     onOpenChat: (Long) -> Unit,
-    onOpenSettings: () -> Unit
+    onOpenSettings: () -> Unit,
+    onOpenStarred: () -> Unit
 ) {
     val container = rememberContainer()
     val scope = rememberCoroutineScope()
@@ -90,6 +92,9 @@ fun ConversationListScreen(
             TopAppBar(
                 title = { Text("BetterAIChat") },
                 actions = {
+                    IconButton(onClick = onOpenStarred) {
+                        Icon(Icons.Filled.Star, contentDescription = "收藏")
+                    }
                     IconButton(onClick = onOpenSettings) {
                         Icon(Icons.Filled.Settings, contentDescription = "设置")
                     }

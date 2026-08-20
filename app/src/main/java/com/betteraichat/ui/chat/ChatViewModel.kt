@@ -45,6 +45,7 @@ data class UiMessage(
     val usageOutput: Long = 0,
     val attachments: List<com.betteraichat.core.model.Attachment> = emptyList(),
     val thinking: String = "",
+    val starred: Boolean = false,
     val createdAt: Long = 0
 )
 
@@ -91,6 +92,7 @@ class ChatViewModel(
     private var streamingRound = -1
     private var pendingRound = -1
     private var sendCancelled = false
+    private var titleGenerated = false
 
     init {
         viewModelScope.launch {
@@ -111,6 +113,32 @@ class ChatViewModel(
                     mode = settings.getDefaultMode()
                 )
             }
+            consumePendingShare()
+        }
+    }
+
+    private fun consumePendingShare() {
+        val container = (appContext.applicationContext as com.betteraichat.BetterAIChatApp).container
+        val text = container.pendingShareText
+        val image = container.pendingShareImage
+        if (text == null && image == null) return
+        container.pendingShareText = null
+        container.pendingShareImage = null
+        _state.update {
+            it.copy(
+                input = text ?: "",
+                pendingAttachments = it.pendingAttachments + if (image != null) {
+                    listOf(
+                        PendingAttachment(
+                            id = ++attachmentCounter,
+                            name = AttachmentProcessor.queryNameFromResolver(appContext.contentResolver, image),
+                            kind = "image",
+                            mimeType = appContext.contentResolver.getType(image) ?: "image/*",
+                            uri = image
+                        )
+                    )
+                } else emptyList()
+            )
         }
     }
 
@@ -170,6 +198,7 @@ class ChatViewModel(
                             runCatching { json.decodeFromString<List<com.betteraichat.core.model.Attachment>>(it) }
                                 .getOrDefault(emptyList())
                         } ?: emptyList(),
+                        starred = e.starred,
                         createdAt = e.createdAt
                     )
                 }
@@ -371,6 +400,12 @@ class ChatViewModel(
                             roundCounter++
                             streaming = null
                             refresh()
+                            if (!titleGenerated && cid == currentConversationId &&
+                                repository.getHistory(cid).size >= 3
+                            ) {
+                                titleGenerated = true
+                                launch { generateTitle(cid) }
+                            }
                         }
                         is EngineEvent.Failed -> {
                             _state.update { it.copy(error = smartError(ev.message)) }
@@ -621,6 +656,46 @@ class ChatViewModel(
             }
         }
         return sb.toString()
+    }
+
+    fun toggleStarred(messageId: Long) {
+        if (messageId <= 0) return
+        viewModelScope.launch {
+            val target = dbMessages.firstOrNull { it.id == messageId } ?: return@launch
+            repository.setStarred(messageId, !target.starred)
+        }
+    }
+
+    private suspend fun generateTitle(cid: Long) {
+        try {
+            val config = settings.configFor(_state.value.provider)
+            val history = repository.getHistory(cid).takeLast(6)
+            if (history.isEmpty()) return
+            val provider = providerFactory(config.provider)
+            val sys = ChatMessage(
+                role = ChatRole.SYSTEM,
+                content = "请为这段对话生成一个不超过 15 字的简短标题，只输出标题本身，不要引号、标点或解释。"
+            )
+            val sb = StringBuilder()
+            provider.chatStream(
+                listOf(sys) + history.map { repository.messageToDomain(it) },
+                config,
+                emptyList()
+            ).collect { ev ->
+                when (ev) {
+                    is StreamEvent.Delta -> sb.append(ev.text)
+                    is StreamEvent.Error -> throw IllegalStateException(ev.message)
+                    else -> Unit
+                }
+            }
+            val title = sb.toString().trim().trim('"', '“', '”').take(30)
+            if (title.isNotBlank() && currentConversationId == cid) {
+                repository.updateTitle(cid, title)
+                _state.update { it.copy(title = title) }
+            }
+        } catch (e: Exception) {
+            titleGenerated = false
+        }
     }
 
     fun respondConfirm(allow: Boolean) {

@@ -199,7 +199,59 @@ class SkillDefinedTool(
 }
 
 class AlarmReceiver : BroadcastReceiver() {
+
+    companion object {
+        const val ACTION_REPEAT = "com.betteraichat.action.REPEAT_REMINDER"
+        const val ACTION_CANCEL_REPEAT = "com.betteraichat.action.CANCEL_REPEAT"
+        private const val EXTRA_REQUEST_CODE = "request_code"
+    }
+
     override fun onReceive(context: Context, intent: Intent) {
+        when (intent.action) {
+            ACTION_CANCEL_REPEAT -> {
+                val requestCode = intent.getIntExtra(EXTRA_REQUEST_CODE, -1)
+                if (requestCode >= 0) {
+                    val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+                    val pi = PendingIntent.getBroadcast(
+                        context,
+                        requestCode,
+                        Intent(context, AlarmReceiver::class.java)
+                            .setAction(ACTION_REPEAT),
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                    )
+                    am.cancel(pi)
+                }
+                val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                nm.cancelAll()
+                return
+            }
+            ACTION_REPEAT -> {
+                val title = intent.getStringExtra("title") ?: "AI 提醒"
+                val content = intent.getStringExtra("content") ?: "设定的时间到了"
+                val requestCode = intent.getIntExtra(EXTRA_REQUEST_CODE, -1)
+                ensureChannel(context)
+                val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                if (!nm.areNotificationsEnabled()) return
+                val builder = NotificationCompat.Builder(context, "betteraichat_ai")
+                    .setSmallIcon(android.R.drawable.ic_dialog_info)
+                    .setContentTitle(title)
+                    .setContentText(content)
+                    .setAutoCancel(true)
+                if (requestCode >= 0) {
+                    val cancelPi = PendingIntent.getBroadcast(
+                        context,
+                        requestCode,
+                        Intent(context, AlarmReceiver::class.java)
+                            .setAction(ACTION_CANCEL_REPEAT)
+                            .putExtra(EXTRA_REQUEST_CODE, requestCode),
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                    )
+                    builder.addAction(0, "停止此提醒", cancelPi)
+                }
+                nm.notify(requestCode and 0x7FFFFFFF, builder.build())
+                return
+            }
+        }
         val title = intent.getStringExtra("title") ?: "AI 提醒"
         val content = intent.getStringExtra("content") ?: "设定的时间到了"
         ensureChannel(context)

@@ -42,6 +42,7 @@ data class MessageEntity(
     val attachmentsJson: String? = null,
     val thinkingText: String? = null,
     val thinkingSignature: String? = null,
+    val starred: Boolean = false,
     val createdAt: Long
 )
 
@@ -98,6 +99,12 @@ interface MessageDao {
     @Query("UPDATE messages SET content = :content WHERE id = :id")
     suspend fun updateContent(id: Long, content: String)
 
+    @Query("UPDATE messages SET starred = :starred WHERE id = :id")
+    suspend fun updateStarred(id: Long, starred: Boolean)
+
+    @Query("SELECT * FROM messages WHERE starred = 1 ORDER BY id DESC")
+    fun observeStarred(): Flow<List<MessageEntity>>
+
     @Query("DELETE FROM messages WHERE id = :id")
     suspend fun deleteById(id: Long)
 
@@ -114,7 +121,7 @@ interface MessageDao {
     suspend fun deleteAllForConversation(conversationId: Long)
 }
 
-@Database(entities = [ConversationEntity::class, MessageEntity::class], version = 5, exportSchema = false)
+@Database(entities = [ConversationEntity::class, MessageEntity::class], version = 6, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun conversationDao(): ConversationDao
     abstract fun messageDao(): MessageDao
@@ -150,10 +157,16 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_5_6 = object : androidx.room.migration.Migration(5, 6) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE messages ADD COLUMN starred INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "betteraichat.db")
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                     .build()
                     .also { instance = it }
             }

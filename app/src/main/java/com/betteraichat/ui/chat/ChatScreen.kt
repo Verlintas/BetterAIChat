@@ -239,11 +239,20 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                         msg = msg,
                         onDelete = vm::deleteMessage,
                         onSpeak = { container.speechPlayer.speak(it) },
+                        onToggleStar = vm::toggleStarred,
                         onEdit = { id ->
                             val target = state.messages.firstOrNull { it.id == id }
                             if (target != null) {
                                 editingMessage = target
                                 editText = target.content
+                            }
+                        },
+                        onOpenLink = { link ->
+                            runCatching {
+                                context.startActivity(
+                                    Intent(Intent.ACTION_VIEW, android.net.Uri.parse(link))
+                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                )
                             }
                         }
                     )

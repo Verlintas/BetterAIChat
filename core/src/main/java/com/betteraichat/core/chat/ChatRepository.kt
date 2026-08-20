@@ -27,6 +27,10 @@ class ChatRepository(private val db: AppDatabase) {
 
     fun observeMessages(conversationId: Long): Flow<List<MessageEntity>> = db.messageDao().observeForConversation(conversationId)
 
+    fun observeStarred(): Flow<List<MessageEntity>> = db.messageDao().observeStarred()
+
+    suspend fun setStarred(id: Long, starred: Boolean) = db.messageDao().updateStarred(id, starred)
+
     suspend fun createConversation(provider: ProviderId, model: String, mode: AppMode): Long =
         db.conversationDao().insert(
             ConversationEntity(

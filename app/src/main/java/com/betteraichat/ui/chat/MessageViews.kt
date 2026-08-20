@@ -53,13 +53,24 @@ import java.util.Locale
 
 private val TIME_FORMAT = SimpleDateFormat("HH:mm", Locale.getDefault())
 
+private val CODE_BLOCK_REGEX = Regex("```[^`\\n]*\\n([\\s\\S]*?)```")
+private val LINK_REGEX = Regex("\\[([^\\]]*)\\]\\(((?:https?|ftp)://[^\\s)]+)\\)")
+
+private fun extractCodeBlocks(content: String): List<String> =
+    CODE_BLOCK_REGEX.findAll(content).map { it.groupValues[1].trim() }.filter { it.isNotEmpty() }.toList()
+
+private fun extractLinks(content: String): List<String> =
+    LINK_REGEX.findAll(content).map { it.groupValues[2].trimEnd(')') }.distinct().toList()
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun MessageItem(
     msg: UiMessage,
     onDelete: (Long) -> Unit,
     onSpeak: (String) -> Unit = {},
-    onEdit: (Long) -> Unit = {}
+    onEdit: (Long) -> Unit = {},
+    onOpenLink: (String) -> Unit = {},
+    onToggleStar: (Long) -> Unit = {}
 ) {
     if (msg.role == ChatRole.TOOL) return
     val clipboard = LocalClipboardManager.current
@@ -76,8 +87,13 @@ fun MessageItem(
         if (showActions) {
             MessageActionsDialog(
                 content = msg.content,
+                starred = msg.starred,
                 onCopy = copyAction,
                 onSpeak = { onSpeak(msg.content) },
+                onStar = {
+                    showActions = false
+                    onToggleStar(msg.id)
+                },
                 onEdit = {
                     showActions = false
                     onEdit(msg.id)
@@ -151,6 +167,46 @@ fun MessageItem(
                 Spacer(Modifier.size(6.dp))
                 ToolCallCard(call)
             }
+            val codeBlocks = extractCodeBlocks(msg.content)
+            if (codeBlocks.isNotEmpty() && !msg.streaming) {
+                Spacer(Modifier.size(6.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                        onClick = {
+                            clipboard.setText(AnnotatedString(codeBlocks.joinToString("\n\n")))
+                        }
+                    ) {
+                        Text(
+                            "复制代码（${codeBlocks.size} 段）",
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            }
+            val links = extractLinks(msg.content)
+            if (links.isNotEmpty() && !msg.streaming) {
+                Spacer(Modifier.size(4.dp))
+                links.take(3).forEach { link ->
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        onClick = { onOpenLink(link) }
+                    ) {
+                        Text(
+                            "打开链接：${link.take(40)}",
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
             if (msg.thinking.isNotBlank()) {
                 Spacer(Modifier.size(6.dp))
                 ThinkingCard(msg.thinking)
@@ -160,8 +216,13 @@ fun MessageItem(
     if (showActions) {
         MessageActionsDialog(
             content = msg.content,
+            starred = msg.starred,
             onCopy = copyAction,
             onSpeak = { onSpeak(msg.content) },
+            onStar = {
+                showActions = false
+                onToggleStar(msg.id)
+            },
             onEdit = null,
             onDelete = {
                 showActions = false
@@ -175,8 +236,10 @@ fun MessageItem(
 @Composable
 private fun MessageActionsDialog(
     content: String,
+    starred: Boolean,
     onCopy: () -> Unit,
     onSpeak: () -> Unit,
+    onStar: () -> Unit,
     onEdit: (() -> Unit)?,
     onDelete: () -> Unit,
     onDismiss: () -> Unit
@@ -197,6 +260,7 @@ private fun MessageActionsDialog(
         dismissButton = {
             Row {
                 TextButton(onClick = onSpeak) { Text("朗读") }
+                TextButton(onClick = onStar) { Text(if (starred) "取消收藏" else "收藏") }
                 if (onEdit != null) {
                     TextButton(onClick = onEdit) { Text("编辑") }
                 }

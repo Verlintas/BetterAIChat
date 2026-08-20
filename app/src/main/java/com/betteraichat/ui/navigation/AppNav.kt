@@ -1,6 +1,11 @@
 package com.betteraichat.ui.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -14,6 +19,7 @@ object Routes {
     const val CONVERSATIONS = "conversations"
     const val CHAT = "chat/{id}"
     const val SETTINGS = "settings"
+    const val STARRED = "starred"
 
     fun chat(id: Long) = "chat/$id"
 }
@@ -21,11 +27,28 @@ object Routes {
 @Composable
 fun AppNavHost() {
     val navController = rememberNavController()
+    val context = LocalContext.current
+    val container = remember {
+        (context.applicationContext as com.betteraichat.BetterAIChatApp).container
+    }
+    val shareTick by container.shareNavTick.collectAsStateWithLifecycle()
+    LaunchedEffect(shareTick) {
+        if (shareTick > 0) {
+            navController.navigate(Routes.chat(-1L))
+        }
+    }
     NavHost(navController = navController, startDestination = Routes.CONVERSATIONS) {
         composable(Routes.CONVERSATIONS) {
             ConversationListScreen(
                 onOpenChat = { id -> navController.navigate(Routes.chat(id)) },
-                onOpenSettings = { navController.navigate(Routes.SETTINGS) }
+                onOpenSettings = { navController.navigate(Routes.SETTINGS) },
+                onOpenStarred = { navController.navigate(Routes.STARRED) }
+            )
+        }
+        composable(Routes.STARRED) {
+            com.betteraichat.ui.starred.StarredScreen(
+                onBack = { navController.popBackStack() },
+                onOpenChat = { id -> navController.navigate(Routes.chat(id)) }
             )
         }
         composable(

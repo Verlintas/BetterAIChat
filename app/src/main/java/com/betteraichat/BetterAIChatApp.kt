@@ -33,6 +33,7 @@ import com.betteraichat.skills.tools.WebSearchTool
 import com.betteraichat.tools.ScreenshotManager
 import com.betteraichat.tools.ShizukuManager
 import com.betteraichat.skills.tools.RunShellTool
+import com.betteraichat.skills.tools.ScheduleRepeatTool
 
 class BetterAIChatApp : Application() {
 
@@ -48,6 +49,9 @@ class BetterAIChatApp : Application() {
 class AppContainer(context: Application) {
 
     val appContext = context.applicationContext
+    var pendingShareText: String? = null
+    var pendingShareImage: android.net.Uri? = null
+    val shareNavTick = kotlinx.coroutines.flow.MutableStateFlow(0)
     val db = AppDatabase.get(context)
     val settings = SettingsRepository(context)
     val repository = ChatRepository(db)
@@ -76,6 +80,7 @@ class AppContainer(context: Application) {
         SetScreenTimeoutTool(),
         RunShellTool { shizukuManager.granted.value },
         SpeakTextTool(),
+        ScheduleRepeatTool(),
         LoadSkillTool({ skillRepository.loadAll() }, { registry }, actionExecutor)
     )
     val registry = ToolRegistry(tools)
