@@ -687,7 +687,7 @@ class ChatViewModel(
         _state.update { it.copy(notification = null) }
     }
 
-    fun analyzeScreen() {
+    fun analyzeScreen(onNeedAuth: () -> Unit = {}) {
         if (_state.value.isRunning) return
         val container = (appContext.applicationContext as com.betteraichat.BetterAIChatApp).container
         val screenshotManager = container.screenshotManagerRef
@@ -695,7 +695,14 @@ class ChatViewModel(
             _state.update { it.copy(processing = true) }
             val result = screenshotManager.capture()
             if (result.startsWith("ERROR:")) {
-                _state.update { it.copy(processing = false, error = result.removePrefix("ERROR:")) }
+                _state.update { it.copy(processing = false) }
+                val message = result.removePrefix("ERROR:")
+                if (message.contains("授权")) {
+                    _state.update { it.copy(error = "$message，正在为你打开授权…") }
+                    onNeedAuth()
+                } else {
+                    _state.update { it.copy(error = message) }
+                }
                 return@launch
             }
             val path = SCREENSHOT_PATH_REGEX.find(result)?.groupValues?.get(1)

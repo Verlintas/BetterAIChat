@@ -14,6 +14,9 @@ import android.media.ImageReader
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.Build
+import android.os.Handler
+import android.os.IBinder
+import android.os.Looper
 import android.util.DisplayMetrics
 import android.view.WindowManager
 import com.betteraichat.skills.ScreenshotProvider
@@ -30,16 +33,16 @@ import java.io.File
 import java.io.FileOutputStream
 
 object ScreenshotBridge {
-    private var pending: CompletableDeferred<String>? = null
+    private var pendingCapture: CompletableDeferred<String>? = null
 
-    fun register(): CompletableDeferred<String> {
-        pending?.complete("ERROR:截屏请求被新的请求覆盖")
-        return CompletableDeferred<String>().also { pending = it }
+    fun registerCapture(): CompletableDeferred<String> {
+        pendingCapture?.complete("ERROR:截屏请求被新的请求覆盖")
+        return CompletableDeferred<String>().also { pendingCapture = it }
     }
 
-    fun complete(result: String) {
-        pending?.complete(result)
-        pending = null
+    fun completeCapture(result: String) {
+        pendingCapture?.complete(result)
+        pendingCapture = null
     }
 }
 
@@ -59,28 +62,42 @@ class ScreenshotManager(private val context: Context) : ScreenshotProvider {
 
     fun hasProjection(): Boolean = resultData != null
 
+    fun isServiceRunning(): Boolean =
+        ScreenshotProjectionService.projection != null
+
+    fun stopProjectionService() {
+        context.startService(
+            Intent(context, ScreenshotProjectionService::class.java)
+                .setAction(ScreenshotProjectionService.ACTION_STOP)
+        )
+    }
+
     override suspend fun capture(): String {
         val data = resultData ?: return "ERROR:尚未授权截屏，请到应用设置页点击「截屏授权」"
-        val deferred = ScreenshotBridge.register()
+        val deferred = ScreenshotBridge.registerCapture()
         try {
-            val intent = Intent(context, ScreenshotCaptureService::class.java)
+            val intent = Intent(context, ScreenshotProjectionService::class.java)
                 .putExtra("resultCode", resultCode)
                 .putExtra("data", data)
             context.startForegroundService(intent)
         } catch (e: Exception) {
-            clearProjection()
-            ScreenshotBridge.complete("ERROR:无法启动截屏服务（后台启动限制或服务异常），请回到应用后重试")
+            ScreenshotBridge.completeCapture("ERROR:无法启动截屏服务（后台启动限制），请回到应用后重试")
             return deferred.await()
         }
         return withTimeoutOrNull(60_000) { deferred.await() }
-            ?: run {
-                clearProjection()
-                "ERROR:截屏超时，请重新授权后重试"
-            }
+            ?: "ERROR:截屏超时，请重新授权后重试"
     }
 }
 
-class ScreenshotCaptureService : Service() {
+class ScreenshotProjectionService : Service() {
+
+    companion object {
+        const val ACTION_STOP = "com.betteraichat.action.STOP_PROJECTION"
+        @Volatile
+        var projection: MediaProjection? = null
+            private set
+        private var projectionBroken = false
+    }
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
@@ -92,31 +109,84 @@ class ScreenshotCaptureService : Service() {
         val notification: Notification = Notification.Builder(this, "betteraichat_screenshot")
             .setSmallIcon(android.R.drawable.ic_menu_camera)
             .setContentTitle("BetterAIChat")
-            .setContentText("正在执行截屏…")
+            .setContentText("AI 截屏服务运行中（用于屏幕分析）")
+            .setOngoing(true)
             .build()
         startForeground(101, notification)
-        val code = intent?.getIntExtra("resultCode", 0) ?: 0
-        val data = if (Build.VERSION.SDK_INT >= 33) {
-            intent?.getParcelableExtra("data", Intent::class.java)
-        } else {
-            @Suppress("DEPRECATION")
-            intent?.getParcelableExtra("data")
+
+        when (intent?.action) {
+            ACTION_STOP -> {
+                stopProjectionInternal()
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+                return START_NOT_STICKY
+            }
         }
+
+        if (projection == null && !projectionBroken) {
+            val code = intent?.getIntExtra("resultCode", 0) ?: 0
+            val data = if (Build.VERSION.SDK_INT >= 33) {
+                intent?.getParcelableExtra("data", Intent::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                intent?.getParcelableExtra("data")
+            }
+            if (data == null) {
+                ScreenshotBridge.completeCapture("ERROR:截屏授权数据丢失，请重新授权")
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+                return START_NOT_STICKY
+            }
+            val created = createProjection(code, data)
+            if (!created) {
+                ScreenshotBridge.completeCapture("ERROR:截屏授权已失效，请到设置页重新授权")
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+                return START_NOT_STICKY
+            }
+        }
+
         scope.launch {
-            val result = capture(code, data)
-            ScreenshotBridge.complete(result)
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
+            val result = captureOnce()
+            ScreenshotBridge.completeCapture(result)
         }
         return START_NOT_STICKY
     }
 
-    private suspend fun capture(resultCode: Int, data: Intent?): String {
-        if (data == null) return "ERROR:截屏授权数据丢失，请重新授权"
+    private fun createProjection(resultCode: Int, data: Intent): Boolean {
+        return try {
+            val mpm = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+            val p = mpm.getMediaProjection(resultCode, data) ?: return false
+            if (Build.VERSION.SDK_INT >= 35) {
+                p.registerCallback(
+                    object : MediaProjection.Callback() {
+                        override fun onStop() {
+                            projectionBroken = true
+                            projection = null
+                        }
+                    },
+                    Handler(Looper.getMainLooper())
+                )
+            }
+            projection = p
+            projectionBroken = false
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    private fun stopProjectionInternal() {
+        projection?.stop()
+        projection = null
+        projectionBroken = false
+    }
+
+    private suspend fun captureOnce(): String {
+        val p = projection
+        if (p == null) return "ERROR:截屏服务未就绪，请重新授权"
         return withContext(Dispatchers.IO) {
             runCatching {
-                val mpm = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-                val projection = mpm.getMediaProjection(resultCode, data)
                 val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
                 val metrics = DisplayMetrics()
                 wm.defaultDisplay.getRealMetrics(metrics)
@@ -125,17 +195,16 @@ class ScreenshotCaptureService : Service() {
                 val density = metrics.densityDpi
                 val reader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
                 var virtualDisplay: VirtualDisplay? = null
-                var projectionStopped = false
                 var bitmap: Bitmap? = null
                 var crop: Bitmap? = null
                 try {
-                    virtualDisplay = projection?.createVirtualDisplay(
+                    virtualDisplay = p.createVirtualDisplay(
                         "BetterAIChatShot",
                         width, height, density,
                         DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
                         reader.surface, null, null
                     )
-                    if (projection == null || virtualDisplay == null) {
+                    if (virtualDisplay == null) {
                         return@runCatching "ERROR:无法创建投影（截屏授权可能已失效，请重新授权）"
                     }
                     var image = reader.acquireLatestImage()
@@ -162,8 +231,6 @@ class ScreenshotCaptureService : Service() {
                         FileOutputStream(file).use { out ->
                             crop!!.compress(Bitmap.CompressFormat.PNG, 100, out)
                         }
-                        projection.stop()
-                        projectionStopped = true
                         "截屏成功：${file.absolutePath}（${width}x${height}）"
                     }
                 } finally {
@@ -171,15 +238,12 @@ class ScreenshotCaptureService : Service() {
                     crop?.recycle()
                     virtualDisplay?.release()
                     reader.close()
-                    if (projection != null && !projectionStopped) {
-                        runCatching { projection.stop() }
-                    }
                 }
             }.getOrElse { e -> "ERROR:截屏失败：${e.message}" }
         }
     }
 
-    override fun onBind(intent: Intent?) = null
+    override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
         scope.cancel()

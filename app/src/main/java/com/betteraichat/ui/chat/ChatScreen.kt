@@ -1,6 +1,9 @@
 package com.betteraichat.ui.chat
 
+import android.content.Context
 import android.content.Intent
+import android.media.projection.MediaProjectionManager
+import android.os.Build
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -100,6 +103,17 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
         if (uri != null) vm.addPendingFile(uri, context.contentResolver)
     }
 
+    val screenshotAuthLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK && result.data != null) {
+            container.screenshotManagerRef.setProjectionResult(result.resultCode, result.data!!)
+            vm.analyzeScreen()
+        } else {
+            vm.dismissNotification()
+        }
+    }
+
     val totalPromptTokens = state.messages.lastOrNull { it.usageInput > 0 }?.usageInput ?: 0
     val contextWindow = ModelCatalog.entryFor(state.provider, state.model).contextWindow
     val usagePercent = if (contextWindow > 0 && totalPromptTokens > 0) {
@@ -185,7 +199,18 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                                 text = { Text("分析屏幕") },
                                 onClick = {
                                     menuOpen = false
-                                    vm.analyzeScreen()
+                                    vm.analyzeScreen {
+                                        val mpm = context.getSystemService(
+                                            Context.MEDIA_PROJECTION_SERVICE
+                                        ) as MediaProjectionManager
+                                        if (Build.VERSION.SDK_INT >= 34) {
+                                            val config = android.media.projection.MediaProjectionConfig
+                                                .createConfigForDefaultDisplay()
+                                            screenshotAuthLauncher.launch(mpm.createScreenCaptureIntent(config))
+                                        } else {
+                                            screenshotAuthLauncher.launch(mpm.createScreenCaptureIntent())
+                                        }
+                                    }
                                 }
                             )
                             DropdownMenuItem(

@@ -51,7 +51,7 @@
         </activity>
 
         <service
-            android:name=".tools.ScreenshotCaptureService"
+            android:name=".tools.ScreenshotProjectionService"
             android:exported="false"
             android:foregroundServiceType="mediaProjection" />
 

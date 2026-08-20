@@ -678,9 +678,31 @@ private fun PermissionsSection(
             buttonText = "授权",
             onAction = {
                 val mpm = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-                screenshotLauncher.launch(mpm.createScreenCaptureIntent())
+                if (Build.VERSION.SDK_INT >= 34) {
+                    val config = android.media.projection.MediaProjectionConfig.createConfigForDefaultDisplay()
+                    screenshotLauncher.launch(mpm.createScreenCaptureIntent(config))
+                } else {
+                    screenshotLauncher.launch(mpm.createScreenCaptureIntent())
+                }
             }
         )
+        Text(
+            if (container.screenshotManagerRef.isServiceRunning()) {
+                "截屏服务运行中，AI 可随时分析屏幕。完成使用后建议点击下方按钮停止（停止后再次使用需重新授权）。"
+            } else {
+                "Android 15 授权流程：开始录制 → 选择 BetterAIChat。授权后截屏服务将在后台运行以支持屏幕分析。"
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        if (container.screenshotManagerRef.isServiceRunning()) {
+            OutlinedButton(
+                onClick = { container.screenshotManagerRef.stopProjectionService() },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("停止截屏服务")
+            }
+        }
         Spacer(Modifier.height(24.dp))
     }
 }
