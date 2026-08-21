@@ -1,120 +1,138 @@
 # BetterAIChat
 
-An Android app that lets you chat with leading LLMs using your **own API keys**, opencode-style. The AI can not only talk to you, but also perform simple device operations via **Function Calling + device tools (Skills)**.
+> A native Android AI assistant that uses **your own API keys**. Chat with leading LLMs, and let the AI operate your phone — open apps, take screenshots, search the web, run shell commands, and follow reusable Skills.
+
+Unlike mainstream AI apps, BetterAIChat is a **local-first agent**: your API keys are encrypted on-device, there is no cloud, and the AI can actually *do things* on your device through function calling.
+
+---
+
+## Screenshots
+
+| Conversations | Chat | Settings |
+| --- | --- | --- |
+| ![conversations](docs/screenshots/1-conversations.png) | ![chat](docs/screenshots/2-chat.png) | ![settings](docs/screenshots/3-settings.png) |
+
+---
 
 ## Features
 
-- **Multiple providers**: OpenAI-compatible (OpenAI / DeepSeek / Moonshot / Qwen / Ollama, etc.), Anthropic Claude, Google Gemini
-- **Streaming chat**: SSE streaming output, Markdown rendering, stop-generation control
-- **Reasoning visibility**: thinking process streamed and shown in a collapsible card (OpenAI reasoning / Anthropic thinking / Gemini thought)
-- **Image & file understanding**: attach photos (up to 4, auto-compressed) for vision models to analyze; attach documents for text extraction — **PDF** (rendered + on-device Chinese OCR), **Word .docx**, **Excel .xlsx**, and plain text files (up to 1MB)
-- **Model selection**: built-in model catalog + custom model ID input + per-conversation model switching
-- **Context usage tracking**: live token usage shown as `117.3K (12%)` in the conversation header, like opencode
-- **Mode system (aligned with opencode)**:
-  - `Chat` — pure conversation, no tool access
-  - `Plan` — read-only analysis, write tools forbidden
-  - `Build` — default mode, every tool execution requires user confirmation
-  - `Max` — autonomous multi-step tool calls + deep reasoning (`reasoning_effort` / `thinking` injected per model capability)
-- **Device tools**: open apps, send notifications, adjust brightness/volume, take screenshots (MediaProjection), query device info, clipboard read/write, scheduled reminders, flashlight, screen timeout, open system settings pages, TTS speech
-- **Shell execution (Shizuku)**: with Shizuku granted, the AI can run arbitrary shell commands (`pm`/`am`/`dumpsys`/files, etc.) — root-level power, no root required
-- **Web search**: real-time web search (Bing with DuckDuckGo fallback) + web page content extraction — no API key required
-- **Custom Skills**: import opencode-style `SKILL.md` files; skills can define their own tools (alarm / notification / clipboard / intent / settings actions) that the AI registers and calls on demand
-- **Local-first security**: API keys encrypted with Android Keystore (AES-GCM); conversations stored in Room. No cloud sync, ever
-- **Multi-conversation management**: create / switch / delete conversations
+### Chat & models
+- **Multiple providers**: OpenAI-compatible (OpenAI, DeepSeek, Moonshot, Qwen, Ollama, any gateway), Anthropic Claude, Google Gemini
+- **Streaming replies** with Markdown rendering, thinking-process display (reasoning stream), blinking cursor
+- **Model picker**: built-in catalog per provider + custom model IDs + one-tap server model fetch (`/v1/models`)
+- **Context usage tracking** in the header (`117.3K (12%)`)
+- **Context compression**: summarize long conversations to free the window
+- **AI auto-titles** for conversations; prompt templates (translate / summarize / polish / write / explain code / brainstorm)
 
-## Build
+### Modes (opencode-style)
+| Mode | Behavior |
+| --- | --- |
+| `Chat` | Pure conversation, no tools |
+| `Plan` | Read-only analysis, write tools forbidden |
+| `Build` | Default — every tool execution asks for confirmation |
+| `Max` | Autonomous multi-step tool calls + deep reasoning (max effort / thinking) |
 
-```bash
-# Requires JDK 17 + Android SDK (compileSdk 36)
-./gradlew assembleDebug
-```
+### The AI can operate your device
+| Tool | What it does |
+| --- | --- |
+| `open_app` | Launch any installed app |
+| `send_notification` | Post notifications |
+| `set_brightness` / `set_volume` / `set_screen_timeout` | Adjust system settings |
+| `set_flashlight` | Torch control |
+| `take_screenshot` | Screen capture |
+| `device_info` | Device / battery / storage info |
+| `set_clipboard` / `get_clipboard` | Clipboard read & write |
+| `set_alarm` | One-shot reminders |
+| `schedule_repeat` | Daily / weekly / hourly repeating reminders (manageable in Settings → 定时任务) |
+| `speak_text` | TTS read-aloud |
+| `web_search` / `web_read` | Real-time web search (Bing + DuckDuckGo fallback) and page reading |
+| `open_settings` | Jump to system settings pages |
+| `run_shell` | **Root-level shell execution via Shizuku** (pm, am, dumpsys, files…) |
 
-APK output: `app/build/outputs/apk/debug/app-debug.apk`
+### Screen analysis — the AI can *see* your screen
+One tap → screenshot → vision model describes what's on your screen and gives operation advice. Works with any vision-capable model.
 
-## Downloading the APK
+### Skills (opencode-style)
+- Import `SKILL.md` files with YAML frontmatter (`name`, `description`, `allowed-tools`)
+- Skills can **define their own tools** with action types: `alarm`, `notification`, `clipboard`, `intent`, `settings` — including `{param}` templates
+- **Record actions into skills**: after the AI completes a multi-step task, save the tool sequence as a reusable Skill
+- Built-in action recorder, import/delete management
 
-> **Important**: the official GitHub **Android app** corrupts large APK downloads (the 53MB full build frequently gets truncated). Always download releases **in a browser** (or on a computer), then copy the file to the phone. If installation fails with "packageinfo is null" / "解析软件包时出现问题" on Xiaomi devices, the download was incomplete — verify with SHA-256 (printed in every release) and re-download, or use the 8.8MB lite build which rarely breaks.
+### Attachments & documents
+- Images (up to 4, auto-compressed, EXIF-corrected) sent to vision models
+- **PDF** (on-device Chinese OCR), **Word .docx**, **Excel .xlsx** (all sheets), text files up to 1MB
+
+### Hands-free
+- **Voice assistant mode**: AI speaks its reply, mic auto-opens, your spoken answer is sent automatically — a complete hands-free loop
+- Voice input button, read-aloud for any message, auto read-aloud toggle
+
+### Organization
+- Multi-conversation management: pin, archive, search (title + full-text content), rename, swipe-to-delete, clear context
+- Starred messages with a dedicated favorites page
+- Export conversations as Markdown (share sheet)
+- Long-press message actions: copy / speak / edit & resend / star / delete
+- Usage stats (conversations, messages, tokens, tool calls)
+- Themes: light / dark / system + 4 accent colors
+- Share-into-chat (`ACTION_SEND`) and deep link `betteraichat://ask?text=…`
+
+---
 
 ## Getting Started
 
-1. Open the app → Settings
-2. Pick a provider, enter your API key (and a custom Base URL for local Ollama etc.)
+### Download
+Download the APK from [Releases](https://github.com/Verlintas/BetterAIChat/releases) — **in a browser**. The GitHub Android app corrupts large APK downloads; verify with the SHA-256 printed in each release, or use the smaller `-lite` build (8.8 MB, no OCR model).
+
+### Configure
+1. Settings → 服务商与模型 → pick a provider, enter your API key (encrypted locally), optionally a custom Base URL
+2. Tap **测试连接并获取模型** — it verifies the connection and fetches the model list from your server
 3. Choose a model and default mode, save
-4. Start a new conversation and pick a mode (Build/Max lets the AI operate your device; Max executes tools autonomously — grant permission with care)
+4. Start a conversation. In Build/Max modes, ask the AI to do things: *"打开计算器"*, *"每天 9 点提醒我喝水"*, *"搜索今天的新闻并总结"*…
 
-## Custom Skills
-
-Import a markdown file with YAML frontmatter (opencode `SKILL.md` style). Skills can do more than give instructions — they can **define their own tools** that become callable by the AI once loaded.
-
-### Skill with built-in tools
-
-```markdown
----
-name: reminder_helper
-description: Set reminder notifications for the user
-allowed-tools:
-  - send_notification
-tools:
-  - name: set_reminder
-    description: Set a reminder after N minutes
-    parameters:
-      type: object
-      properties:
-        minutes:
-          type: integer
-          description: Minutes from now
-        text:
-          type: string
-          description: Reminder content
-      required: [minutes, text]
-    action:
-      type: alarm
-      config:
-        title: "{text}"
-        content: "{minutes} 分钟后提醒"
----
-1. Ask the user what to be reminded of and when.
-2. Call set_reminder with the user's minutes and text.
+### Build from source
+```bash
+# JDK 17 + Android SDK (compileSdk 36)
+./gradlew assembleDebug
+# APK: app/build/outputs/apk/debug/app-debug.apk
 ```
 
-The AI discovers skills through the `load_skill` tool; loading a skill registers its custom tools for that session. `allowed-tools` restricts which built-in tools the skill may use.
-
-### Available action types for skill tools
-
-| type | config keys | effect |
-| --- | --- | --- |
-| `alarm` | `title`, `content` | Schedule a notification after `minutes`/`seconds` arg |
-| `notification` | `title`, `content` | Send a notification immediately |
-| `clipboard` | `text` | Write text to the clipboard |
-| `intent` | `package`, `action`, `data` | Launch an Android intent |
-| `settings` | `key` (brightness/volume/screen_timeout), `value` | Change a system setting |
-
-Config values support `{param}` placeholders filled from tool arguments. Deleting a skill unregisters its tools.
-
-## Web Search
-
-No API key needed. The AI can:
-
-- `web_search` — search the web (Bing first, DuckDuckGo fallback) and get titles/URLs/snippets
-- `web_read` — fetch a page and extract its main text
-
-Works in Plan/Build/Max modes (read-only tools).
+---
 
 ## Permissions
 
 | Permission | Purpose |
 | --- | --- |
-| Notifications | AI sends reminder notifications |
-| Camera | AI controls the flashlight (torch) |
-| Modify system settings | AI adjusts brightness / screen timeout |
-| Screen capture (MediaProjection) | AI takes screenshots |
-| Foreground service | Screenshot capture |
-| Shizuku (optional) | Root-level shell execution via `run_shell` — install the Shizuku app, start it, then grant in Settings |
+| Notifications | AI notifications & reminders |
+| Microphone | Voice input & voice assistant mode |
+| Camera | Flashlight control |
+| Modify system settings | Brightness / screen timeout |
+| Screen capture | Screen analysis (Android 15: choose "Entire screen" during consent) |
+| Shizuku (optional) | Root-level shell execution |
 
-All permissions are granted manually in Settings; tools simply return an error when unauthorized.
+All permissions are granted manually; tools return clear errors when unauthorized.
+
+---
 
 ## Tech Stack
 
-Kotlin · Jetpack Compose · Material 3 · OkHttp (SSE) · kotlinx.serialization · Room · Android Keystore
+Kotlin · Jetpack Compose (Material 3) · OkHttp (SSE) · kotlinx.serialization · Room · Android Keystore · ML Kit (Chinese OCR)
 
-Modules: `:app` (UI) · `:core` (models/engine/storage) · `:providers` (adapters) · `:skills` (device tools)
+```
+:app         UI (conversations, chat, settings, stats, starred)
+:core        models, engine, SSE, storage, DB, skills parsing
+:providers   OpenAI-compatible / Anthropic / Gemini adapters
+:skills      device tools + tool registry + action executor
+```
+
+---
+
+## Roadmap
+
+- Multi-model comparison (one question, several models side by side)
+- Home screen widget
+- More device tools (Do-Not-Disturb, screen recording, notification reading)
+
+---
+
+## License
+
+[MIT](LICENSE)
