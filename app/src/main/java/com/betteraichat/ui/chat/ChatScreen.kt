@@ -758,14 +758,7 @@ private fun InputBar(
                 onValueChange = onInputChange,
                 modifier = Modifier.weight(1f),
                 placeholder = {
-                    Text(
-                        when (mode) {
-                            AppMode.CHAT -> "输入消息…"
-                            AppMode.PLAN -> "输入问题，AI 将进行分析…"
-                            AppMode.BUILD -> "输入任务，AI 可操作设备…"
-                            AppMode.MAX -> "输入任务，AI 将自主执行…"
-                        }
-                    )
+                    Text("输入文字…")
                 },
                 maxLines = 6,
                 trailingIcon = {

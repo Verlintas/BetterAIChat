@@ -130,7 +130,8 @@ fun MessageItem(
                 )
             }
             Spacer(Modifier.size(4.dp))
-            Surface(
+            if (msg.content.isNotEmpty() || msg.toolCalls.isEmpty()) {
+                Surface(
                 shape = RoundedCornerShape(topStart = 4.dp, topEnd = 16.dp, bottomEnd = 16.dp, bottomStart = 16.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
                 modifier = Modifier
@@ -162,6 +163,7 @@ fun MessageItem(
                         }
                     }
                 }
+            }
             }
             msg.toolCalls.forEachIndexed { index, call ->
                 Spacer(Modifier.size(6.dp))
