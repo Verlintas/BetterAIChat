@@ -10,7 +10,7 @@ Unlike mainstream AI apps, BetterAIChat is a **local-first agent**: your API key
 
 | Conversations | Chat | Settings |
 | --- | --- | --- |
-| <img src="docs/screenshots/1-conversations.png" width="220" alt="Conversations"> | <img src="docs/screenshots/2-chat.png" width="220" alt="Chat"> | <img src="docs/screenshots/3-settings.png" width="220" alt="Settings"> |
+| <img src="docs/screenshots/screen-conversations.png" width="220" alt="Conversations"> | <img src="docs/screenshots/screen-chat.png" width="220" alt="Chat"> | <img src="docs/screenshots/screen-settings.png" width="220" alt="Settings"> |
 
 ---
 
