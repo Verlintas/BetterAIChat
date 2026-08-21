@@ -1,0 +1,50 @@
+name: Bug report
+description: Report a bug or unexpected behavior
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: input
+    id: device
+    attributes:
+      label: Device & Android version
+      placeholder: e.g. Xiaomi 14, HyperOS 2.0 (Android 15)
+    validations:
+      required: true
+  - type: input
+    id: app-version
+    attributes:
+      label: App version & build
+      placeholder: e.g. v0.17.0 (full)
+    validations:
+      required: true
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Provider
+      options:
+        - OpenAI-compatible
+        - Anthropic Claude
+        - Google Gemini
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you expect, and what actually happened?
+      placeholder: e.g. Sending a message shows no reply
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open Settings → Providers & Models
+        2. ...
+        3. ...
+  - type: textarea
+    id: error
+    attributes:
+      label: Error message / logs
+      description: Any on-screen error text (e.g. "出错了：…"), or logcat lines if available

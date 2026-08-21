@@ -43,7 +43,7 @@ Unlike mainstream AI apps, BetterAIChat is a **local-first agent**: your API key
 | `device_info` | Device / battery / storage info |
 | `set_clipboard` / `get_clipboard` | Clipboard read & write |
 | `set_alarm` | One-shot reminders |
-| `schedule_repeat` | Daily / weekly / hourly repeating reminders (manageable in Settings → 定时任务) |
+| `schedule_repeat` | Daily / weekly / hourly repeating reminders (manageable in Settings → Scheduled tasks) |
 | `speak_text` | TTS read-aloud |
 | `web_search` / `web_read` | Real-time web search (Bing + DuckDuckGo fallback) and page reading |
 | `open_settings` | Jump to system settings pages |
@@ -83,10 +83,10 @@ One tap → screenshot → vision model describes what's on your screen and give
 Download the APK from [Releases](https://github.com/Verlintas/BetterAIChat/releases) — **in a browser**. The GitHub Android app corrupts large APK downloads; verify with the SHA-256 printed in each release, or use the smaller `-lite` build (8.8 MB, no OCR model).
 
 ### Configure
-1. Settings → 服务商与模型 → pick a provider, enter your API key (encrypted locally), optionally a custom Base URL
-2. Tap **测试连接并获取模型** — it verifies the connection and fetches the model list from your server
+1. Settings → Providers & Models → pick a provider, enter your API key (encrypted locally), optionally a custom Base URL
+2. Tap **Test connection & fetch models** — it verifies the connection and fetches the model list from your server
 3. Choose a model and default mode, save
-4. Start a conversation. In Build/Max modes, ask the AI to do things: *"打开计算器"*, *"每天 9 点提醒我喝水"*, *"搜索今天的新闻并总结"*…
+4. Start a conversation. In Build/Max modes, ask the AI to do things: *"open the calculator"*, *"remind me to drink water at 9am every day"*, *"search today's news and summarize"*…
 
 ### Build from source
 ```bash

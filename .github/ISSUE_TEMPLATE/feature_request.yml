@@ -1,0 +1,17 @@
+name: Feature request
+description: Suggest an improvement or new feature
+title: "[Feature] "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like?
+      description: Describe the feature and why it's useful
+    validations:
+      required: true
+  - type: textarea
+    id: example
+    attributes:
+      label: Example usage
+      placeholder: e.g. "ask the AI to set a Do-Not-Disturb schedule for weekends"
