@@ -16,9 +16,14 @@ import com.betteraichat.skills.ToolContext
 import com.betteraichat.skills.ToolRegistry
 import com.betteraichat.skills.tools.DeviceInfoTool
 import com.betteraichat.skills.tools.GetClipboardTool
+import com.betteraichat.skills.tools.GetTimeTool
 import com.betteraichat.skills.tools.LoadSkillTool
+import com.betteraichat.skills.tools.MediaControlTool
+import com.betteraichat.skills.tools.NetworkStatusTool
 import com.betteraichat.skills.tools.OpenAppTool
+import com.betteraichat.skills.tools.OpenDialerTool
 import com.betteraichat.skills.tools.OpenSettingsTool
+import com.betteraichat.skills.tools.RingerModeTool
 import com.betteraichat.skills.tools.SendNotificationTool
 import com.betteraichat.skills.tools.SetAlarmTool
 import com.betteraichat.skills.tools.SetBrightnessTool
@@ -26,8 +31,10 @@ import com.betteraichat.skills.tools.SetClipboardTool
 import com.betteraichat.skills.tools.SetFlashlightTool
 import com.betteraichat.skills.tools.SetScreenTimeoutTool
 import com.betteraichat.skills.tools.SetVolumeTool
+import com.betteraichat.skills.tools.ShareTextTool
 import com.betteraichat.skills.tools.SpeakTextTool
 import com.betteraichat.skills.tools.TakeScreenshotTool
+import com.betteraichat.skills.tools.VibrateTool
 import com.betteraichat.skills.tools.WebReadTool
 import com.betteraichat.skills.tools.WebSearchTool
 import com.betteraichat.tools.ScreenshotManager
@@ -97,7 +104,14 @@ class AppContainer(context: Application) {
         RunShellTool { shizukuManager.granted.value },
         SpeakTextTool(),
         ScheduleRepeatTool(),
-        LoadSkillTool({ skillRepository.loadAll() }, { registry }, actionExecutor)
+        LoadSkillTool({ skillRepository.loadAll() }, { registry }, actionExecutor),
+        GetTimeTool(),
+        MediaControlTool(),
+        RingerModeTool(),
+        ShareTextTool(),
+        OpenDialerTool(),
+        VibrateTool(),
+        NetworkStatusTool()
     )
     val registry = ToolRegistry(tools)
     val runner = DeviceToolRunner(registry, toolContext)

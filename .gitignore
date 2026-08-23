@@ -11,3 +11,4 @@ captures/
 *.keystore
 keystore_pass.txt
 !debug.keystore
+release/

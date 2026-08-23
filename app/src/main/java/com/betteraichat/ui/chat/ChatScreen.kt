@@ -62,6 +62,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.vector.path
@@ -77,6 +78,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.betteraichat.core.catalog.ModelCatalog
 import com.betteraichat.core.mode.AppMode
 import com.betteraichat.ui.rememberContainer
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 
@@ -192,22 +194,44 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
     }
 
     var initialScrollDone by remember { mutableStateOf(false) }
-    LaunchedEffect(state.messages.size) {
-        if (!initialScrollDone && state.messages.isNotEmpty()) {
-            listState.scrollToItem(state.messages.size - 1)
-            initialScrollDone = true
+    var forceFollow by remember { mutableStateOf(false) }
+    val streaming = state.messages.lastOrNull()?.streaming == true
+
+    LaunchedEffect(streaming, shouldAutoScroll, forceFollow, initialScrollDone) {
+        if (state.messages.isEmpty()) return@LaunchedEffect
+        if (initialScrollDone && !forceFollow && !shouldAutoScroll) return@LaunchedEffect
+        var attempts = 0
+        while (attempts++ < 60) {
+            val info = listState.layoutInfo
+            val total = info.totalItemsCount
+            if (total > 0) {
+                runCatching { listState.scrollToItem(total - 1, Int.MAX_VALUE) }
+                val lastItem = info.visibleItemsInfo.lastOrNull { it.index == total - 1 }
+                val bottom = lastItem?.let { it.offset + it.size } ?: -1
+                val viewportBottom = info.viewportEndOffset
+                if (lastItem != null && bottom >= viewportBottom - 20) {
+                    initialScrollDone = true
+                    break
+                }
+            }
+            delay(120)
         }
+        initialScrollDone = true
     }
 
     LaunchedEffect(state.sendTick) {
         if (state.sendTick > 0 && state.messages.isNotEmpty()) {
-            listState.animateScrollToItem(state.messages.size - 1)
+            forceFollow = true
+            runCatching { listState.animateScrollToItem(state.messages.size - 1) }
         }
     }
 
-    LaunchedEffect(state.messages.size, shouldAutoScroll) {
-        if (shouldAutoScroll && state.messages.isNotEmpty() && initialScrollDone) {
-            listState.animateScrollToItem(state.messages.size - 1)
+    LaunchedEffect(streaming) {
+        if (streaming) {
+            forceFollow = true
+        } else if (forceFollow) {
+            delay(400)
+            forceFollow = false
         }
     }
 
