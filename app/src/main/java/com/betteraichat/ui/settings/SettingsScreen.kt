@@ -80,6 +80,7 @@ import com.betteraichat.core.model.ProviderId
 import com.betteraichat.core.storage.SettingsRepository
 import com.betteraichat.core.storage.ThemeMode
 import com.betteraichat.ui.rememberContainer
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private enum class SettingsSection(val title: String) {
@@ -772,8 +773,63 @@ private fun PermissionsSection(
                 Text("停止截屏服务")
             }
         }
+
+        HorizontalDivider()
+
+        Text("AI 控制屏幕（无障碍）", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text(
+            "开启后 AI 可通过 ua_type / ua_press / ua_tap / ua_swipe 工具在任意应用里输入文字、点击和滑动，配合屏幕识别即可全自动操作手机。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        val accessibilityEnabled = remember { mutableStateOf(false) }
+        LaunchedEffect(Unit) {
+            while (true) {
+                accessibilityEnabled.value = com.betteraichat.tools.BacAccessibilityService.connected()
+                delay(1500)
+            }
+        }
+        PermissionRow(
+            title = "无障碍控制",
+            status = if (accessibilityEnabled.value) "已开启" else "未开启",
+            buttonText = if (accessibilityEnabled.value) "已开启" else "开启",
+            onAction = {
+                context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            }
+        )
+        val usageAccessGranted = remember { mutableStateOf(false) }
+        LaunchedEffect(Unit) {
+            while (true) {
+                usageAccessGranted.value = checkUsageAccess(context)
+                delay(1500)
+            }
+        }
+        PermissionRow(
+            title = "使用情况访问（前台应用检测）",
+            status = if (usageAccessGranted.value) "已授权" else "未授权",
+            buttonText = "授权",
+            onAction = {
+                context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+            }
+        )
+        Text(
+            "授权后 AI 可通过 get_foreground_app 知道当前正在使用哪个应用，用于判断任务上下文。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
         Spacer(Modifier.height(24.dp))
     }
+}
+
+private fun checkUsageAccess(context: Context): Boolean {
+    val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as android.app.AppOpsManager
+    return runCatching {
+        appOps.checkOpNoThrow(
+            android.app.AppOpsManager.OPSTR_GET_USAGE_STATS,
+            android.os.Process.myUid(),
+            context.packageName
+        ) == android.app.AppOpsManager.MODE_ALLOWED
+    }.getOrDefault(false)
 }
 
 @Composable

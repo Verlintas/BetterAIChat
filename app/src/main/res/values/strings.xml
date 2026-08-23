@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">BetterAIChat</string>
+    <string name="accessibility_service_description">让 AI 可以通过无障碍服务在屏幕上输入文本、点击、滑动和执行系统按键（用于 Build/Max 模式的任务执行）。</string>
 </resources>

@@ -55,9 +55,21 @@ Unlike mainstream AI apps, BetterAIChat is a **local-first agent**: your API key
 | `open_dialer` | Open the dialer pre-filled with a number |
 | `vibrate` | Haptic vibration feedback |
 | `network_status` | Connectivity, network type, WiFi name |
+| `get_foreground_app` | Detect the currently active app |
+| `screen_ocr` | **Read on-screen text** (screenshot + on-device Chinese/English OCR) |
+| `download_file` | Download any file from a URL into the Downloads folder |
+| `ua_type` / `ua_tap` / `ua_swipe` / `ua_press` | **UI automation via Accessibility**: type text, tap coordinates, swipe, press Home/Back/Recents/notification keys |
 
 ### Screen analysis — the AI can *see* your screen
 One tap → screenshot → vision model describes what's on your screen and gives operation advice. Works with any vision-capable model.
+
+### Full UI automation — the AI can *drive* your phone
+With two toggles in Settings (Accessibility + Usage access), the AI gains a complete automation loop:
+1. `screen_ocr` reads the text on screen
+2. `ua_tap` / `ua_swipe` / `ua_type` / `ua_press` perform the actions (tap, scroll, type, Home/Back/Recents)
+3. `take_screenshot` / `screen_ocr` verify the result
+
+Works on any app — no root, no Shizuku needed for this path.
 
 ### Skills (opencode-style)
 - Import `SKILL.md` files with YAML frontmatter (`name`, `description`, `allowed-tools`)

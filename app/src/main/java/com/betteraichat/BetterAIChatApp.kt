@@ -15,7 +15,9 @@ import com.betteraichat.skills.SkillActionExecutor
 import com.betteraichat.skills.ToolContext
 import com.betteraichat.skills.ToolRegistry
 import com.betteraichat.skills.tools.DeviceInfoTool
+import com.betteraichat.skills.tools.DownloadFileTool
 import com.betteraichat.skills.tools.GetClipboardTool
+import com.betteraichat.skills.tools.GetForegroundAppTool
 import com.betteraichat.skills.tools.GetTimeTool
 import com.betteraichat.skills.tools.LoadSkillTool
 import com.betteraichat.skills.tools.MediaControlTool
@@ -24,6 +26,7 @@ import com.betteraichat.skills.tools.OpenAppTool
 import com.betteraichat.skills.tools.OpenDialerTool
 import com.betteraichat.skills.tools.OpenSettingsTool
 import com.betteraichat.skills.tools.RingerModeTool
+import com.betteraichat.skills.tools.ScreenOcrTool
 import com.betteraichat.skills.tools.SendNotificationTool
 import com.betteraichat.skills.tools.SetAlarmTool
 import com.betteraichat.skills.tools.SetBrightnessTool
@@ -34,6 +37,10 @@ import com.betteraichat.skills.tools.SetVolumeTool
 import com.betteraichat.skills.tools.ShareTextTool
 import com.betteraichat.skills.tools.SpeakTextTool
 import com.betteraichat.skills.tools.TakeScreenshotTool
+import com.betteraichat.skills.tools.UaPressTool
+import com.betteraichat.skills.tools.UaSwipeTool
+import com.betteraichat.skills.tools.UaTapTool
+import com.betteraichat.skills.tools.UaTypeTool
 import com.betteraichat.skills.tools.VibrateTool
 import com.betteraichat.skills.tools.WebReadTool
 import com.betteraichat.skills.tools.WebSearchTool
@@ -81,7 +88,29 @@ class AppContainer(context: Application) {
     val skillRepository = SkillRepository(context.applicationContext)
 
     private val screenshotManager = ScreenshotManager(context.applicationContext)
-    private val toolContext = ToolContext(context.applicationContext, screenshotManager)
+    private val ocrBridge = com.betteraichat.tools.ScreenOcr(screenshotManager)
+    private val accessibilityBridge = object : com.betteraichat.skills.AccessibilityBridge {
+        override fun connected(): Boolean = com.betteraichat.tools.BacAccessibilityService.connected()
+        override fun windowTitle(): String? = com.betteraichat.tools.BacAccessibilityService.instance?.windowTitle()
+        override suspend fun typeText(text: String): String =
+            com.betteraichat.tools.BacAccessibilityService.instance?.typeText(text)
+                ?: "ERROR:无障碍服务未连接"
+        override suspend fun pressKey(key: String): String =
+            com.betteraichat.tools.BacAccessibilityService.instance?.pressKey(key)
+                ?: "ERROR:无障碍服务未连接"
+        override suspend fun tap(x: Int, y: Int): String =
+            com.betteraichat.tools.BacAccessibilityService.instance?.tap(x, y)
+                ?: "ERROR:无障碍服务未连接"
+        override suspend fun swipe(x1: Int, y1: Int, x2: Int, y2: Int, durationMs: Int): String =
+            com.betteraichat.tools.BacAccessibilityService.instance?.swipe(x1, y1, x2, y2, durationMs)
+                ?: "ERROR:无障碍服务未连接"
+    }
+    private val toolContext = ToolContext(
+        context.applicationContext,
+        screenshotManager,
+        ocrBridge,
+        accessibilityBridge
+    )
 
     val shizukuManager = ShizukuManager()
     val actionExecutor = SkillActionExecutor(context.applicationContext)
@@ -111,7 +140,14 @@ class AppContainer(context: Application) {
         ShareTextTool(),
         OpenDialerTool(),
         VibrateTool(),
-        NetworkStatusTool()
+        NetworkStatusTool(),
+        UaTypeTool(),
+        UaPressTool(),
+        UaTapTool(),
+        UaSwipeTool(),
+        GetForegroundAppTool(),
+        DownloadFileTool(),
+        ScreenOcrTool()
     )
     val registry = ToolRegistry(tools)
     val runner = DeviceToolRunner(registry, toolContext)

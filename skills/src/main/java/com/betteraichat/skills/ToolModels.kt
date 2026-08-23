@@ -11,9 +11,24 @@ fun interface ScreenshotProvider {
     suspend fun capture(): String
 }
 
+fun interface OcrProvider {
+    suspend fun ocrScreenshot(): String
+}
+
+interface AccessibilityBridge {
+    fun connected(): Boolean
+    fun windowTitle(): String?
+    suspend fun typeText(text: String): String
+    suspend fun pressKey(key: String): String
+    suspend fun tap(x: Int, y: Int): String
+    suspend fun swipe(x1: Int, y1: Int, x2: Int, y2: Int, durationMs: Int): String
+}
+
 data class ToolContext(
     val appContext: Context,
-    val screenshotProvider: ScreenshotProvider
+    val screenshotProvider: ScreenshotProvider,
+    val ocrProvider: OcrProvider? = null,
+    val accessibility: AccessibilityBridge? = null
 )
 
 interface DeviceTool {
