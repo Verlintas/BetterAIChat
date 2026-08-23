@@ -30,4 +30,5 @@ dependencies {
     api(libs.jsoup)
     api(libs.shizuku)
     api(libs.shizuku.provider)
+    api(libs.zxing.core)
 }

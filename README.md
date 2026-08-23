@@ -59,6 +59,16 @@ Unlike mainstream AI apps, BetterAIChat is a **local-first agent**: your API key
 | `screen_ocr` | **Read on-screen text** (screenshot + on-device Chinese/English OCR) |
 | `download_file` | Download any file from a URL into the Downloads folder |
 | `ua_type` / `ua_tap` / `ua_swipe` / `ua_press` | **UI automation via Accessibility**: type text, tap coordinates, swipe, press Home/Back/Recents/notification keys |
+| `set_dnd` | Toggle Do Not Disturb mode |
+| `manage_app` | **App management via Shizuku**: force-stop / disable / enable / clear data / uninstall |
+| `write_document` | Save AI-generated content as .md/.txt/.html to Downloads/Documents |
+| `set_wifi` | Toggle WiFi (via Shizuku) |
+| `set_power_saver` | Toggle battery saver (via Shizuku) |
+| `fetch_rss` | Parse any RSS/Atom feed (titles, links, timestamps) |
+| `get_weather` | Weather for any city (current + 3-day forecast, no API key) |
+| `calculator` | Safe math evaluation: `(12+5)*3`, `2^8`, `%`, decimals |
+| `generate_qr` | Generate QR code images from text/links |
+| `keep_screen_on` | Keep the screen awake for N seconds |
 
 ### Screen analysis — the AI can *see* your screen
 One tap → screenshot → vision model describes what's on your screen and gives operation advice. Works with any vision-capable model.

@@ -14,8 +14,14 @@ import com.betteraichat.skills.DeviceToolRunner
 import com.betteraichat.skills.SkillActionExecutor
 import com.betteraichat.skills.ToolContext
 import com.betteraichat.skills.ToolRegistry
+import com.betteraichat.skills.tools.CalculatorTool
 import com.betteraichat.skills.tools.DeviceInfoTool
 import com.betteraichat.skills.tools.DownloadFileTool
+import com.betteraichat.skills.tools.FetchRssTool
+import com.betteraichat.skills.tools.GenerateQrTool
+import com.betteraichat.skills.tools.GetWeatherTool
+import com.betteraichat.skills.tools.KeepScreenOnTool
+import com.betteraichat.skills.tools.ManageAppTool
 import com.betteraichat.skills.tools.GetClipboardTool
 import com.betteraichat.skills.tools.GetForegroundAppTool
 import com.betteraichat.skills.tools.GetTimeTool
@@ -31,8 +37,11 @@ import com.betteraichat.skills.tools.SendNotificationTool
 import com.betteraichat.skills.tools.SetAlarmTool
 import com.betteraichat.skills.tools.SetBrightnessTool
 import com.betteraichat.skills.tools.SetClipboardTool
+import com.betteraichat.skills.tools.SetDndTool
 import com.betteraichat.skills.tools.SetFlashlightTool
+import com.betteraichat.skills.tools.SetPowerSaverTool
 import com.betteraichat.skills.tools.SetScreenTimeoutTool
+import com.betteraichat.skills.tools.SetWifiTool
 import com.betteraichat.skills.tools.SetVolumeTool
 import com.betteraichat.skills.tools.ShareTextTool
 import com.betteraichat.skills.tools.SpeakTextTool
@@ -43,6 +52,7 @@ import com.betteraichat.skills.tools.UaTapTool
 import com.betteraichat.skills.tools.UaTypeTool
 import com.betteraichat.skills.tools.VibrateTool
 import com.betteraichat.skills.tools.WebReadTool
+import com.betteraichat.skills.tools.WriteDocumentTool
 import com.betteraichat.skills.tools.WebSearchTool
 import com.betteraichat.tools.ScreenshotManager
 import com.betteraichat.tools.ShizukuManager
@@ -147,7 +157,17 @@ class AppContainer(context: Application) {
         UaSwipeTool(),
         GetForegroundAppTool(),
         DownloadFileTool(),
-        ScreenOcrTool()
+        ScreenOcrTool(),
+        SetDndTool(),
+        ManageAppTool { shizukuManager.granted.value },
+        WriteDocumentTool(),
+        SetWifiTool { shizukuManager.granted.value },
+        SetPowerSaverTool { shizukuManager.granted.value },
+        FetchRssTool(),
+        GetWeatherTool(),
+        CalculatorTool(),
+        GenerateQrTool(),
+        KeepScreenOnTool()
     )
     val registry = ToolRegistry(tools)
     val runner = DeviceToolRunner(registry, toolContext)
