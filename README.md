@@ -48,6 +48,13 @@ Unlike mainstream AI apps, BetterAIChat is a **local-first agent**: your API key
 | `web_search` / `web_read` | Real-time web search (Bing + DuckDuckGo fallback) and page reading |
 | `open_settings` | Jump to system settings pages |
 | `run_shell` | **Root-level shell execution via Shizuku** (pm, am, dumpsys, files…) |
+| `get_time` | Current date / time / timezone |
+| `media_control` | Play / pause / next / previous for active media sessions |
+| `set_ringer_mode` | Switch ring / vibrate / silent mode |
+| `share_text` | Share text or links via the system share sheet |
+| `open_dialer` | Open the dialer pre-filled with a number |
+| `vibrate` | Haptic vibration feedback |
+| `network_status` | Connectivity, network type, WiFi name |
 
 ### Screen analysis — the AI can *see* your screen
 One tap → screenshot → vision model describes what's on your screen and gives operation advice. Works with any vision-capable model.
