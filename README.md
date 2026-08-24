@@ -163,6 +163,10 @@ Kotlin · Jetpack Compose (Material 3) · OkHttp (SSE) · kotlinx.serialization 
 :skills      device tools + tool registry + action executor
 ```
 
+### Learning from this project
+
+New to Android agent development? Read **[docs/HOW_IT_WORKS.md](docs/HOW_IT_WORKS.md)** — a deep technical walkthrough covering the module architecture, the message pipeline, SSE streaming, the tool-calling agent loop, permission bridging, the automation engine, and UI rendering tricks (terminal-style scrolling, streaming cursor), with a suggested study order.
+
 ---
 
 ## Roadmap
