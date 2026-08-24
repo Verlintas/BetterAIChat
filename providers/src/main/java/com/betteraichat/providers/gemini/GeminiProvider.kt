@@ -120,7 +120,7 @@ class GeminiProvider : ChatProvider {
     }
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(0, TimeUnit.MILLISECONDS)
+        .readTimeout(120, TimeUnit.SECONDS)
         .build()
 
     override fun chatStream(
@@ -218,7 +218,7 @@ class GeminiProvider : ChatProvider {
         val retryableCodes = setOf(429, 502, 503, 504)
         repeat(2) { attempt ->
             try {
-                val response = call.execute()
+                val response = call.clone().execute()
                 if (response.isSuccessful || response.code !in retryableCodes) return response
                 response.close()
                 if (attempt == 0) delay(500)
@@ -226,7 +226,7 @@ class GeminiProvider : ChatProvider {
                 if (attempt == 0) delay(500) else throw e
             }
         }
-        return call.execute()
+        return call.clone().execute()
     }
 
     private fun List<ChatMessage>.toGeminiContents(): List<GeminiContent> {

@@ -10,23 +10,27 @@ import java.util.Locale
 
 object NotificationCache {
     private val maxSize = 30
-    val items = ArrayDeque<CachedNotification>()
+    private val items = ArrayDeque<CachedNotification>()
+    private val lock = Any()
 
     fun push(sbn: StatusBarNotification, pm: PackageManager) {
         val notification = sbn.notification
         val title = notification.extras.getString(Notification.EXTRA_TITLE).orEmpty()
         val text = notification.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty()
         if (title.isBlank() && text.isBlank()) return
-        items.addFirst(
-            CachedNotification(
-                packageName = sbn.packageName,
-                appName = appLabel(pm, sbn.packageName),
-                title = title,
-                text = text,
-                time = sbn.postTime
+        val label = appLabel(pm, sbn.packageName)
+        synchronized(lock) {
+            items.addFirst(
+                CachedNotification(
+                    packageName = sbn.packageName,
+                    appName = label,
+                    title = title,
+                    text = text,
+                    time = sbn.postTime
+                )
             )
-        )
-        while (items.size > maxSize) items.removeLast()
+            while (items.size > maxSize) items.removeLast()
+        }
     }
 
     private val labelCache = HashMap<String, String>()
@@ -37,10 +41,14 @@ object NotificationCache {
     }
 
     fun snapshot(limit: Int): String {
-        if (items.isEmpty()) return "暂无通知记录（需先在系统设置中开启 BetterAIChat 的「通知使用权」）"
+        val snapshot: List<CachedNotification>
+        synchronized(lock) {
+            snapshot = items.toList()
+        }
+        if (snapshot.isEmpty()) return "暂无通知记录（需先在系统设置中开启 BetterAIChat 的「通知使用权」）"
         val fmt = SimpleDateFormat("HH:mm", Locale.getDefault())
         val sb = StringBuilder()
-        items.take(limit).forEach { n ->
+        snapshot.take(limit).forEach { n ->
             sb.appendLine("【${n.appName}】${fmt.format(Date(n.time))}")
             if (n.title.isNotBlank()) sb.appendLine("  ${n.title}")
             if (n.text.isNotBlank()) sb.appendLine("  ${n.text}")

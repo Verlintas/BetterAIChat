@@ -528,6 +528,13 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    Spacer(Modifier.size(8.dp))
+                    TextButton(
+                        onClick = { vm.stop() },
+                        modifier = Modifier.align(Alignment.End)
+                    ) {
+                        Text("停止整个任务", color = MaterialTheme.colorScheme.error)
+                    }
                 }
             },
             confirmButton = {

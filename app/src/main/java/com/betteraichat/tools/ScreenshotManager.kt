@@ -33,16 +33,19 @@ import java.io.File
 import java.io.FileOutputStream
 
 object ScreenshotBridge {
+    private val lock = Any()
     private var pendingCapture: CompletableDeferred<String>? = null
 
-    fun registerCapture(): CompletableDeferred<String> {
+    fun registerCapture(): CompletableDeferred<String> = synchronized(lock) {
         pendingCapture?.complete("ERROR:截屏请求被新的请求覆盖")
-        return CompletableDeferred<String>().also { pendingCapture = it }
+        CompletableDeferred<String>().also { pendingCapture = it }
     }
 
     fun completeCapture(result: String) {
-        pendingCapture?.complete(result)
-        pendingCapture = null
+        synchronized(lock) {
+            pendingCapture?.complete(result)
+            pendingCapture = null
+        }
     }
 }
 
@@ -74,6 +77,10 @@ class ScreenshotManager(private val context: Context) : ScreenshotProvider {
 
     override suspend fun capture(): String {
         val data = resultData ?: return "ERROR:尚未授权截屏，请到应用设置页点击「截屏授权」"
+        if (ScreenshotProjectionService.isBroken()) {
+            clearProjection()
+            return "ERROR:截屏授权已失效，请到设置页重新授权"
+        }
         val deferred = ScreenshotBridge.registerCapture()
         try {
             val intent = Intent(context, ScreenshotProjectionService::class.java)
@@ -96,7 +103,10 @@ class ScreenshotProjectionService : Service() {
         @Volatile
         var projection: MediaProjection? = null
             private set
+        @Volatile
         private var projectionBroken = false
+
+        fun isBroken(): Boolean = projectionBroken
     }
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -123,7 +133,8 @@ class ScreenshotProjectionService : Service() {
             }
         }
 
-        if (projection == null && !projectionBroken) {
+        if (projection == null || projectionBroken) {
+            stopProjectionInternal()
             val code = intent?.getIntExtra("resultCode", 0) ?: 0
             val data = if (Build.VERSION.SDK_INT >= 33) {
                 intent?.getParcelableExtra("data", Intent::class.java)
@@ -157,17 +168,15 @@ class ScreenshotProjectionService : Service() {
         return try {
             val mpm = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
             val p = mpm.getMediaProjection(resultCode, data) ?: return false
-            if (Build.VERSION.SDK_INT >= 35) {
-                p.registerCallback(
-                    object : MediaProjection.Callback() {
-                        override fun onStop() {
-                            projectionBroken = true
-                            projection = null
-                        }
-                    },
-                    Handler(Looper.getMainLooper())
-                )
-            }
+            p.registerCallback(
+                object : MediaProjection.Callback() {
+                    override fun onStop() {
+                        projectionBroken = true
+                        projection = null
+                    }
+                },
+                Handler(Looper.getMainLooper())
+            )
             projection = p
             projectionBroken = false
             true

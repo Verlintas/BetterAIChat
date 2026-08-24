@@ -21,6 +21,7 @@ class ManageAppTool(private val isShizukuGranted: () -> Boolean) : DeviceTool {
     override suspend fun execute(context: ToolContext, arguments: JsonObject): String {
         val action = arguments["action"]?.jsonPrimitive?.content ?: return "action 参数无效"
         val pkg = arguments["package"]?.jsonPrimitive?.content ?: return "package 参数无效"
+        if (!pkg.matches(Regex("[a-zA-Z0-9._]+"))) return "ERROR:package 参数无效（只允许字母、数字、点、下划线）"
         val cmd = when (action) {
             "force_stop" -> "am force-stop $pkg"
             "disable" -> "pm disable-user --user 0 $pkg"

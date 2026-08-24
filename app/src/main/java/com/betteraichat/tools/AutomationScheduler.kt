@@ -18,6 +18,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
@@ -38,11 +39,15 @@ class AutomationScheduler(
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private val batteryThresholds = HashMap<Long, Pair<String, Int>>()
+    private val running = java.util.concurrent.ConcurrentHashMap<Long, Boolean>()
+    @Volatile
+    private var receiverRegistered = false
 
     fun scheduleAll() {
         scope.launch {
             val automations = db.automationDao().getEnabled()
             automations.forEach { schedule(it) }
+            registerBatteryReceiverIfNeeded()
         }
     }
 
@@ -51,6 +56,7 @@ class AutomationScheduler(
             "time" -> scheduleTime(automation)
             "battery" -> registerBattery(automation)
         }
+        if (automation.triggerType == "battery") registerBatteryReceiverIfNeeded()
     }
 
     fun reschedule(automation: AutomationEntity) {
@@ -62,6 +68,17 @@ class AutomationScheduler(
         cancelAlarm(automation.id)
         synchronized(batteryThresholds) {
             batteryThresholds.remove(automation.id)
+        }
+    }
+
+    private fun registerBatteryReceiverIfNeeded() {
+        if (receiverRegistered || batteryThresholds.isEmpty()) return
+        receiverRegistered = true
+        val filter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
+        runCatching {
+            context.registerReceiver(batteryReceiver, filter)
+        }.onFailure {
+            receiverRegistered = false
         }
     }
 
@@ -132,9 +149,13 @@ class AutomationScheduler(
             snapshot.forEach { (id, config) ->
                 val (direction, threshold) = config
                 val hit = if (direction == "low") level <= threshold else level >= threshold
-                if (hit) {
+                if (hit && running.putIfAbsent(id, true) == null) {
                     scope.launch {
-                        executeAutomation(id)
+                        try {
+                            executeAutomation(id)
+                        } finally {
+                            running.remove(id)
+                        }
                     }
                 }
             }
@@ -142,26 +163,34 @@ class AutomationScheduler(
     }
 
     suspend fun executeAutomation(id: Long) {
-        val automation = db.automationDao().getEnabled().firstOrNull { it.id == id } ?: return
-        if (automation.triggerType == "battery") {
-            synchronized(batteryThresholds) { batteryThresholds.remove(id) }
-        }
-        db.automationDao().setLastRun(id, System.currentTimeMillis())
         runCatching {
-            val actions = json.decodeFromString<List<ActionSpec>>(automation.actionsJson)
-            val results = actions.mapNotNull { spec ->
-                val result = runCatching { runnerProvider().run(spec.tool, spec.args.toString()) }
-                    .getOrElse { e -> "执行失败：${e.message}" }
-                "${spec.tool}: $result"
+            val automation = db.automationDao().getEnabled().firstOrNull { it.id == id } ?: return
+            if (!daysMatch(automation.days)) return
+            db.automationDao().setLastRun(id, System.currentTimeMillis())
+            runCatching {
+                val actions = json.decodeFromString<List<ActionSpec>>(automation.actionsJson)
+                val results = actions.mapNotNull { spec ->
+                    val result = withTimeoutOrNull(60_000) {
+                        runCatching { runnerProvider().run(spec.tool, spec.args.toString()) }
+                            .getOrElse { e -> "执行失败：${e.message}" }
+                    } ?: "执行超时（60s）"
+                    "${spec.tool}: $result"
+                }
+                val summary = results.joinToString("\n")
+                sendDoneNotification(automation.name, summary)
+            }.onFailure { e ->
+                sendDoneNotification(automation.name, "执行失败：${e.message}")
             }
-            val summary = results.joinToString("\n")
-            sendDoneNotification(automation.name, summary)
             if (automation.triggerType == "time") {
                 db.automationDao().getEnabled().firstOrNull { it.id == id }?.let { schedule(it) }
             }
-        }.onFailure { e ->
-            sendDoneNotification(automation.name, "执行失败：${e.message}")
         }
+    }
+
+    private fun daysMatch(days: String): Boolean {
+        val today = Calendar.getInstance().get(Calendar.DAY_OF_WEEK)
+        val dayNum = (today + 5) % 7 + 1
+        return days.isBlank() || days == "all" || dayNum.toString() in days.split(",")
     }
 
     private fun sendDoneNotification(name: String, summary: String) {
@@ -191,14 +220,21 @@ class AutomationAlarmReceiver : BroadcastReceiver() {
         val id = intent.getLongExtra(AutomationScheduler.EXTRA_ID, -1L)
         if (id < 0) return
         val app = context.applicationContext as com.betteraichat.BetterAIChatApp
+        val pendingResult = goAsync()
         kotlinx.coroutines.CoroutineScope(Dispatchers.Default).launch {
-            val days = runCatching {
-                app.container.db.automationDao().getEnabled().firstOrNull { it.id == id }?.days
-            }.getOrNull()
-            val today = Calendar.getInstance().get(Calendar.DAY_OF_WEEK)
-            val dayNum = (today + 5) % 7 + 1
-            if (!days.isNullOrBlank() && days != "all" && dayNum.toString() !in days.split(",")) return@launch
-            app.container.automationScheduler?.executeAutomation(id)
+            try {
+                val days = runCatching {
+                    app.container.db.automationDao().getEnabled().firstOrNull { it.id == id }?.days
+                }.getOrNull()
+                if (!days.isNullOrBlank() && days != "all") {
+                    val today = Calendar.getInstance().get(Calendar.DAY_OF_WEEK)
+                    val dayNum = (today + 5) % 7 + 1
+                    if (dayNum.toString() !in days.split(",")) return@launch
+                }
+                app.container.automationScheduler?.executeAutomation(id)
+            } finally {
+                pendingResult.finish()
+            }
         }
     }
 }

@@ -33,7 +33,9 @@ object ShizukuExec {
                     }
                     val exited = proc.waitForTimeout(timeoutSeconds.toLong(), "SECONDS")
                     if (!exited) {
-                        proc.destroy()
+                        runCatching { proc.destroy() }
+                        runCatching { proc.inputStream?.close() }
+                        runCatching { proc.errorStream?.close() }
                         return@withContext "命令超时（${timeoutSeconds}s），已终止"
                     }
                     val stdout = withTimeoutOrNull(3_000) { outFuture.await() } ?: ""
@@ -49,7 +51,9 @@ object ShizukuExec {
                     }
                 } finally {
                     ioScope.cancel()
-                    proc.destroy()
+                    runCatching { proc.destroy() }
+                    runCatching { proc.inputStream?.close() }
+                    runCatching { proc.errorStream?.close() }
                 }
             } catch (e: SecurityException) {
                 "Shizuku 权限被拒绝，请到设置页重新授权"

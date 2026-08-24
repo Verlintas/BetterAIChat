@@ -62,7 +62,13 @@ class ChatEngine(
         messages: List<ChatMessage>,
         config: ProviderConfig,
         mode: AppMode
-    ): Flow<EngineEvent> = flow {        val provider = providerFactory(config.provider)
+    ): Flow<EngineEvent> = flow {
+        val provider = try {
+            providerFactory(config.provider)
+        } catch (e: Exception) {
+            emit(EngineEvent.Failed("服务初始化失败：${e.message}"))
+            return@flow
+        }
         val effectiveConfig = config.copy(reasoning = config.reasoning && mode == AppMode.MAX)
         var history = messages
         var toolRounds = 0
@@ -72,13 +78,13 @@ class ChatEngine(
                 emit(EngineEvent.Failed("工具调用轮次超过 $maxRounds 次，已停止"))
                 return@flow
             }
-            val tools = toolCatalog.specsFor(mode)
-            val sys = ChatMessage(role = ChatRole.SYSTEM, content = systemPromptFor(mode))
             var text = StringBuilder()
             var thinking = StringBuilder()
             var thinkingSignature: String? = null
             var toolCalls = emptyList<ToolCall>()
             try {
+                val tools = toolCatalog.specsFor(mode)
+                val sys = ChatMessage(role = ChatRole.SYSTEM, content = systemPromptFor(mode))
                 provider.chatStream(listOf(sys) + history, effectiveConfig, tools).collect { ev ->
                     when (ev) {
                         is StreamEvent.Delta -> {
@@ -130,19 +136,29 @@ class ChatEngine(
                     is GateResult.NeedsConfirm -> {
                         val deferred = CompletableDeferred<Boolean>()
                         pendingConfirms[call.id] = deferred
-                        confirmRequestsFlow.tryEmit(call)
-                        val allow = try {
-                            withTimeout(confirmTimeoutMs) { deferred.await() }
-                        } catch (e: CancellationException) {
-                            throw e
-                        } catch (e: Exception) {
-                            false
-                        } finally {
+                        var emitFailed = false
+                        val allow = if (!confirmRequestsFlow.tryEmit(call)) {
+                            emitFailed = true
                             pendingConfirms.remove(call.id)
+                            false
+                        } else {
+                            try {
+                                withTimeout(confirmTimeoutMs) { deferred.await() }
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                false
+                            } finally {
+                                pendingConfirms.remove(call.id)
+                            }
                         }
                         if (!allow) {
                             status = ToolCallStatus.REJECTED
-                            resultText = "用户拒绝了该工具调用"
+                            resultText = if (emitFailed) {
+                                "确认请求未送达，已拒绝该工具调用"
+                            } else {
+                                "用户拒绝了该工具调用"
+                            }
                         } else {
                             val (s, r) = executeTool(call, spec) { emit(it) }
                             status = s
@@ -176,10 +192,12 @@ class ChatEngine(
     ): Pair<ToolCallStatus, String> {
         emitEvent(EngineEvent.ToolCallStarted(call))
         return try {
-            val result = toolRunner.run(call.name, call.arguments)
+            val result = withTimeout(60_000) { toolRunner.run(call.name, call.arguments) }
             ToolCallStatus.DONE to result
         } catch (e: CancellationException) {
             throw e
+        } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+            ToolCallStatus.FAILED to "工具执行超时（60 秒）"
         } catch (e: Exception) {
             ToolCallStatus.FAILED to (e.message ?: "工具执行失败")
         }

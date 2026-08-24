@@ -1,5 +1,6 @@
 package com.betteraichat.core.chat
 
+import androidx.room.withTransaction
 import com.betteraichat.core.db.AppDatabase
 import com.betteraichat.core.db.ConversationEntity
 import com.betteraichat.core.db.MessageEntity
@@ -45,7 +46,7 @@ class ChatRepository(private val db: AppDatabase) {
 
     suspend fun getConversation(id: Long): ConversationEntity? = db.conversationDao().getById(id)
 
-    suspend fun deleteConversation(id: Long) {
+    suspend fun deleteConversation(id: Long) = db.withTransaction {
         db.conversationDao().deleteMessages(id)
         db.conversationDao().deleteById(id)
     }

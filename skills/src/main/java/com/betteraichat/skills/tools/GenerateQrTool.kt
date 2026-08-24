@@ -50,10 +50,13 @@ class GenerateQrTool : DeviceTool {
                 }
                 val dir = File(context.appContext.getExternalFilesDir(null), "qr").apply { mkdirs() }
                 val file = File(dir, "qr_${System.currentTimeMillis()}.png")
-                FileOutputStream(file).use { out ->
-                    bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+                try {
+                    FileOutputStream(file).use { out ->
+                        bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+                    }
+                } finally {
+                    bitmap.recycle()
                 }
-                bitmap.recycle()
                 "二维码已生成：${file.absolutePath}（${size}x${size}px）"
             }.getOrElse { e -> "ERROR:生成失败：${e.message}" }
         }

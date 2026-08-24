@@ -9,6 +9,7 @@ import android.view.accessibility.AccessibilityNodeInfo
 import com.betteraichat.skills.AccessibilityBridge
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
 
@@ -36,6 +37,11 @@ class BacAccessibilityService : AccessibilityService(), AccessibilityBridge {
         return super.onUnbind(intent)
     }
 
+    override fun onDestroy() {
+        instance = null
+        super.onDestroy()
+    }
+
     override fun connected(): Boolean = instance != null
 
     override fun windowTitle(): String? {
@@ -55,29 +61,29 @@ class BacAccessibilityService : AccessibilityService(), AccessibilityBridge {
         if (ok) "已向当前输入框写入 ${text.length} 字符" else "ERROR:未找到可输入的输入框（请先聚焦输入框）"
     }
 
-    override suspend fun pressKey(key: String): String {
+    override suspend fun pressKey(key: String): String = withContext(Dispatchers.Main) {
         val action = when (key) {
             "home" -> GLOBAL_ACTION_HOME
             "back" -> GLOBAL_ACTION_BACK
             "recents" -> GLOBAL_ACTION_RECENTS
             "notifications" -> GLOBAL_ACTION_NOTIFICATIONS
             "quick_settings" -> GLOBAL_ACTION_QUICK_SETTINGS
-            else -> return "ERROR:key 无效，可选：home / back / recents / notifications / quick_settings"
+            else -> return@withContext "ERROR:key 无效，可选：home / back / recents / notifications / quick_settings"
         }
-        return if (performGlobalAction(action)) "已执行按键：$key" else "ERROR:按键执行失败"
+        if (performGlobalAction(action)) "已执行按键：$key" else "ERROR:按键执行失败"
     }
 
-    override suspend fun tap(x: Int, y: Int): String {
+    override suspend fun tap(x: Int, y: Int): String = withContext(Dispatchers.Main) {
         val path = Path().apply { moveTo(x.toFloat(), y.toFloat()) }
         val gesture = GestureDescription.Builder()
             .addStroke(GestureDescription.StrokeDescription(path, 0, 80))
             .build()
-        return if (dispatchGestureInternal(gesture)) "已点击 (${x}, ${y})" else "ERROR:手势分发失败"
+        if (dispatchGestureInternal(gesture)) "已点击 (${x}, ${y})" else "ERROR:手势分发失败"
     }
 
     override suspend fun swipe(
         x1: Int, y1: Int, x2: Int, y2: Int, durationMs: Int
-    ): String {
+    ): String = withContext(Dispatchers.Main) {
         val path = Path().apply {
             moveTo(x1.toFloat(), y1.toFloat())
             lineTo(x2.toFloat(), y2.toFloat())
@@ -86,25 +92,28 @@ class BacAccessibilityService : AccessibilityService(), AccessibilityBridge {
         val gesture = GestureDescription.Builder()
             .addStroke(GestureDescription.StrokeDescription(path, 0, duration.toLong()))
             .build()
-        return if (dispatchGestureInternal(gesture)) {
+        if (dispatchGestureInternal(gesture)) {
             "已滑动 (${x1},${y1}) → (${x2},${y2})，耗时 ${duration}ms"
         } else "ERROR:手势分发失败"
     }
 
     private suspend fun dispatchGestureInternal(gesture: GestureDescription): Boolean =
-        suspendCancellableCoroutine { cont ->
-            dispatchGesture(
-                gesture,
-                object : AccessibilityService.GestureResultCallback() {
-                    override fun onCompleted(gestureDescription: GestureDescription?) {
-                        cont.resume(true)
-                    }
+        withTimeoutOrNull(5_000) {
+            suspendCancellableCoroutine { cont ->
+                cont.invokeOnCancellation { }
+                dispatchGesture(
+                    gesture,
+                    object : AccessibilityService.GestureResultCallback() {
+                        override fun onCompleted(gestureDescription: GestureDescription?) {
+                            cont.resume(true)
+                        }
 
-                    override fun onCancelled(gestureDescription: GestureDescription?) {
-                        cont.resume(false)
-                    }
-                },
-                null
-            )
-        }
+                        override fun onCancelled(gestureDescription: GestureDescription?) {
+                            cont.resume(false)
+                        }
+                    },
+                    null
+                )
+            }
+        } ?: false
 }

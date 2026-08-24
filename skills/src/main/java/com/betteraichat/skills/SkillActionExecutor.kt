@@ -231,8 +231,10 @@ class AlarmReceiver : BroadcastReceiver() {
                         }
                     }
                 }
-                val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                nm.cancelAll()
+                if (requestCode >= 0) {
+                    val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                    nm.cancel(requestCode)
+                }
                 return
             }
             ACTION_REPEAT -> {

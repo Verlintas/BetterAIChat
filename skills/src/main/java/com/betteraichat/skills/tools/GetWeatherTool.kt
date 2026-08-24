@@ -35,8 +35,15 @@ class GetWeatherTool : DeviceTool {
                 conn.readTimeout = 30_000
                 conn.setRequestProperty("Accept", "application/json")
                 conn.setRequestProperty("User-Agent", "curl/8.0")
-                if (conn.responseCode != 200) return@runCatching "ERROR:天气服务返回 ${conn.responseCode}"
-                val json = conn.inputStream.bufferedReader().readText()
+                if (conn.responseCode != 200) {
+                    conn.disconnect()
+                    return@runCatching "ERROR:天气服务返回 ${conn.responseCode}"
+                }
+                val json = try {
+                    conn.inputStream.bufferedReader().use { it.readText() }
+                } finally {
+                    conn.disconnect()
+                }
                 val root = kotlinx.serialization.json.Json.parseToJsonElement(json).jsonObject
                 val cur = root["current_condition"]?.jsonArray?.firstOrNull()?.jsonObject
                     ?: return@runCatching "ERROR:天气数据解析失败"

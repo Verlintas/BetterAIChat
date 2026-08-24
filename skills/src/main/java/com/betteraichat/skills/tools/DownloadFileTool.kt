@@ -46,12 +46,21 @@ class DownloadFileTool : DeviceTool {
                     return@runCatching "ERROR:下载失败 HTTP ${conn.responseCode}"
                 }
                 val size = conn.contentLengthLong
+                if (size > 100L * 1024 * 1024) {
+                    return@runCatching "ERROR:文件过大（${size / 1024 / 1024}MB），已拒绝下载（上限 100MB）"
+                }
                 val fileName = arguments["filename"]?.jsonPrimitive?.content
                     ?.takeIf { it.isNotBlank() }
                     ?: inferName(url, conn)
-                val saved = saveToDownloads(appContext, fileName, conn.inputStream)
+                try {
+                    conn.inputStream.use { input ->
+                        saveToDownloads(appContext, fileName, input, size)
+                    }
+                } finally {
+                    conn.disconnect()
+                }
                 val sizeText = if (size > 0) "，${size / 1024 / 1024}MB" else ""
-                "下载完成：$saved$sizeText"
+                "下载完成：$fileName$sizeText"
             }.getOrElse { e -> "ERROR:下载失败：${e.message}" }
         }
     }
@@ -68,9 +77,23 @@ class DownloadFileTool : DeviceTool {
     private fun saveToDownloads(
         context: Context,
         fileName: String,
-        input: java.io.InputStream
+        input: java.io.InputStream,
+        declaredSize: Long
     ): String {
         val safeName = fileName.replace(Regex("[\\\\/:*?\"<>|]"), "_").take(120)
+        var written = 0L
+        fun copy(out: java.io.OutputStream) {
+            val buffer = ByteArray(64 * 1024)
+            while (true) {
+                val n = input.read(buffer)
+                if (n < 0) break
+                written += n
+                if (written > 100L * 1024 * 1024) {
+                    throw IllegalStateException("下载超过 100MB 上限")
+                }
+                out.write(buffer, 0, n)
+            }
+        }
         if (Build.VERSION.SDK_INT >= 29) {
             val resolver = context.contentResolver
             val values = ContentValues().apply {
@@ -80,8 +103,13 @@ class DownloadFileTool : DeviceTool {
             }
             val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
                 ?: return "ERROR:无法创建下载文件"
-            resolver.openOutputStream(uri)?.use { out ->
-                input.copyTo(out)
+            try {
+                resolver.openOutputStream(uri)?.use { out ->
+                    copy(out)
+                } ?: return "ERROR:无法写入下载文件"
+            } catch (e: Exception) {
+                runCatching { resolver.delete(uri, null, null) }
+                throw e
             }
             return "下载/${safeName}"
         } else {
@@ -89,7 +117,7 @@ class DownloadFileTool : DeviceTool {
             dir.mkdirs()
             val file = File(dir, safeName)
             file.outputStream().use { out ->
-                input.copyTo(out)
+                copy(out)
             }
             return file.absolutePath
         }

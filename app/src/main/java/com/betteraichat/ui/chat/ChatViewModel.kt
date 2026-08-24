@@ -366,11 +366,13 @@ class ChatViewModel(
     }
 
     private fun runGeneration(cid: Long) {
+        if (runJob?.isActive == true) return
         val s = _state.value
         val config = settings.configFor(s.provider)
-            streaming = newStreamingMessage(config, s)
-            toolCallRoundsThisRun = 0
-            refresh()
+        _state.update { it.copy(isRunning = true) }
+        streaming = newStreamingMessage(config, s)
+        toolCallRoundsThisRun = 0
+        refresh()
         var currentJob: Job? = null
         currentJob = viewModelScope.launch {
             streamTickerJob = viewModelScope.launch {
@@ -452,12 +454,6 @@ class ChatViewModel(
                             if (settings.getVoiceAssistant() && msg.content.isNotBlank()) {
                                 speakAndListen(msg.content)
                             }
-                            if (!titleGenerated && cid == currentConversationId &&
-                                repository.getHistory(cid).size >= 3
-                            ) {
-                                titleGenerated = true
-                                launch { generateTitle(cid) }
-                            }
                         }
                         is EngineEvent.Failed -> {
                             _state.update { it.copy(error = smartError(ev.message)) }
@@ -469,6 +465,12 @@ class ChatViewModel(
                         EngineEvent.Completed -> {
                             if (toolCallRoundsThisRun > 0 && !appInForeground()) {
                                 sendTaskDoneNotification()
+                            }
+                            if (!titleGenerated && cid == currentConversationId &&
+                                repository.getHistory(cid).size >= 3
+                            ) {
+                                titleGenerated = true
+                                launch { generateTitle(cid) }
                             }
                         }
                     }
@@ -531,15 +533,28 @@ class ChatViewModel(
     private suspend fun persistStreamingPartial(cid: Long) {
         val st = streaming ?: return
         if (st.content.isBlank() && st.toolCalls.isEmpty()) return
-        val sameRound = pendingAssistantEntity != null && pendingRound == streamingRound
+        val sameRound = pendingAssistantEntity != null &&
+            pendingAssistantEntity?.conversationId == cid
         if (sameRound) {
-            repository.updateMessage(pendingAssistantEntity!!.copy(content = st.content))
+            val entity = pendingAssistantEntity!!
+            val mergedCalls = runCatching {
+                json.decodeFromString<List<ToolCall>>(entity.toolCallsJson ?: "[]")
+            }.getOrDefault(emptyList())
+            repository.updateMessage(
+                entity.copy(
+                    content = st.content,
+                    toolCallsJson = runCatching {
+                        json.encodeToString(ListSerializer(ToolCall.serializer()), mergedCalls)
+                    }.getOrNull()
+                )
+            )
         } else {
             repository.insertMessage(
                 repository.domainToMessage(
                     ChatMessage(
                         role = ChatRole.ASSISTANT,
                         content = st.content,
+                        toolCalls = st.toolCalls,
                         model = st.model,
                         mode = st.mode,
                         thinkingText = st.thinking.ifBlank { null }
@@ -556,13 +571,46 @@ class ChatViewModel(
         runJob = null
         streamTickerJob?.cancel()
         streamTickerJob = null
-        _state.update { it.copy(confirmRequest = null) }
+        _state.update { it.copy(confirmRequest = null, isRunning = false) }
         viewModelScope.launch {
+            failPendingToolCalls()
             persistStreamingPartial(currentConversationId)
             streaming = null
-            _state.update { it.copy(isRunning = false) }
             refresh()
         }
+    }
+
+    private suspend fun failPendingToolCalls() {
+        val entity = pendingAssistantEntity ?: return
+        val calls = entity.toolCallsJson?.let {
+            runCatching { json.decodeFromString<List<ToolCall>>(it) }.getOrDefault(emptyList())
+        } ?: emptyList()
+        val pending = calls.filter { it.status == ToolCallStatus.PENDING }
+        if (pending.isEmpty()) return
+        val cancelled = calls.map { c ->
+            if (c.status == ToolCallStatus.PENDING) {
+                c.copy(status = ToolCallStatus.REJECTED, result = "已取消")
+            } else c
+        }
+        repository.updateMessage(
+            entity.copy(toolCallsJson = runCatching {
+                json.encodeToString(ListSerializer(ToolCall.serializer()), cancelled)
+            }.getOrNull())
+        )
+        pending.forEach { call ->
+            repository.insertMessage(
+                repository.domainToMessage(
+                    ChatMessage(
+                        role = ChatRole.TOOL,
+                        content = "已取消",
+                        toolCallId = call.id,
+                        toolName = call.name
+                    ),
+                    entity.conversationId
+                )
+            )
+        }
+        pendingAssistantEntity = null
     }
 
     fun clearContext() {
