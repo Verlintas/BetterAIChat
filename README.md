@@ -69,9 +69,20 @@ Unlike mainstream AI apps, BetterAIChat is a **local-first agent**: your API key
 | `calculator` | Safe math evaluation: `(12+5)*3`, `2^8`, `%`, decimals |
 | `generate_qr` | Generate QR code images from text/links |
 | `keep_screen_on` | Keep the screen awake for N seconds |
+| `create_automation` | **Create automations**: time/battery triggers that run a sequence of tool actions unattended |
+| `list_automations` / `delete_automation` | Manage automations |
+| `read_notifications` | Read recent notifications (needs notification access) |
+| `get_screen_state` | Screen on/off & lock state |
 
 ### Screen analysis — the AI can *see* your screen
 One tap → screenshot → vision model describes what's on your screen and gives operation advice. Works with any vision-capable model.
+
+### Automations — set-and-forget tasks
+The AI can create automations that run tool sequences automatically:
+- **Time trigger**: e.g. "every day at 22:00 silence the phone + enable DND"
+- **Battery trigger**: e.g. "when battery drops below 20%, remind me to charge"
+- Executed in the background via AlarmManager (no confirmation needed), completion is reported via notification
+- Manage / toggle / delete them in Settings → Automations
 
 ### Full UI automation — the AI can *drive* your phone
 With two toggles in Settings (Accessibility + Usage access), the AI gains a complete automation loop:

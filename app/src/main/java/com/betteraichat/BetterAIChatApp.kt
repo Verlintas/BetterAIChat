@@ -9,18 +9,23 @@ import com.betteraichat.core.model.ProviderId
 import com.betteraichat.core.storage.SettingsRepository
 import com.betteraichat.core.skills.SkillRepository
 import com.betteraichat.providers.ProviderFactory
+import kotlinx.coroutines.flow.first
 import com.betteraichat.skills.DeviceTool
 import com.betteraichat.skills.DeviceToolRunner
 import com.betteraichat.skills.SkillActionExecutor
 import com.betteraichat.skills.ToolContext
 import com.betteraichat.skills.ToolRegistry
 import com.betteraichat.skills.tools.CalculatorTool
+import com.betteraichat.skills.tools.CreateAutomationTool
+import com.betteraichat.skills.tools.DeleteAutomationTool
 import com.betteraichat.skills.tools.DeviceInfoTool
 import com.betteraichat.skills.tools.DownloadFileTool
 import com.betteraichat.skills.tools.FetchRssTool
 import com.betteraichat.skills.tools.GenerateQrTool
+import com.betteraichat.skills.tools.GetScreenStateTool
 import com.betteraichat.skills.tools.GetWeatherTool
 import com.betteraichat.skills.tools.KeepScreenOnTool
+import com.betteraichat.skills.tools.ListAutomationsTool
 import com.betteraichat.skills.tools.ManageAppTool
 import com.betteraichat.skills.tools.GetClipboardTool
 import com.betteraichat.skills.tools.GetForegroundAppTool
@@ -31,6 +36,7 @@ import com.betteraichat.skills.tools.NetworkStatusTool
 import com.betteraichat.skills.tools.OpenAppTool
 import com.betteraichat.skills.tools.OpenDialerTool
 import com.betteraichat.skills.tools.OpenSettingsTool
+import com.betteraichat.skills.tools.ReadNotificationsTool
 import com.betteraichat.skills.tools.RingerModeTool
 import com.betteraichat.skills.tools.ScreenOcrTool
 import com.betteraichat.skills.tools.SendNotificationTool
@@ -55,6 +61,7 @@ import com.betteraichat.skills.tools.WebReadTool
 import com.betteraichat.skills.tools.WriteDocumentTool
 import com.betteraichat.skills.tools.WebSearchTool
 import com.betteraichat.tools.ScreenshotManager
+import com.betteraichat.tools.AutomationScheduler
 import com.betteraichat.tools.ShizukuManager
 import com.betteraichat.skills.tools.RunShellTool
 import com.betteraichat.skills.tools.ScheduleRepeatTool
@@ -67,6 +74,7 @@ class BetterAIChatApp : Application() {
     override fun onCreate() {
         super.onCreate()
         container = AppContainer(this)
+        container.automationScheduler.scheduleAll()
         registerActivityLifecycleCallbacks(object : android.app.Application.ActivityLifecycleCallbacks {
             override fun onActivityCreated(activity: android.app.Activity, savedInstanceState: android.os.Bundle?) {}
             override fun onActivityStarted(activity: android.app.Activity) {}
@@ -125,6 +133,50 @@ class AppContainer(context: Application) {
     val shizukuManager = ShizukuManager()
     val actionExecutor = SkillActionExecutor(context.applicationContext)
 
+
+    val automationScheduler = AutomationScheduler(context.applicationContext, db) { runner }
+    private val automationBridge = object : com.betteraichat.skills.AutomationBridge {
+        override suspend fun create(
+            name: String, triggerType: String, triggerValue: String,
+            days: String, actionsJson: String
+        ): String = runCatching {
+            val entity = com.betteraichat.core.db.AutomationEntity(
+                name = name.take(50),
+                triggerType = triggerType,
+                triggerValue = triggerValue,
+                days = days,
+                actionsJson = actionsJson,
+                createdAt = System.currentTimeMillis()
+            )
+            val id = db.automationDao().insert(entity)
+            automationScheduler.schedule(entity.copy(id = id))
+            "自动化「$name」已创建（id=$id）"
+        }.getOrElse { e -> "ERROR:创建失败：${e.message}" }
+
+        override suspend fun list(): String {
+            val all = db.automationDao().observeAll().first()
+            if (all.isEmpty()) return "暂无自动化。可让 AI 创建，例如「每天 22:00 开启勿扰并静音」"
+            val sb = StringBuilder()
+            all.forEach { a ->
+                val trigger = when (a.triggerType) {
+                    "time" -> "每天 ${a.triggerValue}（${if (a.days == "all") "每天" else a.days}）"
+                    "battery" -> "电量${if (a.triggerValue.startsWith("low")) "低于" else "高于"} ${a.triggerValue.substringAfter(":")}%"
+                    else -> a.triggerType
+                }
+                sb.appendLine("${a.id}. ${a.name}［${if (a.enabled) "启用" else "停用"}］$trigger")
+            }
+            return sb.toString().trim()
+        }
+
+        override suspend fun delete(id: Long): String {
+            val found = db.automationDao().observeAll().first().firstOrNull { it.id == id }
+                ?: return "ERROR:未找到 id=$id 的自动化"
+            db.automationDao().delete(id)
+            automationScheduler.cancel(found)
+            return "已删除自动化「${found.name}」"
+        }
+    }
+
     val tools: List<DeviceTool> = listOf(
         OpenAppTool(),
         SendNotificationTool(),
@@ -167,7 +219,12 @@ class AppContainer(context: Application) {
         GetWeatherTool(),
         CalculatorTool(),
         GenerateQrTool(),
-        KeepScreenOnTool()
+        KeepScreenOnTool(),
+        CreateAutomationTool(automationBridge),
+        ListAutomationsTool(automationBridge),
+        DeleteAutomationTool(automationBridge),
+        ReadNotificationsTool { limit -> com.betteraichat.tools.NotificationCache.snapshot(limit) },
+        GetScreenStateTool()
     )
     val registry = ToolRegistry(tools)
     val runner = DeviceToolRunner(registry, toolContext)

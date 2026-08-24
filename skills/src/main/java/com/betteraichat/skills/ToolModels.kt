@@ -24,6 +24,19 @@ interface AccessibilityBridge {
     suspend fun swipe(x1: Int, y1: Int, x2: Int, y2: Int, durationMs: Int): String
 }
 
+interface AutomationBridge {
+    suspend fun create(
+        name: String,
+        triggerType: String,
+        triggerValue: String,
+        days: String,
+        actionsJson: String
+    ): String
+
+    suspend fun list(): String
+    suspend fun delete(id: Long): String
+}
+
 data class ToolContext(
     val appContext: Context,
     val screenshotProvider: ScreenshotProvider,

@@ -89,6 +89,7 @@ private enum class SettingsSection(val title: String) {
     SKILLS("技能"),
     PERMISSIONS("权限"),
     REPEAT_TASKS("定时任务"),
+    AUTOMATIONS("自动化"),
     STATS("使用统计")
 }
 
@@ -150,6 +151,12 @@ fun SettingsScreen(onBack: () -> Unit) {
                 scope = scope,
                 snackbar = snackbar
             )
+            SettingsSection.AUTOMATIONS -> AutomationsSection(
+                modifier = Modifier.fillMaxSize().padding(padding),
+                container = container,
+                scope = scope,
+                snackbar = snackbar
+            )
             SettingsSection.STATS -> StatsSection(
                 modifier = Modifier.fillMaxSize().padding(padding),
                 container = container
@@ -205,6 +212,14 @@ private fun SettingsMenu(
                 subtitle = "查看 · 取消重复提醒",
                 icon = { Icon(Icons.Filled.Notifications, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
                 onClick = { onOpenSection(SettingsSection.REPEAT_TASKS) }
+            )
+        }
+        item {
+            SettingsMenuItem(
+                title = "自动化",
+                subtitle = "条件触发 · 自动执行工具",
+                icon = { Icon(Icons.Filled.Build, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                onClick = { onOpenSection(SettingsSection.AUTOMATIONS) }
             )
         }
         item {
@@ -817,6 +832,19 @@ private fun PermissionsSection(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        PermissionRow(
+            title = "通知使用权（读取通知）",
+            status = if (notificationListenerEnabled(context)) "已开启" else "未开启",
+            buttonText = "开启",
+            onAction = {
+                context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+            }
+        )
+        Text(
+            "开启后 AI 可通过 read_notifications 读取最近收到的通知（消息、提醒等），用于感知手机动态。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
         Spacer(Modifier.height(24.dp))
     }
 }
@@ -830,6 +858,16 @@ private fun checkUsageAccess(context: Context): Boolean {
             context.packageName
         ) == android.app.AppOpsManager.MODE_ALLOWED
     }.getOrDefault(false)
+}
+
+private fun notificationListenerEnabled(context: Context): Boolean {
+    val flat = android.provider.Settings.Secure.getString(
+        context.contentResolver,
+        "enabled_notification_listeners"
+    ) ?: return false
+    return flat.split(':').any {
+        android.content.ComponentName.unflattenFromString(it)?.packageName == context.packageName
+    }
 }
 
 @Composable
@@ -1011,5 +1049,82 @@ private fun PermissionRow(
             }
             Button(onClick = onAction) { Text(buttonText) }
         }
+    }
+}
+
+@Composable
+private fun AutomationsSection(
+    modifier: Modifier,
+    container: AppContainer,
+    scope: kotlinx.coroutines.CoroutineScope,
+    snackbar: SnackbarHostState
+) {
+    val automations by container.db.automationDao().observeAll()
+        .collectAsStateWithLifecycle(initialValue = emptyList())
+
+    Column(
+        modifier = modifier.verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text(
+            "自动化：满足条件时自动执行一系列工具操作，无需人工确认。可让 AI 创建，例如「每天 22:00 开启勿扰并静音」「电量低于 20% 时提醒充电」。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        if (automations.isEmpty()) {
+            Text(
+                "暂无自动化。在 Build/Max 模式对 AI 说「创建一个自动化：每天晚上 10 点静音并开启勿扰」。",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else {
+            automations.forEach { a ->
+                Surface(
+                    shape = MaterialTheme.shapes.medium,
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(a.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                            Text(
+                                when (a.triggerType) {
+                                    "time" -> "每天 ${a.triggerValue}（${if (a.days == "all") "每天" else a.days}）"
+                                    "battery" -> "电量${if (a.triggerValue.startsWith("low")) "低于" else "高于"} ${a.triggerValue.substringAfter(":")}%"
+                                    else -> a.triggerType
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = a.enabled,
+                            onCheckedChange = { on ->
+                                scope.launch {
+                                    container.db.automationDao().setEnabled(a.id, on)
+                                    val updated = a.copy(enabled = on)
+                                    if (on) container.automationScheduler.reschedule(updated)
+                                    else container.automationScheduler.cancel(updated)
+                                    container.automationScheduler.scheduleAll()
+                                }
+                            }
+                        )
+                        TextButton(onClick = {
+                            scope.launch {
+                                container.db.automationDao().delete(a.id)
+                                container.automationScheduler.cancel(a)
+                                snackbar.showSnackbar("自动化「${a.name}」已删除")
+                            }
+                        }) {
+                            Text("删除", color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(24.dp))
     }
 }

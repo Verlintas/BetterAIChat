@@ -174,20 +174,55 @@ interface RepeatTaskDao {
     suspend fun updateNextTrigger(requestCode: Int, nextTriggerAt: Long)
 }
 
+@Entity(tableName = "automations")
+data class AutomationEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val triggerType: String,
+    val triggerValue: String,
+    val days: String,
+    val actionsJson: String,
+    val enabled: Boolean = true,
+    val lastRunAt: Long = 0,
+    val createdAt: Long
+)
+
+@Dao
+interface AutomationDao {
+    @Query("SELECT * FROM automations ORDER BY createdAt DESC")
+    fun observeAll(): Flow<List<AutomationEntity>>
+
+    @Query("SELECT * FROM automations WHERE enabled = 1")
+    suspend fun getEnabled(): List<AutomationEntity>
+
+    @Insert
+    suspend fun insert(automation: AutomationEntity): Long
+
+    @Query("UPDATE automations SET enabled = :enabled WHERE id = :id")
+    suspend fun setEnabled(id: Long, enabled: Boolean)
+
+    @Query("UPDATE automations SET lastRunAt = :lastRunAt WHERE id = :id")
+    suspend fun setLastRun(id: Long, lastRunAt: Long)
+
+    @Query("DELETE FROM automations WHERE id = :id")
+    suspend fun delete(id: Long)
+}
+
 data class TokenTotalsRow(
     val totalInput: Long = 0,
     val totalOutput: Long = 0
 )
 
 @Database(
-    entities = [ConversationEntity::class, MessageEntity::class, RepeatTaskEntity::class],
-    version = 7,
+    entities = [ConversationEntity::class, MessageEntity::class, RepeatTaskEntity::class, AutomationEntity::class],
+    version = 8,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun conversationDao(): ConversationDao
     abstract fun messageDao(): MessageDao
     abstract fun repeatTaskDao(): RepeatTaskDao
+    abstract fun automationDao(): AutomationDao
 
     companion object {
         @Volatile
@@ -238,12 +273,24 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_7_8 = object : androidx.room.migration.Migration(7, 8) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS automations (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "name TEXT NOT NULL, triggerType TEXT NOT NULL, triggerValue TEXT NOT NULL, " +
+                        "days TEXT NOT NULL, actionsJson TEXT NOT NULL, " +
+                        "enabled INTEGER NOT NULL, lastRunAt INTEGER NOT NULL, createdAt INTEGER NOT NULL)"
+                )
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "betteraichat.db")
                     .addMigrations(
                         MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4,
-                        MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7
+                        MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8
                     )
                     .build()
                     .also { instance = it }
