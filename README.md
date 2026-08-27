@@ -73,6 +73,14 @@ Unlike mainstream AI apps, BetterAIChat is a **local-first agent**: your API key
 | `list_automations` / `delete_automation` | Manage automations |
 | `read_notifications` | Read recent notifications (needs notification access) |
 | `get_screen_state` | Screen on/off & lock state |
+| `list_installed_apps` | App inventory with name/package/system flag, filter + limit |
+| `ping_network` | Latency check for IP / domain / HTTP endpoints |
+| `get_exchange_rate` | Live FX rates (no API key) |
+| `get_location` | GPS / network location fix + accuracy |
+| `transcribe_audio` | Record microphone audio and transcribe to text |
+| `ocr_file` | OCR any image file (ML Kit, full build) |
+| `screen_record` | Record the screen to MP4 (needs capture grant) |
+| `send_email` | Compose an email via the system mail client |
 
 ### Screen analysis — the AI can *see* your screen
 One tap → screenshot → vision model describes what's on your screen and gives operation advice. Works with any vision-capable model.
