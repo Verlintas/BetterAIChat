@@ -24,10 +24,10 @@ class SetPowerSaverTool(private val isShizukuGranted: () -> Boolean) : DeviceToo
             "off" -> ShizukuExec.run("cmd power set-mode 0", 10, isShizukuGranted)
             else -> return "state 无效，可选：on / off"
         }
-        return if (result.startsWith("退出码: 0")) {
+        return if (result.startsWith("OK:")) {
             "省电模式已${if (state == "on") "开启" else "关闭"}"
         } else {
-            "操作失败：$result"
+            result
         }
     }
 }

@@ -5,7 +5,9 @@ import com.betteraichat.skills.DeviceTool
 import com.betteraichat.skills.ToolContext
 import com.betteraichat.skills.schemaOf
 import com.betteraichat.skills.stringProp
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
 
 class CreateAutomationTool(private val bridge: AutomationBridge) : DeviceTool {
@@ -44,6 +46,17 @@ class CreateAutomationTool(private val bridge: AutomationBridge) : DeviceTool {
             }
         }
         val days = arguments["days"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() } ?: "all"
+        if (days != "all") {
+            val parsed = days.split(",").mapNotNull { it.trim().toIntOrNull() }
+            if (parsed.isEmpty() || parsed.any { it !in 1..7 } || parsed.toSet().size != parsed.size) {
+                return "days 无效，应为 1-7 的逗号分隔（如 1,3,5）或 all"
+            }
+        }
+        val stepCount = runCatching {
+            Json.parseToJsonElement(actions).jsonArray.size
+        }.getOrDefault(0)
+        if (stepCount == 0) return "actions 不能为空"
+        if (stepCount > 10) return "actions 最多 10 步"
         return bridge.create(name, triggerType, triggerValue, days, actions)
     }
 }

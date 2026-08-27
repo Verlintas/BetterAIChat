@@ -12,6 +12,7 @@ class ToolRegistry(private val builtinTools: List<DeviceTool>) : ToolCatalog {
 
     fun registerSkillTools(skillName: String, defs: List<SkillToolDef>, executor: SkillActionExecutor) {
         defs.forEach { def ->
+            if (builtinTools.any { it.name == def.name }) return@forEach
             dynamicTools[def.name] = SkillDefinedTool(def, skillName, executor)
             skillOwners[def.name] = skillName
         }

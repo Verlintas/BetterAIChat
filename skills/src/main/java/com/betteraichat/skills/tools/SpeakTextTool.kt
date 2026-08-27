@@ -32,6 +32,12 @@ class SpeakTextTool : DeviceTool {
         val rate = (arguments["rate"]?.jsonPrimitive?.content?.toIntOrNull() ?: 100).coerceIn(50, 200)
         val appContext = context.appContext.applicationContext
 
+        return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+        runTts(appContext, text, rate)
+        }
+    }
+
+    private suspend fun runTts(appContext: android.content.Context, text: String, rate: Int): String {
         val initDeferred = CompletableDeferred<Boolean>()
         val tts = TextToSpeech(appContext) { status ->
             if (!initDeferred.isCompleted) {
@@ -66,7 +72,7 @@ class SpeakTextTool : DeviceTool {
                     if (result != TextToSpeech.SUCCESS) {
                         "TTS 引擎无法朗读"
                     } else {
-                        withTimeoutOrNull(90_000) { done.await() } ?: "朗读超时"
+                        withTimeoutOrNull(45_000) { done.await() } ?: "朗读超时（文本可能过长）"
                     }
                 }
             }

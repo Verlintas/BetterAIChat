@@ -39,7 +39,7 @@ class ManageAppTool(private val isShizukuGranted: () -> Boolean) : DeviceTool {
             else -> ""
         }
         val result = ShizukuExec.run(cmd, 30, isShizukuGranted)
-        if (result.startsWith("退出码: 0")) return "$label：$pkg"
-        return "操作失败：$result"
+        if (result.startsWith("OK:")) return "$label：$pkg"
+        return result
     }
 }

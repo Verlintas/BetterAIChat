@@ -47,8 +47,14 @@ class OpenAppTool : DeviceTool {
             .addCategory(Intent.CATEGORY_LAUNCHER)
             .setClassName(target.first, target.third)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        context.appContext.startActivity(intent)
-        val extra = if (candidates.size > 1) "（另找到 ${candidates.size - 1} 个相似应用，已启动第一个）" else ""
-        return "已启动应用：${target.second} (${target.first})$extra"
+        return try {
+            context.appContext.startActivity(intent)
+            val extra = if (candidates.size > 1) "（另找到 ${candidates.size - 1} 个相似应用，已启动第一个）" else ""
+            "已启动应用：${target.second} (${target.first})$extra"
+        } catch (e: android.content.ActivityNotFoundException) {
+            "ERROR:无法启动应用 ${target.second}（可能已被卸载或停用）"
+        } catch (e: Exception) {
+            "ERROR:启动应用失败：${e.message}"
+        }
     }
 }

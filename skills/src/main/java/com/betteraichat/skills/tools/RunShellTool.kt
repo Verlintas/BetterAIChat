@@ -37,7 +37,7 @@ class RunShellTool(private val isShizukuGranted: () -> Boolean) : DeviceTool {
             val timeout = (arguments["timeout_seconds"]?.jsonPrimitive?.content?.toIntOrNull() ?: 15)
                 .coerceIn(1, 60)
             if (!isShizukuGranted()) {
-                return@withContext "Shizuku 未授权。请先安装并启动 Shizuku 应用（https://github.com/RikkaApps/Shizuku），然后在应用设置页点击「授权 Shizuku」后重试。"
+                return@withContext "ERROR:Shizuku 未授权。请先安装并启动 Shizuku 应用（https://github.com/RikkaApps/Shizuku），然后在应用设置页点击「授权 Shizuku」后重试。"
             }
             try {
                 val service = IShizukuService.Stub.asInterface(Shizuku.getBinder())
@@ -47,44 +47,63 @@ class RunShellTool(private val isShizukuGranted: () -> Boolean) : DeviceTool {
                 val ioScope = kotlinx.coroutines.CoroutineScope(Dispatchers.IO)
                 try {
                     val outFuture = ioScope.async {
-                        android.os.ParcelFileDescriptor.AutoCloseInputStream(proc.inputStream)
-                            .bufferedReader().readText()
+                        boundedRead(android.os.ParcelFileDescriptor.AutoCloseInputStream(proc.inputStream), 1_000_000)
                     }
                     val errFuture = ioScope.async {
-                        android.os.ParcelFileDescriptor.AutoCloseInputStream(proc.errorStream)
-                            .bufferedReader().readText()
+                        boundedRead(android.os.ParcelFileDescriptor.AutoCloseInputStream(proc.errorStream), 200_000)
                     }
                     val exited = proc.waitForTimeout(timeout.toLong(), "SECONDS")
                     if (!exited) {
-                        proc.destroy()
-                        return@withContext "命令超时（${timeout}s），已终止：$command"
+                        runCatching { proc.destroy() }
+                        runCatching { proc.inputStream?.close() }
+                        runCatching { proc.errorStream?.close() }
+                        return@withContext "ERROR:命令超时（${timeout}s），已终止：$command"
                     }
                     val stdout = withTimeoutOrNull(3_000) { outFuture.await() } ?: ""
                     val stderr = withTimeoutOrNull(3_000) { errFuture.await() } ?: ""
                     val code = proc.exitValue()
                     val out = (stdout + if (stderr.isNotBlank()) "\n[stderr]\n$stderr" else "").trim()
                     if (out.length > 8000) {
-                        return@withContext buildString {
-                            appendLine("退出码: $code")
-                            append(out.take(8000))
-                            append("\n…（输出已截断，共 ${out.length} 字符）")
-                        }
-                    }
-                    if (out.isBlank()) {
-                        "执行完成（退出码 $code）：$command"
+                        "OK:${out.take(8000)}\n…（输出已截断，共 ${out.length} 字符）"
+                    } else if (code != 0) {
+                        "ERROR:退出码 $code\n$out"
+                    } else if (out.isBlank()) {
+                        "OK:执行完成：$command"
                     } else {
-                        "退出码: $code\n$out"
+                        "OK:$out"
                     }
                 } finally {
                     ioScope.cancel()
                     proc.destroy()
                 }
             } catch (e: SecurityException) {
-                "Shizuku 权限被拒绝，请到设置页重新授权"
+                "ERROR:Shizuku 权限被拒绝，请到设置页重新授权"
             } catch (e: Exception) {
-                "执行失败：${e.message}"
+                "ERROR:执行失败：${e.message}"
             }
         }
+}
+
+private fun boundedRead(input: java.io.InputStream, cap: Int): String {
+    return try {
+        input.use { stream ->
+            val buffer = ByteArray(16 * 1024)
+            val out = java.io.ByteArrayOutputStream()
+            var total = 0
+            while (true) {
+                val n = stream.read(buffer)
+                if (n < 0) break
+                val room = cap - total
+                if (room <= 0) break
+                val write = minOf(n, room)
+                out.write(buffer, 0, write)
+                total += write
+            }
+            out.toString("UTF-8")
+        }
+    } catch (e: Exception) {
+        ""
+    }
 }
 
 object ShizukuSupport {

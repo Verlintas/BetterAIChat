@@ -24,10 +24,10 @@ class SetWifiTool(private val isShizukuGranted: () -> Boolean) : DeviceTool {
             "off" -> ShizukuExec.run("cmd wifi set-wifi-enabled disabled", 10, isShizukuGranted)
             else -> return "state 无效，可选：on / off"
         }
-        return if (result.startsWith("退出码: 0")) {
+        return if (result.startsWith("OK:")) {
             "WiFi 已${if (state == "on") "开启" else "关闭"}"
         } else {
-            "操作失败：$result"
+            result
         }
     }
 }

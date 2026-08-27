@@ -21,8 +21,12 @@ class CalculatorTool : DeviceTool {
         val expr = arguments["expression"]?.jsonPrimitive?.content?.trim()
             ?: return "expression 参数无效"
         if (expr.isEmpty()) return "expression 不能为空"
-        return runCatching { Parser(expr).parse() }
-            .getOrElse { e -> "ERROR:表达式无效：${e.message}" }
+        if (expr.length > 500) return "ERROR:表达式过长（最多 500 字符）"
+        return try {
+            Parser(expr).parse()
+        } catch (e: Throwable) {
+            "ERROR:表达式无效：${e.message}"
+        }
     }
 }
 

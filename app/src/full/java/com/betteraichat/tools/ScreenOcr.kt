@@ -10,6 +10,26 @@ import kotlin.coroutines.resume
 
 class ScreenOcr(private val screenshotManager: ScreenshotManager) : OcrProvider {
 
+    override suspend fun ocrImageFile(path: String): String {
+        val bitmap = BitmapFactory.decodeFile(path)
+            ?: return "ERROR:图片文件读取失败：$path"
+        val recognizer = TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build())
+        return try {
+            val result = recognizer.process(InputImage.fromBitmap(bitmap, 0)).awaitTask()
+            val text = result.text.trim()
+            if (text.isEmpty()) {
+                "图片文字识别完成：图片上没有识别到文字"
+            } else {
+                "图片文字识别结果（共 ${text.length} 字）：\n$text"
+            }
+        } catch (e: Exception) {
+            "ERROR:文字识别失败：${e.message}"
+        } finally {
+            bitmap.recycle()
+            recognizer.close()
+        }
+    }
+
     override suspend fun ocrScreenshot(): String {
         val shot = screenshotManager.capture()
         if (shot.startsWith("ERROR")) return shot

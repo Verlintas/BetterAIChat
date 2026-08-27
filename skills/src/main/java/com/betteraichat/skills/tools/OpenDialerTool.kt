@@ -25,7 +25,11 @@ class OpenDialerTool : DeviceTool {
         val dial = Intent(Intent.ACTION_DIAL, Uri.parse("tel:${Uri.encode(number)}")).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK
         }
-        context.appContext.startActivity(dial)
-        return "已打开拨号界面，号码：$number"
+        return try {
+            context.appContext.startActivity(dial)
+            "已打开拨号界面，号码：$number"
+        } catch (e: Exception) {
+            "ERROR:无法打开拨号界面（设备可能不支持通话功能）"
+        }
     }
 }

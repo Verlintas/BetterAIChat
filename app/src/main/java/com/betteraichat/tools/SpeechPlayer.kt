@@ -1,23 +1,32 @@
 package com.betteraichat.tools
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicBoolean
 
 class SpeechPlayer(context: Context) {
 
     var onSpeakingDone: (() -> Unit)? = null
 
+    private val ready = AtomicBoolean(false)
     private val tts: TextToSpeech = TextToSpeech(context.applicationContext) { status ->
         if (status == TextToSpeech.SUCCESS) {
-            this.tts.language = Locale.CHINESE
+            tts.language = Locale.CHINESE
+            ready.set(true)
         }
     }
 
-    fun speak(text: String) {
-        if (text.isBlank()) return
-        tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "betteraichat_ui")
+    fun isReady(): Boolean = ready.get()
+
+    fun speak(text: String): Boolean {
+        if (text.isBlank()) return false
+        if (!ready.get()) return false
+        val result = tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "betteraichat_ui")
+        return result == TextToSpeech.SUCCESS
     }
 
     fun speakWithCallback(text: String, onDone: () -> Unit) {
@@ -30,6 +39,9 @@ class SpeechPlayer(context: Context) {
             override fun onDone(utteranceId: String?) {
                 if (utteranceId == "betteraichat_ui") onDone()
             }
+            override fun onStop(utteranceId: String?, interrupted: Boolean) {
+                if (utteranceId == "betteraichat_ui") onDone()
+            }
             @Deprecated("Deprecated in Java")
             override fun onError(utteranceId: String?) {
                 if (utteranceId == "betteraichat_ui") onDone()
@@ -38,7 +50,10 @@ class SpeechPlayer(context: Context) {
                 if (utteranceId == "betteraichat_ui") onDone()
             }
         })
-        speak(text)
+        val started = speak(text)
+        if (!started) {
+            Handler(Looper.getMainLooper()).post { onDone() }
+        }
     }
 
     fun stop() {
@@ -46,6 +61,6 @@ class SpeechPlayer(context: Context) {
     }
 
     fun shutdown() {
-        tts.shutdown()
+        runCatching { tts.shutdown() }
     }
 }

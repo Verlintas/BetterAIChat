@@ -23,11 +23,11 @@ class SetFlashlightTool : DeviceTool {
         val on = arguments["on"]?.jsonPrimitive?.content?.toBooleanStrictOrNull()
             ?: return "on 参数必须是 true 或 false"
         val cm = context.appContext.getSystemService(Context.CAMERA_SERVICE) as CameraManager
-        val cameraId = cm.cameraIdList.firstOrNull { id ->
-            cm.getCameraCharacteristics(id)
-                .get(android.hardware.camera2.CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
-        } ?: return "设备没有可用的闪光灯"
         return try {
+            val cameraId = cm.cameraIdList.firstOrNull { id ->
+                cm.getCameraCharacteristics(id)
+                    .get(android.hardware.camera2.CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+            } ?: return "设备没有可用的闪光灯"
             cm.setTorchMode(cameraId, on)
             if (on) "闪光灯已打开" else "闪光灯已关闭"
         } catch (e: SecurityException) {

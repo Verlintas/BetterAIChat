@@ -131,7 +131,7 @@ class ScheduleRepeatTool : DeviceTool {
     }
 
     private fun nextWeekly(now: Long, weekday: Int, hour: Int, minute: Int): Long {
-        val cal = Calendar.getInstance().apply {
+        val candidate = Calendar.getInstance().apply {
             timeInMillis = now
             set(Calendar.HOUR_OF_DAY, hour)
             set(Calendar.MINUTE, minute)
@@ -140,11 +140,11 @@ class ScheduleRepeatTool : DeviceTool {
         }
         var target = weekday + 1
         if (target > 7) target = 1
-        val current = cal.get(Calendar.DAY_OF_WEEK)
+        val current = candidate.get(Calendar.DAY_OF_WEEK)
         var diff = target - current
-        if (diff <= 0) diff += 7
-        cal.add(Calendar.DAY_OF_YEAR, diff)
-        if (cal.timeInMillis <= now) cal.add(Calendar.DAY_OF_YEAR, 7)
-        return cal.timeInMillis
+        if (diff < 0) diff += 7
+        if (diff > 0) candidate.add(Calendar.DAY_OF_YEAR, diff)
+        if (candidate.timeInMillis <= now) candidate.add(Calendar.DAY_OF_YEAR, 7)
+        return candidate.timeInMillis
     }
 }

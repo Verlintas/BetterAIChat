@@ -23,12 +23,21 @@ class KeepScreenOnTool : DeviceTool {
     override suspend fun execute(context: ToolContext, arguments: JsonObject): String {
         val seconds = (arguments["seconds"]?.jsonPrimitive?.content?.toIntOrNull() ?: 60).coerceIn(1, 600)
         val pm = context.appContext.getSystemService(Context.POWER_SERVICE) as PowerManager
-        val wakeLock = pm.newWakeLock(
-            PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
-            "betteraichat:keep_screen_on"
-        )
-        wakeLock.setReferenceCounted(false)
-        wakeLock.acquire(seconds * 1000L)
+        synchronized(lock) {
+            wakeLockHolder?.release()
+            val wakeLock = pm.newWakeLock(
+                PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
+                "betteraichat:keep_screen_on"
+            )
+            wakeLock.setReferenceCounted(false)
+            wakeLock.acquire(seconds * 1000L)
+            wakeLockHolder = wakeLock
+        }
         return "屏幕将保持常亮 ${seconds} 秒"
+    }
+
+    companion object {
+        private val lock = Any()
+        private var wakeLockHolder: PowerManager.WakeLock? = null
     }
 }

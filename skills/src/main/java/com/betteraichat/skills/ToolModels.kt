@@ -11,8 +11,9 @@ fun interface ScreenshotProvider {
     suspend fun capture(): String
 }
 
-fun interface OcrProvider {
+interface OcrProvider {
     suspend fun ocrScreenshot(): String
+    suspend fun ocrImageFile(path: String): String = "ERROR:当前版本不支持图片 OCR"
 }
 
 interface AccessibilityBridge {
@@ -41,7 +42,8 @@ data class ToolContext(
     val appContext: Context,
     val screenshotProvider: ScreenshotProvider,
     val ocrProvider: OcrProvider? = null,
-    val accessibility: AccessibilityBridge? = null
+    val accessibility: AccessibilityBridge? = null,
+    val screenRecorder: ScreenRecorderBridge? = null
 )
 
 interface DeviceTool {

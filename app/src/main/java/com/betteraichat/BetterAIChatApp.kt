@@ -23,8 +23,16 @@ import com.betteraichat.skills.tools.DownloadFileTool
 import com.betteraichat.skills.tools.FetchRssTool
 import com.betteraichat.skills.tools.GenerateQrTool
 import com.betteraichat.skills.tools.GetScreenStateTool
+import com.betteraichat.skills.tools.GetExchangeRateTool
+import com.betteraichat.skills.tools.GetLocationTool
 import com.betteraichat.skills.tools.GetWeatherTool
 import com.betteraichat.skills.tools.KeepScreenOnTool
+import com.betteraichat.skills.tools.ListInstalledAppsTool
+import com.betteraichat.skills.tools.OcrFileTool
+import com.betteraichat.skills.tools.PingNetworkTool
+import com.betteraichat.skills.tools.ScreenRecordTool
+import com.betteraichat.skills.tools.SendEmailTool
+import com.betteraichat.skills.tools.TranscribeAudioTool
 import com.betteraichat.skills.tools.ListAutomationsTool
 import com.betteraichat.skills.tools.ManageAppTool
 import com.betteraichat.skills.tools.GetClipboardTool
@@ -107,6 +115,7 @@ class AppContainer(context: Application) {
 
     private val screenshotManager = ScreenshotManager(context.applicationContext)
     private val ocrBridge = com.betteraichat.tools.ScreenOcr(screenshotManager)
+    private val screenRecorderBridge = com.betteraichat.tools.ScreenRecorder(context.applicationContext, screenshotManager)
     private val accessibilityBridge = object : com.betteraichat.skills.AccessibilityBridge {
         override fun connected(): Boolean = com.betteraichat.tools.BacAccessibilityService.connected()
         override fun windowTitle(): String? = com.betteraichat.tools.BacAccessibilityService.instance?.windowTitle()
@@ -127,7 +136,8 @@ class AppContainer(context: Application) {
         context.applicationContext,
         screenshotManager,
         ocrBridge,
-        accessibilityBridge
+        accessibilityBridge,
+        screenRecorderBridge
     )
 
     val shizukuManager = ShizukuManager()
@@ -224,7 +234,15 @@ class AppContainer(context: Application) {
         ListAutomationsTool(automationBridge),
         DeleteAutomationTool(automationBridge),
         ReadNotificationsTool { limit -> com.betteraichat.tools.NotificationCache.snapshot(limit) },
-        GetScreenStateTool()
+        GetScreenStateTool(),
+        ListInstalledAppsTool(),
+        TranscribeAudioTool(),
+        OcrFileTool(),
+        ScreenRecordTool(),
+        GetLocationTool(),
+        SendEmailTool(),
+        GetExchangeRateTool(),
+        PingNetworkTool()
     )
     val registry = ToolRegistry(tools)
     val runner = DeviceToolRunner(registry, toolContext)

@@ -19,7 +19,11 @@ class GetForegroundAppTool : DeviceTool {
         val usm = appContext.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
         val end = System.currentTimeMillis()
         val start = end - 120_000
-        val events = usm.queryEvents(start, end)
+        val events = try {
+            usm.queryEvents(start, end)
+        } catch (e: Exception) {
+            return "ERROR:无法读取使用情况。请在系统设置中授予 BetterAIChat「使用情况访问权限」（可在应用设置页一键跳转）"
+        }
         var top: String? = null
         var lastTs = 0L
         while (events.hasNextEvent()) {

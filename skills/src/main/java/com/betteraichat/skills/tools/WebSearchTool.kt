@@ -33,12 +33,15 @@ class WebSearchTool : DeviceTool {
             val query = arguments["query"]?.jsonPrimitive?.content?.trim()
                 ?: return@withContext "缺少 query 参数"
             val max = (arguments["max_results"]?.jsonPrimitive?.content?.toIntOrNull() ?: 5).coerceIn(1, 8)
-            var results = try {
-                searchBing(query)
+            var results: List<SearchResult>
+            var bingFailed: String? = null
+            try {
+                results = searchBing(query)
             } catch (e: Exception) {
-                emptyList()
+                bingFailed = e.message
+                results = emptyList()
             }
-            if (results.isEmpty()) {
+            if (results.isEmpty() && bingFailed != null) {
                 results = try {
                     searchDuckDuckGo(query)
                 } catch (e2: Exception) {
@@ -46,7 +49,11 @@ class WebSearchTool : DeviceTool {
                 }
             }
             if (results.isEmpty()) {
-                "未搜索到「$query」的相关结果，可尝试换关键词或稍后重试"
+                if (bingFailed != null) {
+                    "ERROR:搜索失败（网络错误：$bingFailed），请稍后重试"
+                } else {
+                    "未搜索到「$query」的相关结果，可尝试换关键词或稍后重试"
+                }
             } else {
                 buildString {
                     appendLine("「$query」的搜索结果：")

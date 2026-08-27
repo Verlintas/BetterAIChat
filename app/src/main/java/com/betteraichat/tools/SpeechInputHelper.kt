@@ -18,7 +18,10 @@ class SpeechInputHelper(context: Context) {
         onFinal: (String) -> Unit,
         onError: (String) -> Unit
     ) {
-        if (isListening) return
+        if (isListening) {
+            onError("语音识别正在使用中，请稍候")
+            return
+        }
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(
                 RecognizerIntent.EXTRA_LANGUAGE_MODEL,
@@ -52,7 +55,7 @@ class SpeechInputHelper(context: Context) {
                 val text = results
                     ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                     ?.firstOrNull()
-                if (!text.isNullOrBlank()) onFinal(text)
+                onFinal(text.orEmpty())
             }
 
             override fun onPartialResults(partialResults: Bundle?) {
@@ -73,14 +76,13 @@ class SpeechInputHelper(context: Context) {
     }
 
     fun stop() {
-        if (isListening) {
-            recognizer.stopListening()
-        }
+        isListening = false
+        runCatching { recognizer.stopListening() }
     }
 
     fun cancel() {
         isListening = false
-        recognizer.cancel()
+        runCatching { recognizer.cancel() }
     }
 
     fun destroy() {

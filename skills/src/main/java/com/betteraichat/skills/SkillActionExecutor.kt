@@ -41,7 +41,13 @@ class SkillActionExecutor(private val context: Context) {
         var out = template
         PLACEHOLDER_REGEX.findAll(template).forEach { m ->
             val key = m.groupValues[1]
-            val value = args[key]?.jsonPrimitive?.let { if (it.isString) it.content else it.toString() } ?: ""
+            val raw = args[key]
+            val value = when (raw) {
+                null -> ""
+                is kotlinx.serialization.json.JsonPrimitive ->
+                    if (raw.isString) raw.content else raw.toString()
+                else -> raw.toString()
+            }
             out = out.replace(m.value, value)
         }
         return out

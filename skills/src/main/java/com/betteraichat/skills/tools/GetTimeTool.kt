@@ -23,7 +23,15 @@ class GetTimeTool : DeviceTool {
         return buildString {
             appendLine("日期: ${dateFmt.format(now)}")
             appendLine("时间: ${timeFmt.format(now)}")
-            appendLine("时区: ${tz.id}（UTC${tz.getOffset(now.time) / 3600000} 小时）")
+            val offsetMin = tz.getOffset(now.time) / 60000
+            val offsetText = buildString {
+                append("UTC")
+                if (offsetMin < 0) append('-') else append('+')
+                val abs = kotlin.math.abs(offsetMin)
+                append(abs / 60)
+                if (abs % 60 != 0) append(":${abs % 60}")
+            }
+            appendLine("时区: ${tz.id}（$offsetText）")
             append("Unix 时间戳: ${now.time / 1000}")
         }
     }

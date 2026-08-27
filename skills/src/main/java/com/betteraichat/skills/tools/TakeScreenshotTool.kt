@@ -14,9 +14,9 @@ class TakeScreenshotTool : DeviceTool {
     override suspend fun execute(context: ToolContext, arguments: JsonObject): String {
         return try {
             val path = context.screenshotProvider.capture()
-            if (path.startsWith("ERROR:")) path.removePrefix("ERROR:") else "截图已保存：$path"
+            if (path.startsWith("ERROR:")) path else "截图已保存：$path"
         } catch (e: Exception) {
-            "截图失败：${e.message}"
+            "ERROR:截图失败：${e.message}"
         }
     }
 }

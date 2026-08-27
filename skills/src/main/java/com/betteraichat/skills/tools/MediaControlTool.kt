@@ -22,11 +22,27 @@ class MediaControlTool : DeviceTool {
     override suspend fun execute(context: ToolContext, arguments: JsonObject): String {
         val action = arguments["action"]?.jsonPrimitive?.content ?: return "action 参数无效"
         val manager = context.appContext.getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
-        val sessions = manager.getActiveSessions(null)
+        val sessions = try {
+            manager.getActiveSessions(null)
+        } catch (e: Exception) {
+            return "ERROR:无法读取媒体会话（Android 11+ 需在系统设置开启「通知使用权」才能控制其他应用的播放）"
+        }
         val controller = sessions.takeIf { it.isNotEmpty() }?.firstOrNull()
         val controls = controller?.transportControls
         if (controls == null) {
-            return "当前没有正在播放的媒体会话，无法控制"
+            val flat = android.provider.Settings.Secure.getString(
+                context.appContext.contentResolver,
+                "enabled_notification_listeners"
+            ) ?: ""
+            val hasAccess = android.os.Build.VERSION.SDK_INT < 31 || flat.split(':').any {
+                android.content.ComponentName.unflattenFromString(it)?.packageName ==
+                    context.appContext.packageName
+            }
+            return if (hasAccess) {
+                "当前没有正在播放的媒体会话，无法控制"
+            } else {
+                "ERROR:未发现媒体会话。Android 11+ 需在系统设置开启 BetterAIChat 的「通知使用权」才能控制其他应用的播放"
+            }
         }
         when (action) {
             "play" -> controls.play()

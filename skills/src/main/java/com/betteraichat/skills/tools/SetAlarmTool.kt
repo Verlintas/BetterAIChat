@@ -28,8 +28,10 @@ class SetAlarmTool : DeviceTool {
     override suspend fun execute(context: ToolContext, arguments: JsonObject): String {
         val minutes = arguments["minutes"]?.jsonPrimitive?.content?.toDoubleOrNull() ?: 0.0
         val seconds = arguments["seconds"]?.jsonPrimitive?.content?.toDoubleOrNull() ?: 0.0
-        val delayMs = ((minutes * 60 + seconds) * 1000).toLong()
-        if (delayMs <= 0) return "需要提供有效的 minutes 或 seconds 参数"
+        if (!minutes.isFinite() || !seconds.isFinite()) return "参数无效"
+        val rawMs = (minutes * 60 + seconds) * 1000
+        if (rawMs <= 0) return "需要提供有效的 minutes 或 seconds 参数"
+        val delayMs = rawMs.toLong().coerceAtMost(30L * 24 * 3600_000L)
         val title = arguments["title"]?.jsonPrimitive?.content ?: "AI 提醒"
         val content = arguments["content"]?.jsonPrimitive?.content ?: "设定的时间到了"
         val am = context.appContext.getSystemService(Context.ALARM_SERVICE) as AlarmManager

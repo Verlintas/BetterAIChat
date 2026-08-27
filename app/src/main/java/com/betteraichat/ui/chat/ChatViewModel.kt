@@ -311,6 +311,12 @@ class ChatViewModel(
         }
     }
 
+    override fun onCleared() {
+        runCatching { voiceInputHelper?.destroy() }
+        voiceInputHelper = null
+        super.onCleared()
+    }
+
     fun send() {
         val text = _state.value.input.trim()
         val pending = _state.value.pendingAttachments
