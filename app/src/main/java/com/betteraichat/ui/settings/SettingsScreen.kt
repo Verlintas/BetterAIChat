@@ -96,6 +96,9 @@ import com.betteraichat.core.storage.SettingsRepository
 import com.betteraichat.core.storage.ThemeMode
 import com.betteraichat.ui.rememberContainer
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.coroutines.launch
 
 private enum class SettingsSection(val title: String) {
@@ -1229,46 +1232,78 @@ private fun DeveloperSection(
 
         HorizontalDivider()
 
-        Text("功能亮点", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        val highlights = listOf(
-            "53 个设备工具" to "打开应用 · 屏幕分析 · 自动化",
-            "屏幕感知" to "截屏 · OCR · UI 自动化",
-            "长期记忆" to "自动提炼 · 跨轮次记住你",
-            "自动化引擎" to "定时/电量触发 · 无人值守",
-            "8 套主题" to "橙红点缀 · 即时切换",
-            "语音助手" to "免提对话 · 自动朗读",
-            "Shizuku 支持" to "root 级能力 · 可卸载",
-            "Skills 系统" to "opencode 风格 · 可导入",
-            "多模型" to "OpenAI · Claude · Gemini · 国产",
-            "隐私优先" to "自带 Key · 数据本地"
-        )
-        highlights.forEach { (title, sub) ->
+        Text("仓库实时信息", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        var repoInfo by remember { mutableStateOf<RepoInfo?>(null) }
+        var repoLoading by remember { mutableStateOf(true) }
+        LaunchedEffect(Unit) {
+            repoInfo = withContext(kotlinx.coroutines.Dispatchers.IO) { fetchRepoInfo() }
+            repoLoading = false
+        }
+        if (repoLoading) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.width(10.dp))
+                Text("正在获取 GitHub 仓库信息…", style = MaterialTheme.typography.bodySmall)
+            }
+        } else if (repoInfo != null) {
+            val info = repoInfo!!
             Surface(
-                shape = MaterialTheme.shapes.small,
+                shape = MaterialTheme.shapes.medium,
                 color = MaterialTheme.colorScheme.surfaceVariant,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(MaterialTheme.colorScheme.primary)
-                    )
-                    Spacer(Modifier.width(10.dp))
-                    Column {
-                        Text(title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-                        Text(
-                            sub,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row {
+                        StatChip("★ ${info.stars}", "Star", info.stars)
+                        Spacer(Modifier.width(8.dp))
+                        StatChip("⑂ ${info.forks}", "Fork", info.forks)
+                        Spacer(Modifier.width(8.dp))
+                        StatChip("✓ ${info.license}", "License", info.license)
                     }
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "最后更新：${info.updatedAt}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
+            Surface(
+                shape = MaterialTheme.shapes.medium,
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                onClick = { openUrl("https://github.com/Verlintas/BetterAIChat/releases/latest") },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "最新版本 ${info.latestVersion}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            "${info.latestTitle} · ${info.latestDate}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2
+                        )
+                    }
+                    Icon(
+                        Icons.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        } else {
+            Text(
+                "无法获取仓库信息（网络不可用）。可访问 github.com/Verlintas/BetterAIChat 查看。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
 
         HorizontalDivider()
@@ -1404,5 +1439,71 @@ private fun EmailRow(
                 color = MaterialTheme.colorScheme.primary
             )
         }
+    }
+}
+
+private data class RepoInfo(
+    val stars: String,
+    val forks: String,
+    val license: String,
+    val updatedAt: String,
+    val latestVersion: String,
+    val latestTitle: String,
+    val latestDate: String
+)
+
+@Composable
+private fun StatChip(value: String, label: String, raw: String) {
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)) {
+            Text(
+                value,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Text(
+                label,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+private fun fetchRepoInfo(): RepoInfo? = runCatching {
+    val repoJson = fetchJson("https://api.github.com/repos/Verlintas/BetterAIChat")
+    val releaseJson = fetchJson("https://api.github.com/repos/Verlintas/BetterAIChat/releases/latest")
+    val repo = kotlinx.serialization.json.Json.parseToJsonElement(repoJson).jsonObject
+    val release = kotlinx.serialization.json.Json.parseToJsonElement(releaseJson).jsonObject
+    fun fmt(n: Long): String = when {
+        n >= 1000 -> "%.1fk".format(n / 1000.0)
+        else -> n.toString()
+    }
+    RepoInfo(
+        stars = fmt(repo["stargazers_count"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0),
+        forks = fmt(repo["forks_count"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0),
+        license = repo["license"]?.jsonObject?.get("spdx_id")?.jsonPrimitive?.content ?: "MIT",
+        updatedAt = repo["pushed_at"]?.jsonPrimitive?.content?.substringBefore("T") ?: "未知",
+        latestVersion = release["tag_name"]?.jsonPrimitive?.content ?: "未知",
+        latestTitle = release["name"]?.jsonPrimitive?.content ?: "",
+        latestDate = release["published_at"]?.jsonPrimitive?.content?.substringBefore("T") ?: ""
+    )
+}.getOrNull()
+
+private fun fetchJson(url: String): String {
+    val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+    conn.connectTimeout = 12_000
+    conn.readTimeout = 12_000
+    conn.setRequestProperty("Accept", "application/vnd.github+json")
+    conn.setRequestProperty("User-Agent", "BetterAIChat")
+    try {
+        if (conn.responseCode != 200) throw RuntimeException("HTTP ${conn.responseCode}")
+        return conn.inputStream.bufferedReader().use { it.readText() }
+    } finally {
+        conn.disconnect()
     }
 }
