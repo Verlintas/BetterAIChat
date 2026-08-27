@@ -19,8 +19,13 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.window.Dialog
+import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Image
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -117,6 +122,7 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
     var showClearContext by remember { mutableStateOf(false) }
     var showCompressConfirm by remember { mutableStateOf(false) }
     var showModelPicker by remember { mutableStateOf(false) }
+    var viewImageB64 by remember { mutableStateOf<String?>(null) }
     var editingMessage by remember { mutableStateOf<com.betteraichat.ui.chat.UiMessage?>(null) }
     var editText by remember { mutableStateOf("") }
     val context = LocalContext.current
@@ -441,7 +447,8 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                             }
                         },
                         onCopied = { scope.launch { snackbarHostState.showSnackbar("已复制到剪贴板") } },
-                        onRetry = { vm.retryLast() }
+                        onRetry = { vm.retryLast() },
+                        onViewImage = { viewImageB64 = it }
                     )
                 }
                 state.error?.let { error ->
@@ -503,6 +510,34 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                     Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "回到底部")
                 }
             }
+        }
+    }
+
+    viewImageB64?.let { b64 ->
+        val bitmap = remember(b64) {
+            runCatching {
+                val bytes = android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
+                android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            }.getOrNull()
+        }
+        if (bitmap != null) {
+            Dialog(onDismissRequest = { viewImageB64 = null }) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black)
+                        .clickable { viewImageB64 = null },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = "查看图片",
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+        } else {
+            LaunchedEffect(Unit) { viewImageB64 = null }
         }
     }
 
@@ -921,7 +956,7 @@ private fun InputBar(
             OutlinedTextField(
                 value = input,
                 onValueChange = onInputChange,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f).animateContentSize(),
                 placeholder = {
                     Text("输入文字…")
                 },

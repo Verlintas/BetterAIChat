@@ -11,6 +11,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -83,7 +84,8 @@ fun MessageItem(
     onOpenLink: (String) -> Unit = {},
     onToggleStar: (Long) -> Unit = {},
     onCopied: (() -> Unit)? = null,
-    onRetry: (() -> Unit)? = null
+    onRetry: (() -> Unit)? = null,
+    onViewImage: ((String) -> Unit)? = null
 ) {
     if (msg.role == ChatRole.TOOL) return
     val clipboard = LocalClipboardManager.current
@@ -96,32 +98,44 @@ fun MessageItem(
         showActions = false
     }
     val onLongPress = { if (msg.id > 0 && !msg.streaming) showActions = true }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
     if (msg.role == ChatRole.USER) {
-        UserBubble(msg, onLongPress, modifier)
-        if (showActions) {
+        Column(modifier = modifier.fillMaxWidth(), horizontalAlignment = Alignment.End) {
+            UserBubble(msg, onLongPress, onViewImage = onViewImage)
+            QuickActionBar(
+                visible = showActions,
+                alignment = Alignment.CenterEnd,
+                onCopy = copyAction,
+                onSpeak = { showActions = false; onSpeak(msg.content) },
+                onStar = { showActions = false; onToggleStar(msg.id) },
+                onDelete = { showActions = false; showDeleteConfirm = true }
+            )
+        }
+        if (showDeleteConfirm) {
             MessageActionsDialog(
                 content = msg.content,
                 starred = msg.starred,
                 onCopy = copyAction,
                 onSpeak = { onSpeak(msg.content) },
                 onStar = {
-                    showActions = false
+                    showDeleteConfirm = false
                     onToggleStar(msg.id)
                 },
                 onEdit = {
-                    showActions = false
+                    showDeleteConfirm = false
                     onEdit(msg.id)
                 },
                 onDelete = {
-                    showActions = false
+                    showDeleteConfirm = false
                     onDelete(msg.id)
                 },
-                onDismiss = { showActions = false }
+                onDismiss = { showDeleteConfirm = false }
             )
         }
         return
     }
-    Row(modifier = modifier.fillMaxWidth()) {
+    Column(modifier = modifier.fillMaxWidth()) {
+    Row(modifier = Modifier.fillMaxWidth()) {
         AiAvatar()
         Spacer(Modifier.width(8.dp))
         Column(modifier = Modifier.weight(1f)) {
@@ -272,7 +286,10 @@ fun MessageItem(
                     Spacer(Modifier.size(6.dp))
                     HighlightedCodeCard(
                         code = code,
-                        onCopy = { clipboard.setText(AnnotatedString(code)) }
+                        onCopy = {
+                            clipboard.setText(AnnotatedString(code))
+                            onCopied?.invoke()
+                        }
                     )
                 }
             }
@@ -302,23 +319,32 @@ fun MessageItem(
             }
         }
     }
-    if (showActions) {
+    QuickActionBar(
+        visible = showActions,
+        alignment = Alignment.CenterStart,
+        onCopy = copyAction,
+        onSpeak = { showActions = false; onSpeak(msg.content) },
+        onStar = { showActions = false; onToggleStar(msg.id) },
+        onDelete = { showActions = false; showDeleteConfirm = true }
+    )
+    if (showDeleteConfirm) {
         MessageActionsDialog(
             content = msg.content,
             starred = msg.starred,
             onCopy = copyAction,
             onSpeak = { onSpeak(msg.content) },
             onStar = {
-                showActions = false
+                showDeleteConfirm = false
                 onToggleStar(msg.id)
             },
             onEdit = null,
             onDelete = {
-                showActions = false
+                showDeleteConfirm = false
                 onDelete(msg.id)
             },
-            onDismiss = { showActions = false }
+            onDismiss = { showDeleteConfirm = false }
         )
+    }
     }
 }
 
@@ -404,7 +430,12 @@ private fun ThinkingCard(thinking: String) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun UserBubble(msg: UiMessage, onLongPress: () -> Unit, modifier: Modifier = Modifier) {
+private fun UserBubble(
+    msg: UiMessage,
+    onLongPress: () -> Unit,
+    modifier: Modifier = Modifier,
+    onViewImage: ((String) -> Unit)? = null
+) {
     Row(modifier = modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
         Column(horizontalAlignment = Alignment.End) {
             Surface(
@@ -425,7 +456,6 @@ private fun UserBubble(msg: UiMessage, onLongPress: () -> Unit, modifier: Modifi
                                     }.getOrNull()
                                 }
                                 if (bitmap != null) {
-                                    val w = (bitmap.width * 140f / bitmap.height).toInt().coerceIn(80, 200)
                                     Image(
                                         bitmap = bitmap.asImageBitmap(),
                                         contentDescription = att.name,
@@ -433,6 +463,9 @@ private fun UserBubble(msg: UiMessage, onLongPress: () -> Unit, modifier: Modifi
                                             .fillMaxWidth(0.6f)
                                             .height((140 * bitmap.width / bitmap.height.toFloat()).dp)
                                             .clip(RoundedCornerShape(10.dp))
+                                            .combinedClickable(onClick = {
+                                                onViewImage?.invoke(att.dataBase64)
+                                            }, onLongClick = {})
                                     )
                                     Spacer(Modifier.size(4.dp))
                                 }
@@ -719,5 +752,45 @@ private fun ThinkingDots() {
         }
         Spacer(Modifier.width(4.dp))
         Text("AI 思考中", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun QuickActionBar(
+    visible: Boolean,
+    alignment: Alignment,
+    onCopy: () -> Unit,
+    onSpeak: () -> Unit,
+    onStar: () -> Unit,
+    onDelete: () -> Unit
+) {
+    androidx.compose.animation.AnimatedVisibility(
+        visible = visible,
+        enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.scaleIn(initialScale = 0.85f),
+        exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.scaleOut(targetScale = 0.85f)
+    ) {
+        Box(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            shadowElevation = 3.dp,
+            modifier = Modifier.align(alignment)
+        ) {
+            Row(modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)) {
+                TextButton(onClick = onCopy, contentPadding = PaddingValues(horizontal = 6.dp)) {
+                    Text("复制", style = MaterialTheme.typography.labelMedium)
+                }
+                TextButton(onClick = onSpeak, contentPadding = PaddingValues(horizontal = 6.dp)) {
+                    Text("朗读", style = MaterialTheme.typography.labelMedium)
+                }
+                TextButton(onClick = onStar, contentPadding = PaddingValues(horizontal = 6.dp)) {
+                    Text("收藏", style = MaterialTheme.typography.labelMedium)
+                }
+                TextButton(onClick = onDelete, contentPadding = PaddingValues(horizontal = 6.dp)) {
+                    Text("删除", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error)
+                }
+            }
+        }
+        }
     }
 }
