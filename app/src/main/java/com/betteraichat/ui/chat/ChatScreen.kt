@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -188,8 +189,12 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
     val shouldAutoScroll by remember {
         derivedStateOf {
             val info = listState.layoutInfo
-            val lastVisible = info.visibleItemsInfo.lastOrNull()?.index ?: -1
-            lastVisible >= info.totalItemsCount - 3
+            val total = info.totalItemsCount
+            if (total == 0) return@derivedStateOf true
+            val lastVisible = info.visibleItemsInfo.lastOrNull()
+                ?: return@derivedStateOf false
+            lastVisible.index >= total - 1 &&
+                lastVisible.offset + lastVisible.size >= info.viewportEndOffset - 160
         }
     }
 
@@ -248,11 +253,13 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                 title = {
                     Column {
                         Text(state.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(
-                            "${state.model} · ${state.mode.displayName}$usageText",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        if (usageText.isNotBlank()) {
+                            Text(
+                                usageText.trim(),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 },
                 navigationIcon = {
@@ -351,23 +358,20 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
-        if (state.messages.isEmpty() && state.error == null) {
-            WelcomePanel(
-                mode = state.mode,
-                onPickExample = { vm.onInputChange(it) },
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-            )
-        } else {
-            LazyColumn(
-                state = listState,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
+        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+            if (state.messages.isEmpty() && state.error == null) {
+                WelcomePanel(
+                    mode = state.mode,
+                    onPickExample = { vm.onInputChange(it) },
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
                 items(state.messages.size, key = { state.messages[it].id }) { idx ->
                     val msg = state.messages[idx]
                     MessageItem(
@@ -406,6 +410,32 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                             )
                         }
                     }
+                }
+            }
+            }
+            if (!shouldAutoScroll && initialScrollDone && state.messages.isNotEmpty()) {
+                FloatingActionButton(
+                    onClick = {
+                        forceFollow = true
+                        scope.launch {
+                            repeat(12) {
+                                runCatching {
+                                    listState.scrollToItem(
+                                        listState.layoutInfo.totalItemsCount - 1,
+                                        Int.MAX_VALUE
+                                    )
+                                }
+                                delay(100)
+                            }
+                        }
+                    },
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 12.dp, bottom = 12.dp),
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                ) {
+                    Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "回到底部")
                 }
             }
         }
@@ -823,9 +853,13 @@ private fun InputBar(
 private fun ModeSelector(current: AppMode, onSelect: (AppMode) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     Box {
-        TextButton(onClick = { expanded = true }) {
-            Text(current.displayName)
-            Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null, Modifier.size(18.dp))
+        TextButton(
+            onClick = { expanded = true },
+            contentPadding = PaddingValues(horizontal = 6.dp),
+            modifier = Modifier.padding(0.dp)
+        ) {
+            Text(current.displayName, maxLines = 1)
+            Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null, Modifier.size(16.dp))
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             AppMode.entries.forEach { mode ->
@@ -859,9 +893,13 @@ private fun ModelSelector(
     val serverModels = remember(provider) { container.settings.getCustomModels(provider) }
     val catalogIds = remember(provider) { ModelCatalog.modelsFor(provider).map { it.id } }
     Box {
-        TextButton(onClick = { expanded = true }) {
-            Text(current.take(16), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null, Modifier.size(18.dp))
+        TextButton(
+            onClick = { expanded = true },
+            contentPadding = PaddingValues(horizontal = 6.dp),
+            modifier = Modifier.padding(0.dp)
+        ) {
+            Text(current.take(10), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null, Modifier.size(16.dp))
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             ModelCatalog.modelsFor(provider).forEach { entry ->
