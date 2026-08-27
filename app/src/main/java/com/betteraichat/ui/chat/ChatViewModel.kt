@@ -777,7 +777,7 @@ class ChatViewModel(
             val provider = providerFactory(config.provider)
             val sys = ChatMessage(
                 role = ChatRole.SYSTEM,
-                content = "请为这段对话生成一个不超过 15 字的简短标题，只输出标题本身，不要引号、标点或解释。"
+                content = "请为这段对话生成一个 3 到 6 个字的简短标题，只输出标题本身，不要引号、标点或解释。"
             )
             val sb = StringBuilder()
             provider.chatStream(
@@ -791,7 +791,7 @@ class ChatViewModel(
                     else -> Unit
                 }
             }
-            val title = sb.toString().trim().trim('"', '“', '”').take(30)
+            val title = sb.toString().trim().trim('"', '“', '”').take(8)
             if (title.isNotBlank() && currentConversationId == cid) {
                 repository.updateTitle(cid, title)
                 _state.update { it.copy(title = title) }

@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -25,6 +27,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -35,6 +39,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.CircularProgressIndicator
@@ -97,6 +102,7 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
     var showMaxConfirm by remember { mutableStateOf(false) }
     var showClearContext by remember { mutableStateOf(false) }
     var showCompressConfirm by remember { mutableStateOf(false) }
+    var showModelPicker by remember { mutableStateOf(false) }
     var editingMessage by remember { mutableStateOf<com.betteraichat.ui.chat.UiMessage?>(null) }
     var editText by remember { mutableStateOf("") }
     val context = LocalContext.current
@@ -252,7 +258,12 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
             TopAppBar(
                 title = {
                     Column {
-                        Text(state.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            state.title,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.titleMedium
+                        )
                         if (usageText.isNotBlank()) {
                             Text(
                                 usageText.trim(),
@@ -278,13 +289,19 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                             }
                         }
                     )
-                    ModelSelector(state.provider, state.model, vm::updateModel)
                     Box {
                         var menuOpen by remember { mutableStateOf(false) }
                         IconButton(onClick = { menuOpen = true }) {
                             Icon(Icons.Filled.MoreVert, contentDescription = "更多")
                         }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            DropdownMenuItem(
+                                text = { Text("选择模型（${state.model}）") },
+                                onClick = {
+                                    menuOpen = false
+                                    showModelPicker = true
+                                }
+                            )
                             DropdownMenuItem(
                                 text = { Text("分析屏幕") },
                                 onClick = {
@@ -439,6 +456,15 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                 }
             }
         }
+    }
+
+    if (showModelPicker) {
+        ModelPickerDialog(
+            provider = state.provider,
+            current = state.model,
+            onSelect = vm::updateModel,
+            onDismiss = { showModelPicker = false }
+        )
     }
 
     if (showCompressConfirm) {
@@ -822,6 +848,8 @@ private fun InputBar(
                     Text("输入文字…")
                 },
                 maxLines = 6,
+                minLines = 1,
+                shape = RoundedCornerShape(22.dp),
                 trailingIcon = {
                     if (input.isNotEmpty() && !isRunning) {
                         IconButton(onClick = { onInputChange("") }) {
@@ -889,9 +917,6 @@ private fun ModelSelector(
     var expanded by remember { mutableStateOf(false) }
     var showCustom by remember { mutableStateOf(false) }
     var customInput by remember { mutableStateOf("") }
-    val container = rememberContainer()
-    val serverModels = remember(provider) { container.settings.getCustomModels(provider) }
-    val catalogIds = remember(provider) { ModelCatalog.modelsFor(provider).map { it.id } }
     Box {
         TextButton(
             onClick = { expanded = true },
@@ -902,62 +927,16 @@ private fun ModelSelector(
             Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null, Modifier.size(16.dp))
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            ModelCatalog.modelsFor(provider).forEach { entry ->
-                DropdownMenuItem(
-                    text = {
-                        Column {
-                            Text(entry.label)
-                            Text(entry.id, style = MaterialTheme.typography.bodySmall)
-                        }
-                    },
-                    onClick = {
-                        onSelect(entry.id)
-                        expanded = false
-                    }
-                )
-            }
-            if (serverModels.isNotEmpty()) {
-                HorizontalDivider()
-                DropdownMenuItem(
-                    text = {
-                        Text(
-                            "服务端模型（检测到的 ${serverModels.size} 个）",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    },
-                    onClick = { }
-                )
-                serverModels.forEach { id ->
-                    DropdownMenuItem(
-                        text = {
-                            Column {
-                                Text(id)
-                                Text("服务端 · 设置页检测", style = MaterialTheme.typography.bodySmall)
-                            }
-                        },
-                        onClick = {
-                            onSelect(id)
-                            expanded = false
-                        }
-                    )
-                }
-            }
-            if (current !in catalogIds && current !in serverModels) {
-                DropdownMenuItem(
-                    text = { Text("$current（自定义）") },
-                    onClick = {
-                        onSelect(current)
-                        expanded = false
-                    }
-                )
-            }
-            HorizontalDivider()
-            DropdownMenuItem(
-                text = { Text("自定义模型…") },
-                onClick = {
-                    customInput = current
+            ModelListContent(
+                provider = provider,
+                current = current,
+                onPick = {
+                    onSelect(it)
                     expanded = false
+                },
+                onOpenCustom = {
+                    expanded = false
+                    customInput = current
                     showCustom = true
                 }
             )
@@ -971,23 +950,137 @@ private fun ModelSelector(
                 OutlinedTextField(
                     value = customInput,
                     onValueChange = { customInput = it },
-                    label = { Text("模型 ID") },
-                    singleLine = true
+                    placeholder = { Text("模型 ID，如 my-model-v1") }
                 )
             },
             confirmButton = {
-                TextButton(
-                    onClick = {
-                        if (customInput.isNotBlank()) onSelect(customInput.trim())
-                        showCustom = false
-                    }
-                ) { Text("确定") }
+                TextButton(onClick = {
+                    onSelect(customInput.trim())
+                    showCustom = false
+                }) { Text("确定") }
             },
             dismissButton = {
                 TextButton(onClick = { showCustom = false }) { Text("取消") }
             }
         )
     }
+}
+
+@Composable
+private fun ModelListContent(
+    provider: com.betteraichat.core.model.ProviderId,
+    current: String,
+    onPick: (String) -> Unit,
+    onOpenCustom: () -> Unit
+) {
+    val container = rememberContainer()
+    val serverModels = remember(provider) { container.settings.getCustomModels(provider) }
+    val catalogIds = remember(provider) { ModelCatalog.modelsFor(provider).map { it.id } }
+    ModelCatalog.modelsFor(provider).forEach { entry ->
+        DropdownMenuItem(
+            text = {
+                Column {
+                    Text(entry.label)
+                    Text(entry.id, style = MaterialTheme.typography.bodySmall)
+                }
+            },
+            onClick = { onPick(entry.id) }
+        )
+    }
+    if (serverModels.isNotEmpty()) {
+        HorizontalDivider()
+        DropdownMenuItem(
+            text = {
+                Text(
+                    "服务端模型（检测到的 ${serverModels.size} 个）",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            onClick = { }
+        )
+        serverModels.forEach { id ->
+            DropdownMenuItem(
+                text = {
+                    Column {
+                        Text(id)
+                        Text("服务端 · 设置页检测", style = MaterialTheme.typography.bodySmall)
+                    }
+                },
+                onClick = { onPick(id) }
+            )
+        }
+    }
+    if (current !in catalogIds && current !in serverModels) {
+        DropdownMenuItem(
+            text = { Text("$current（自定义）") },
+            onClick = { onPick(current) }
+        )
+    }
+    HorizontalDivider()
+    DropdownMenuItem(
+        text = { Text("自定义模型…") },
+        onClick = onOpenCustom
+    )
+}
+
+@Composable
+private fun ModelPickerDialog(
+    provider: com.betteraichat.core.model.ProviderId,
+    current: String,
+    onSelect: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var customMode by remember { mutableStateOf(false) }
+    var customInput by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                "选择模型",
+                style = MaterialTheme.typography.titleMedium
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()).heightIn(max = 480.dp)
+            ) {
+                if (!customMode) {
+                    ModelListContent(
+                        provider = provider,
+                        current = current,
+                        onPick = {
+                            onSelect(it)
+                            onDismiss()
+                        },
+                        onOpenCustom = {
+                            customInput = current
+                            customMode = true
+                        }
+                    )
+                } else {
+                    OutlinedTextField(
+                        value = customInput,
+                        onValueChange = { customInput = it },
+                        placeholder = { Text("模型 ID，如 my-model-v1") }
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
+                        TextButton(onClick = { customMode = false }) { Text("返回列表") }
+                        Spacer(Modifier.width(8.dp))
+                        Button(onClick = {
+                            onSelect(customInput.trim())
+                            onDismiss()
+                        }) { Text("使用此模型") }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("关闭") }
+        }
+    )
 }
 
 private val prettyJson = Json { prettyPrint = true; ignoreUnknownKeys = true }
