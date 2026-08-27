@@ -9,6 +9,16 @@ import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.slideInVertically
+import androidx.compose.foundation.border
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -20,6 +30,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.background
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
@@ -1249,109 +1260,149 @@ private fun DeveloperSection(
             }
         } else if (devInfo != null) {
             val info = devInfo!!
-            Surface(
-                shape = MaterialTheme.shapes.medium,
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                onClick = { openUrl("https://github.com/${info.login}") },
-                modifier = Modifier.fillMaxWidth()
+            var devVisible by remember { mutableStateOf(false) }
+            LaunchedEffect(Unit) { devVisible = true }
+            val breath by rememberInfiniteTransition(label = "avatar").animateFloat(
+                initialValue = 1f,
+                targetValue = 1.05f,
+                animationSpec = infiniteRepeatable(tween(1500, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+                label = "avatarScale"
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+                                Color.Transparent
+                            )
+                        )
+                    )
             ) {
-                Row(modifier = Modifier.padding(16.dp)) {
-                    val avatar = info.avatarBytes?.let { bytes ->
-                        remember(bytes) {
-                            runCatching {
-                                android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                            }.getOrNull()
-                        }
-                    }
-                    if (avatar != null) {
-                        Image(
-                            bitmap = avatar.asImageBitmap(),
-                            contentDescription = "头像",
-                            modifier = Modifier
-                                .size(64.dp)
-                                .clip(RoundedCornerShape(50))
-                        )
-                    } else {
-                        Box(
-                            modifier = Modifier
-                                .size(64.dp)
-                                .clip(RoundedCornerShape(50))
-                                .background(MaterialTheme.colorScheme.primary)
-                        ) {
-                            Text(
-                                info.login.take(1).uppercase(),
-                                modifier = Modifier.align(Alignment.Center),
-                                style = MaterialTheme.typography.titleLarge,
-                                color = MaterialTheme.colorScheme.onPrimary
-                            )
-                        }
-                    }
-                    Spacer(Modifier.width(14.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            info.name.ifBlank { info.login },
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            "@${info.login}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        if (info.bio.isNotBlank()) {
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                info.bio,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 3
-                            )
-                        }
-                        if (info.location.isNotBlank()) {
-                            Spacer(Modifier.height(2.dp))
-                            Text(
-                                "📍 ${info.location}",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = devVisible,
+                    enter = fadeIn(tween(500)) + slideInVertically(tween(500)) { it / 6 }
+                ) {
+                    Surface(
+                        shape = MaterialTheme.shapes.medium,
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                        onClick = { openUrl("https://github.com/${info.login}") },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(modifier = Modifier.padding(16.dp)) {
+                            val avatar = info.avatarBytes?.let { bytes ->
+                                remember(bytes) {
+                                    runCatching {
+                                        android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                                    }.getOrNull()
+                                }
+                            }
+                            if (avatar != null) {
+                                Image(
+                                    bitmap = avatar.asImageBitmap(),
+                                    contentDescription = "头像",
+                                    modifier = Modifier
+                                        .size(64.dp)
+                                        .scale(breath)
+                                        .clip(RoundedCornerShape(50))
+                                        .border(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f), RoundedCornerShape(50))
+                                )
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .size(64.dp)
+                                        .scale(breath)
+                                        .clip(RoundedCornerShape(50))
+                                        .background(MaterialTheme.colorScheme.primary)
+                                ) {
+                                    Text(
+                                        info.login.take(1).uppercase(),
+                                        modifier = Modifier.align(Alignment.Center),
+                                        style = MaterialTheme.typography.titleLarge,
+                                        color = MaterialTheme.colorScheme.onPrimary
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.width(14.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    info.name.ifBlank { info.login },
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    "@${info.login}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                if (info.bio.isNotBlank()) {
+                                    Spacer(Modifier.height(4.dp))
+                                    TypewriterText(
+                                        info.bio,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 3
+                                    )
+                                }
+                                if (info.location.isNotBlank()) {
+                                    Spacer(Modifier.height(2.dp))
+                                    Text(
+                                        "📍 ${info.location}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
                         }
                     }
                 }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                StatChip("${info.followers}", "关注者", info.followers)
-                StatChip("${info.following}", "正在关注", info.following)
-                StatChip("${info.publicRepos}", "公开仓库", info.publicRepos)
+            androidx.compose.animation.AnimatedVisibility(
+                visible = devVisible,
+                enter = fadeIn(tween(500, delayMillis = 150)) + slideInVertically(tween(500, delayMillis = 150)) { it / 6 }
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    StatChip("${info.followers}", "关注者", info.followers)
+                    StatChip("${info.following}", "正在关注", info.following)
+                    StatChip("${info.publicRepos}", "公开仓库", info.publicRepos)
+                }
             }
             Spacer(Modifier.height(4.dp))
-            Surface(
-                shape = MaterialTheme.shapes.medium,
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                onClick = { openUrl("https://github.com/Verlintas/BetterAIChat/releases/latest") },
-                modifier = Modifier.fillMaxWidth()
+            androidx.compose.animation.AnimatedVisibility(
+                visible = devVisible,
+                enter = fadeIn(tween(500, delayMillis = 300)) + slideInVertically(tween(500, delayMillis = 300)) { it / 6 }
             ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                Surface(
+                    shape = MaterialTheme.shapes.medium,
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    onClick = { openUrl("https://github.com/Verlintas/BetterAIChat/releases/latest") },
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            "项目最新版本 ${info.latestVersion}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            "${info.latestTitle} · ${info.latestDate}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 2
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                "项目最新版本 ${info.latestVersion}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                "${info.latestTitle} · ${info.latestDate}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 2
+                            )
+                        }
+                        Icon(
+                            Icons.Filled.KeyboardArrowRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    Icon(
-                        Icons.Filled.KeyboardArrowRight,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
                 }
             }
         } else {
@@ -1520,12 +1571,7 @@ private fun StatChip(value: String, label: String, raw: String) {
         color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
     ) {
         Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)) {
-            Text(
-                value,
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary
-            )
+            AnimatedNumber(value, style = MaterialTheme.typography.labelLarge)
             Text(
                 label,
                 style = MaterialTheme.typography.labelSmall,
@@ -1533,6 +1579,25 @@ private fun StatChip(value: String, label: String, raw: String) {
             )
         }
     }
+}
+
+@Composable
+private fun AnimatedNumber(value: String, style: androidx.compose.ui.text.TextStyle) {
+    val suffix = if (value.endsWith("k")) "k" else ""
+    val target = value.removeSuffix("k").toDoubleOrNull() ?: 0.0
+    val animated = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(value) {
+        animated.animateTo(
+            target.toFloat(),
+            animationSpec = androidx.compose.animation.core.tween(900, easing = androidx.compose.animation.core.FastOutSlowInEasing)
+        )
+    }
+    Text(
+        if (suffix == "k") "%.1f".format(animated.value) + "k" else animated.value.toInt().toString(),
+        style = style,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.primary
+    )
 }
 
 private fun fetchDeveloperInfo(): DeveloperInfo? = runCatching {
@@ -1590,4 +1655,29 @@ private fun fetchJson(url: String): String {
     } finally {
         conn.disconnect()
     }
+}
+
+@Composable
+private fun TypewriterText(
+    text: String,
+    style: androidx.compose.ui.text.TextStyle,
+    color: Color,
+    maxLines: Int
+) {
+    var shown by remember(text) { mutableStateOf(0) }
+    LaunchedEffect(text) {
+        shown = 0
+        val step = maxOf(1, text.length / 60)
+        while (shown < text.length) {
+            shown = minOf(text.length, shown + step)
+            delay(12)
+        }
+    }
+    Text(
+        text.take(shown),
+        style = style,
+        color = color,
+        maxLines = maxLines,
+        overflow = TextOverflow.Ellipsis
+    )
 }
