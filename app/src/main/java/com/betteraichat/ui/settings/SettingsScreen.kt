@@ -1226,6 +1226,10 @@ private fun DeveloperSection(
                 )
             }
         }
+
+        HorizontalDivider()
+
+        Text("联系开发者", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         Surface(
             shape = MaterialTheme.shapes.medium,
             color = MaterialTheme.colorScheme.surfaceVariant,
