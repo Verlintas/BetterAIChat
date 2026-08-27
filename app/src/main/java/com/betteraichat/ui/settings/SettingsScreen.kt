@@ -1290,7 +1290,7 @@ private fun DeveloperSection(
                 ) {
                     Surface(
                         shape = MaterialTheme.shapes.medium,
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                        color = Color(0xFF0B0B0F),
                         onClick = { openUrl("https://github.com/${info.login}") },
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -1326,18 +1326,48 @@ private fun DeveloperSection(
                                         val r = size.minDimension / 2
                                         val stroke = 5.dp.toPx()
                                         val center = androidx.compose.ui.geometry.Offset(size.width / 2, size.height / 2)
-                                        fun haloRing(radius: Float, color: Color, startAngle: Float, ccw: Boolean = false) {
+                                        fun haloRing(
+                                            radius: Float,
+                                            color: Color,
+                                            startAngle: Float,
+                                            ccw: Boolean = false
+                                        ) {
+                                            val base = if (ccw) -startAngle else startAngle
+                                            // 光晕层（更宽、更淡）
                                             drawArc(
                                                 brush = Brush.sweepGradient(
                                                     center = center,
                                                     colors = listOf(
                                                         Color.Transparent,
-                                                        color.copy(alpha = 0.95f),
+                                                        color.copy(alpha = 0.28f),
                                                         Color.Transparent
                                                     )
                                                 ),
-                                                startAngle = if (ccw) -startAngle else startAngle,
-                                                sweepAngle = 100f,
+                                                startAngle = base + 25f,
+                                                sweepAngle = 220f,
+                                                useCenter = false,
+                                                topLeft = androidx.compose.ui.geometry.Offset(
+                                                    center.x - radius, center.y - radius
+                                                ),
+                                                size = androidx.compose.ui.geometry.Size(radius * 2, radius * 2),
+                                                style = androidx.compose.ui.graphics.drawscope.Stroke(
+                                                    width = stroke * 2.2f,
+                                                    cap = androidx.compose.ui.graphics.StrokeCap.Round
+                                                )
+                                            )
+                                            // 主弧
+                                            drawArc(
+                                                brush = Brush.sweepGradient(
+                                                    center = center,
+                                                    colors = listOf(
+                                                        Color.Transparent,
+                                                        color,
+                                                        color,
+                                                        Color.Transparent
+                                                    )
+                                                ),
+                                                startAngle = base,
+                                                sweepAngle = 220f,
                                                 useCenter = false,
                                                 topLeft = androidx.compose.ui.geometry.Offset(
                                                     center.x - radius, center.y - radius
@@ -1349,9 +1379,9 @@ private fun DeveloperSection(
                                                 )
                                             )
                                         }
-                                        haloRing(r, Color(0xFF90CAF9), rotOuter)            // 外圈浅蓝（顺时针）
-                                        haloRing(r - 11.dp.toPx(), Color(0xFFF48FB1), rotMid, ccw = true)   // 中圈粉（逆时针）
-                                        haloRing(r - 22.dp.toPx(), Color.White, rotInner)   // 内圈白（顺时针）
+                                        haloRing(r, Color(0xFF90CAF9), rotOuter)                        // 外圈浅蓝（顺时针）
+                                        haloRing(r - 6.dp.toPx(), Color(0xFFF48FB1), rotMid, ccw = true)  // 中圈粉（逆时针）
+                                        haloRing(r - 12.dp.toPx(), Color.White, rotInner)                // 内圈白（顺时针）
                                     },
                                 contentAlignment = Alignment.Center
                             ) {
@@ -1384,19 +1414,20 @@ private fun DeveloperSection(
                                 Text(
                                     info.name.ifBlank { info.login },
                                     style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
                                 )
                                 Text(
                                     "@${info.login}",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.primary
+                                    color = Color(0xFF82B1FF)
                                 )
                                 if (info.bio.isNotBlank()) {
                                     Spacer(Modifier.height(4.dp))
                                     TypewriterText(
                                         info.bio,
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        color = Color(0xFFB8B8C2),
                                         maxLines = 3
                                     )
                                 }
@@ -1405,7 +1436,7 @@ private fun DeveloperSection(
                                     Text(
                                         "📍 ${info.location}",
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        color = Color(0xFF8A8A96)
                                     )
                                 }
                             }
