@@ -37,7 +37,30 @@ fun AppNavHost() {
             navController.navigate(Routes.chat(-1L))
         }
     }
-    NavHost(navController = navController, startDestination = Routes.CONVERSATIONS) {
+    NavHost(
+        navController = navController,
+        startDestination = Routes.CONVERSATIONS,
+        enterTransition = {
+            androidx.compose.animation.slideInHorizontally(
+                animationSpec = androidx.compose.animation.core.tween(300)
+            ) { it / 3 } + androidx.compose.animation.fadeIn(
+                androidx.compose.animation.core.tween(300)
+            )
+        },
+        exitTransition = {
+            androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(220))
+        },
+        popEnterTransition = {
+            androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(300))
+        },
+        popExitTransition = {
+            androidx.compose.animation.slideOutHorizontally(
+                animationSpec = androidx.compose.animation.core.tween(300)
+            ) { it / 3 } + androidx.compose.animation.fadeOut(
+                androidx.compose.animation.core.tween(220)
+            )
+        }
+    ) {
         composable(Routes.CONVERSATIONS) {
             ConversationListScreen(
                 onOpenChat = { id -> navController.navigate(Routes.chat(id)) },
