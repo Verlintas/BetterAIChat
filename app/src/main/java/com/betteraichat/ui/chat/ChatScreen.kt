@@ -8,6 +8,12 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -407,6 +413,7 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                     val msg = state.messages[idx]
                     MessageItem(
                         msg = msg,
+                        modifier = Modifier.animateItem(),
                         onDelete = vm::deleteMessage,
                         onSpeak = { container.speechPlayer.speak(it) },
                         onToggleStar = vm::toggleStarred,
@@ -444,7 +451,13 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                 }
             }
             }
-            if (!shouldAutoScroll && initialScrollDone && state.messages.isNotEmpty()) {
+            AnimatedVisibility(
+                visible = !shouldAutoScroll && initialScrollDone && state.messages.isNotEmpty(),
+                enter = androidx.compose.animation.fadeIn() +
+                    androidx.compose.animation.scaleIn(initialScale = 0.6f),
+                exit = androidx.compose.animation.fadeOut() +
+                    androidx.compose.animation.scaleOut(targetScale = 0.6f)
+            ) {
                 FloatingActionButton(
                     onClick = {
                         forceFollow = true

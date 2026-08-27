@@ -73,6 +73,7 @@ private fun extractLinks(content: String): List<String> =
 @Composable
 fun MessageItem(
     msg: UiMessage,
+    modifier: Modifier = Modifier,
     onDelete: (Long) -> Unit,
     onSpeak: (String) -> Unit = {},
     onEdit: (Long) -> Unit = {},
@@ -90,7 +91,7 @@ fun MessageItem(
     }
     val onLongPress = { if (msg.id > 0 && !msg.streaming) showActions = true }
     if (msg.role == ChatRole.USER) {
-        UserBubble(msg, onLongPress)
+        UserBubble(msg, onLongPress, modifier)
         if (showActions) {
             MessageActionsDialog(
                 content = msg.content,
@@ -114,7 +115,7 @@ fun MessageItem(
         }
         return
     }
-    Row(modifier = Modifier.fillMaxWidth()) {
+    Row(modifier = modifier.fillMaxWidth()) {
         AiAvatar()
         Spacer(Modifier.width(8.dp))
         Column(modifier = Modifier.weight(1f)) {
@@ -401,8 +402,8 @@ private fun ThinkingCard(thinking: String) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun UserBubble(msg: UiMessage, onLongPress: () -> Unit) {
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+private fun UserBubble(msg: UiMessage, onLongPress: () -> Unit, modifier: Modifier = Modifier) {
+    Row(modifier = modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
         Column(horizontalAlignment = Alignment.End) {
             Surface(
                 shape = RoundedCornerShape(topStart = 16.dp, topEnd = 4.dp, bottomEnd = 16.dp, bottomStart = 16.dp),
@@ -543,7 +544,7 @@ private fun ToolCallCard(call: ToolCall, stepNumber: Int = 0) {
 
 @Composable
 private fun StatusBadge(status: ToolCallStatus) {
-    val (text, color) = when (status) {
+    val (text, target) = when (status) {
         ToolCallStatus.PENDING -> "等待" to MaterialTheme.colorScheme.onSurfaceVariant
         ToolCallStatus.RUNNING -> "执行中…" to MaterialTheme.colorScheme.primary
         ToolCallStatus.DONE -> "已完成" to Color(0xFF2E7D32)
@@ -551,6 +552,11 @@ private fun StatusBadge(status: ToolCallStatus) {
         ToolCallStatus.REJECTED -> "已拒绝" to MaterialTheme.colorScheme.error
         ToolCallStatus.DENIED -> "已禁止" to MaterialTheme.colorScheme.error
     }
+    val color by androidx.compose.animation.animateColorAsState(
+        targetValue = target,
+        animationSpec = androidx.compose.animation.core.tween(250),
+        label = "status"
+    )
     Surface(
         shape = RoundedCornerShape(6.dp),
         color = color.copy(alpha = 0.12f)

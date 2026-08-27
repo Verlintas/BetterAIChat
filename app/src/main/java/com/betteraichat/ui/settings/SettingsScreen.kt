@@ -7,6 +7,14 @@ import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -106,6 +114,10 @@ fun SettingsScreen(onBack: () -> Unit) {
     val snackbar = remember { SnackbarHostState() }
     var section by remember { mutableStateOf<SettingsSection?>(null) }
 
+    BackHandler(enabled = section != null) {
+        section = null
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -119,7 +131,15 @@ fun SettingsScreen(onBack: () -> Unit) {
         },
         snackbarHost = { SnackbarHost(snackbar) }
     ) { padding ->
-        when (section) {
+        AnimatedContent(
+            targetState = section,
+            transitionSpec = {
+                (fadeIn(tween(160)) + slideInHorizontally { it / 8 })
+                    .togetherWith(fadeOut(tween(120)) + slideOutHorizontally { -it / 8 })
+            },
+            label = "settings-section"
+        ) { target ->
+        when (target) {
             null -> SettingsMenu(
                 modifier = Modifier.fillMaxSize().padding(padding),
                 onOpenSection = { section = it }
@@ -170,6 +190,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                 scope = scope,
                 snackbar = snackbar
             )
+        }
         }
     }
 }
