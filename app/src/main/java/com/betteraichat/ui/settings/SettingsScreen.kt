@@ -9,6 +9,8 @@ import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.RepeatMode
@@ -30,6 +32,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.background
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.foundation.Image
@@ -1299,30 +1302,81 @@ private fun DeveloperSection(
                                     }.getOrNull()
                                 }
                             }
-                            if (avatar != null) {
-                                Image(
-                                    bitmap = avatar.asImageBitmap(),
-                                    contentDescription = "头像",
-                                    modifier = Modifier
-                                        .size(64.dp)
-                                        .scale(breath)
-                                        .clip(RoundedCornerShape(50))
-                                        .border(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f), RoundedCornerShape(50))
-                                )
-                            } else {
-                                Box(
-                                    modifier = Modifier
-                                        .size(64.dp)
-                                        .scale(breath)
-                                        .clip(RoundedCornerShape(50))
-                                        .background(MaterialTheme.colorScheme.primary)
-                                ) {
-                                    Text(
-                                        info.login.take(1).uppercase(),
-                                        modifier = Modifier.align(Alignment.Center),
-                                        style = MaterialTheme.typography.titleLarge,
-                                        color = MaterialTheme.colorScheme.onPrimary
+                            val haloTransition = rememberInfiniteTransition(label = "halo")
+                            val rotOuter by haloTransition.animateFloat(
+                                0f, 360f,
+                                infiniteRepeatable(tween(3200, easing = LinearEasing), RepeatMode.Restart),
+                                label = "rotOuter"
+                            )
+                            val rotMid by haloTransition.animateFloat(
+                                0f, 360f,
+                                infiniteRepeatable(tween(2600, easing = LinearEasing), RepeatMode.Restart),
+                                label = "rotMid"
+                            )
+                            val rotInner by haloTransition.animateFloat(
+                                0f, 360f,
+                                infiniteRepeatable(tween(2000, easing = LinearEasing), RepeatMode.Restart),
+                                label = "rotInner"
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .size(96.dp)
+                                    .scale(breath)
+                                    .drawBehind {
+                                        val r = size.minDimension / 2
+                                        val stroke = 5.dp.toPx()
+                                        val center = androidx.compose.ui.geometry.Offset(size.width / 2, size.height / 2)
+                                        fun haloRing(radius: Float, color: Color, startAngle: Float, ccw: Boolean = false) {
+                                            drawArc(
+                                                brush = Brush.sweepGradient(
+                                                    center = center,
+                                                    colors = listOf(
+                                                        Color.Transparent,
+                                                        color.copy(alpha = 0.95f),
+                                                        Color.Transparent
+                                                    )
+                                                ),
+                                                startAngle = if (ccw) -startAngle else startAngle,
+                                                sweepAngle = 100f,
+                                                useCenter = false,
+                                                topLeft = androidx.compose.ui.geometry.Offset(
+                                                    center.x - radius, center.y - radius
+                                                ),
+                                                size = androidx.compose.ui.geometry.Size(radius * 2, radius * 2),
+                                                style = androidx.compose.ui.graphics.drawscope.Stroke(
+                                                    width = stroke,
+                                                    cap = androidx.compose.ui.graphics.StrokeCap.Round
+                                                )
+                                            )
+                                        }
+                                        haloRing(r, Color(0xFF90CAF9), rotOuter)            // 外圈浅蓝（顺时针）
+                                        haloRing(r - 11.dp.toPx(), Color(0xFFF48FB1), rotMid, ccw = true)   // 中圈粉（逆时针）
+                                        haloRing(r - 22.dp.toPx(), Color.White, rotInner)   // 内圈白（顺时针）
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (avatar != null) {
+                                    Image(
+                                        bitmap = avatar.asImageBitmap(),
+                                        contentDescription = "头像",
+                                        modifier = Modifier
+                                            .size(60.dp)
+                                            .clip(RoundedCornerShape(50))
                                     )
+                                } else {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(60.dp)
+                                            .clip(RoundedCornerShape(50))
+                                            .background(MaterialTheme.colorScheme.primary)
+                                    ) {
+                                        Text(
+                                            info.login.take(1).uppercase(),
+                                            modifier = Modifier.align(Alignment.Center),
+                                            style = MaterialTheme.typography.titleLarge,
+                                            color = MaterialTheme.colorScheme.onPrimary
+                                        )
+                                    }
                                 }
                             }
                             Spacer(Modifier.width(14.dp))
