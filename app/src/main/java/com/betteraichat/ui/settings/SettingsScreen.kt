@@ -153,6 +153,7 @@ fun SettingsScreen(onBack: () -> Unit) {
             )
             SettingsSection.CONVERSATION -> ConversationSection(
                 modifier = Modifier.fillMaxSize().padding(padding),
+                container = container,
                 settings = container.settings,
                 scope = scope,
                 snackbar = snackbar
@@ -484,6 +485,7 @@ private fun ProviderSection(
 @Composable
 private fun ConversationSection(
     modifier: Modifier,
+    container: AppContainer,
     settings: SettingsRepository,
     scope: kotlinx.coroutines.CoroutineScope,
     snackbar: SnackbarHostState
@@ -527,6 +529,7 @@ private fun ConversationSection(
                     onClick = {
                         themeMode = mode
                         settings.setThemeMode(mode)
+                        container.bumpTheme()
                     },
                     label = { Text(mode.displayName) }
                 )
@@ -543,6 +546,7 @@ private fun ConversationSection(
                     onClick = {
                         accentColor = c
                         settings.setAccentColor(c)
+                        container.bumpTheme()
                     },
                     label = { Text(c.displayName) }
                 )

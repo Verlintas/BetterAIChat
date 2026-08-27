@@ -98,6 +98,11 @@ class BetterAIChatApp : Application() {
 class AppContainer(context: Application) {
 
     val appContext = context.applicationContext
+    val themeVersion = kotlinx.coroutines.flow.MutableStateFlow(0)
+
+    fun bumpTheme() {
+        themeVersion.value++
+    }
     @Volatile
     var appInForeground = false
         private set

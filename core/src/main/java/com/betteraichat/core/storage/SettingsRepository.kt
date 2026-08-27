@@ -13,6 +13,10 @@ enum class ThemeMode(val displayName: String) {
 }
 
 enum class AccentColor(val displayName: String) {
+    ORANGE("橙"),
+    RED("红"),
+    PINK("粉"),
+    INDIGO("靛蓝"),
     BLUE("蓝"),
     PURPLE("紫"),
     GREEN("绿"),
@@ -124,7 +128,7 @@ class SettingsRepository(context: Context) {
     }
 
     fun getAccentColor(): AccentColor = runCatching {
-        AccentColor.valueOf(prefs.getString("accent_color", AccentColor.BLUE.name)!!)
+        AccentColor.valueOf(prefs.getString("accent_color", AccentColor.ORANGE.name)!!)
     }.getOrDefault(AccentColor.BLUE)
 
     fun setAccentColor(accent: AccentColor) {
