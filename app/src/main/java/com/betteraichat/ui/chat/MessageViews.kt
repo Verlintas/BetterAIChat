@@ -6,6 +6,8 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,10 +23,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -35,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
@@ -46,6 +51,7 @@ import androidx.compose.ui.unit.sp
 import com.betteraichat.core.model.ChatRole
 import com.betteraichat.core.model.ToolCall
 import com.betteraichat.core.model.ToolCallStatus
+import com.mikepenz.markdown.compose.components.markdownComponents
 import com.mikepenz.markdown.m3.Markdown
 import com.mikepenz.markdown.m3.markdownTypography
 import java.text.SimpleDateFormat
@@ -161,6 +167,36 @@ fun MessageItem(
                                 stripCodeBlocks(msg.content) + if (msg.streaming) "▋" else "",
                                 modifier = Modifier.fillMaxWidth(),
                                 typography = markdownTypography(
+                                    h1 = androidx.compose.ui.text.TextStyle(
+                                        fontSize = 18.sp,
+                                        lineHeight = 24.sp,
+                                        fontWeight = FontWeight.Bold
+                                    ),
+                                    h2 = androidx.compose.ui.text.TextStyle(
+                                        fontSize = 16.sp,
+                                        lineHeight = 22.sp,
+                                        fontWeight = FontWeight.Bold
+                                    ),
+                                    h3 = androidx.compose.ui.text.TextStyle(
+                                        fontSize = 15.sp,
+                                        lineHeight = 21.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    ),
+                                    h4 = androidx.compose.ui.text.TextStyle(
+                                        fontSize = 14.sp,
+                                        lineHeight = 20.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    ),
+                                    h5 = androidx.compose.ui.text.TextStyle(
+                                        fontSize = 13.sp,
+                                        lineHeight = 19.sp,
+                                        fontWeight = FontWeight.Medium
+                                    ),
+                                    h6 = androidx.compose.ui.text.TextStyle(
+                                        fontSize = 13.sp,
+                                        lineHeight = 19.sp,
+                                        fontWeight = FontWeight.Medium
+                                    ),
                                     text = androidx.compose.ui.text.TextStyle(
                                         fontSize = 14.sp,
                                         lineHeight = 20.sp
@@ -193,6 +229,11 @@ fun MessageItem(
                                         fontSize = 13.sp,
                                         lineHeight = 19.sp
                                     )
+                                ),
+                                components = markdownComponents(
+                                    table = { model ->
+                                        MarkdownTable(model.content)
+                                    }
                                 )
                             )
                         }
@@ -555,6 +596,69 @@ private fun HighlightedCodeCard(code: String, onCopy: () -> Unit) {
                 maxLines = 30,
                 overflow = TextOverflow.Ellipsis
             )
+        }
+    }
+}
+
+private val TABLE_SEPARATOR_REGEX = Regex("^\\s*:?-{2,}:?\\s*(\\|\\s*:?-{2,}:?\\s*)*$")
+
+private fun parseMarkdownTable(md: String): List<List<String>> {
+    val rows = mutableListOf<List<String>>()
+    md.lines().forEach { line ->
+        val trimmed = line.trim()
+        if (!trimmed.startsWith("|")) return@forEach
+        val cells = trimmed.trim('|').split("|").map { it.trim() }
+        if (cells.isEmpty()) return@forEach
+        if (cells.all { TABLE_SEPARATOR_REGEX.matches(it) }) return@forEach
+        rows.add(cells)
+    }
+    return rows
+}
+
+@Composable
+private fun MarkdownTable(md: String, modifier: Modifier = Modifier) {
+    val rows = remember(md) { parseMarkdownTable(md) }
+    if (rows.isEmpty()) return
+    val shape = RoundedCornerShape(10.dp)
+    val borderColor = MaterialTheme.colorScheme.outlineVariant
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .border(1.dp, borderColor, shape)
+            .background(MaterialTheme.colorScheme.surface)
+    ) {
+        rows.forEachIndexed { ri, row ->
+            if (ri > 0) {
+                HorizontalDivider(color = borderColor.copy(alpha = 0.6f))
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        if (ri == 0) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+                        else Color.Transparent
+                    )
+            ) {
+                row.forEachIndexed { ci, cell ->
+                    if (ci > 0) {
+                        VerticalDivider(color = borderColor.copy(alpha = 0.6f))
+                    }
+                    Text(
+                        cell,
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 10.dp, vertical = 7.dp),
+                        style = if (ri == 0) {
+                            MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold)
+                        } else {
+                            MaterialTheme.typography.bodySmall
+                        },
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 20
+                    )
+                }
+            }
         }
     }
 }
