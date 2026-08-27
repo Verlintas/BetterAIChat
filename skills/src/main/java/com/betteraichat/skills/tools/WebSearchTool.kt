@@ -11,16 +11,18 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
+import org.jsoup.nodes.Element
 import java.net.URLDecoder
 
 class WebSearchTool : DeviceTool {
 
     override val name = "web_search"
-    override val description = "在互联网上搜索实时信息并返回结果列表（标题、链接、摘要）。适合查询新闻、实时数据、未知知识。使用后如需详细内容可再调用 web_read 读取网页。"
+    override val description = "在互联网上搜索实时信息并返回结果列表（标题、链接、摘要）。多搜索引擎合并（Bing/百度/Brave/DuckDuckGo），尽力抓取最全结果。适合查询新闻、实时数据、未知知识。使用后如需详细内容可再调用 web_read 读取网页。"
     override val readOnly = true
     override val parameters = schemaOf(
         "query" to stringProp("搜索关键词，尽量具体"),
-        "max_results" to intProp("返回结果数量，1-8，默认 5")
+        "max_results" to intProp("返回结果数量，1-10，默认 6"),
+        required = listOf("query")
     )
 
     private val userAgent =
@@ -37,71 +39,149 @@ class WebSearchTool : DeviceTool {
         withContext(Dispatchers.IO) {
             val query = arguments["query"]?.jsonPrimitive?.content?.trim()
                 ?: return@withContext "缺少 query 参数"
-            val max = (arguments["max_results"]?.jsonPrimitive?.content?.toIntOrNull() ?: 5).coerceIn(1, 8)
+            val max = (arguments["max_results"]?.jsonPrimitive?.content?.toIntOrNull() ?: 6).coerceIn(1, 10)
             val now = System.currentTimeMillis()
             val cached = synchronized(cacheLock) {
                 cache[query]?.takeIf { now - it.second < 300_000 }?.first
             }
-            var results: List<SearchResult>
-            var bingFailed: String? = null
-            if (cached != null) {
-                results = cached
-            } else {
-                try {
-                    results = searchBing(query)
-                } catch (e: Exception) {
-                    bingFailed = e.message
-                    results = emptyList()
-                }
-                if (results.isNotEmpty()) {
-                    synchronized(cacheLock) {
-                        cache[query] = results to now
-                        if (cache.size > 30) {
-                            cache.entries.removeAll { now - it.value.second > 300_000 }
-                        }
+            val results = cached ?: searchAllEngines(query)
+            if (cached == null && results.isNotEmpty()) {
+                synchronized(cacheLock) {
+                    cache[query] = results to now
+                    if (cache.size > 30) {
+                        cache.entries.removeAll { now - it.value.second > 300_000 }
                     }
                 }
             }
-            if (results.isEmpty() && bingFailed != null) {
-                results = try {
-                    searchDuckDuckGo(query)
-                } catch (e2: Exception) {
-                    emptyList()
-                }
-            }
             if (results.isEmpty()) {
-                if (bingFailed != null) {
-                    "ERROR:搜索失败（网络错误：$bingFailed），请稍后重试"
-                } else {
-                    "未搜索到「$query」的相关结果，可尝试换关键词或稍后重试"
-                }
+                "ERROR:搜索失败（所有搜索引擎均未返回结果，可能网络受限或被反爬），请稍后重试"
             } else {
                 buildString {
-                    appendLine("「$query」的搜索结果：")
+                    appendLine("「$query」的搜索结果（${results.size} 条，来自多引擎合并）：")
                     results.take(max).forEachIndexed { i, r ->
-                        appendLine("${i + 1}. ${r.title}")
+                        appendLine("${i + 1}. ${r.title.take(120)}")
                         appendLine("   ${r.url}")
-                        if (r.snippet.isNotBlank()) appendLine("   ${r.snippet.take(200)}")
+                        if (r.snippet.isNotBlank()) appendLine("   ${r.snippet.take(220)}")
                     }
                     append("提示：可调用 web_read 读取某条结果的详细内容。")
                 }
             }
         }
 
-    private fun searchBing(query: String): List<SearchResult> {
-        val doc = Jsoup.connect("https://cn.bing.com/search")
+    private fun searchAllEngines(query: String): List<SearchResult> {
+        val engines = listOf(
+            ::searchBing,
+            ::searchBaidu,
+            ::searchBrave,
+            ::searchDuckDuckGo,
+            ::searchMojeek
+        )
+        val merged = LinkedHashMap<String, SearchResult>()
+        var lastError: String? = null
+        engines.forEach { engine ->
+            if (merged.size >= 6) return@forEach
+            try {
+                engine(query).forEach { r ->
+                    if (r.url.startsWith("http") && r.title.isNotBlank()) {
+                        merged.putIfAbsent(r.url, r)
+                    }
+                }
+            } catch (e: Exception) {
+                lastError = e.message
+            }
+        }
+        return merged.values.toList().ifEmpty {
+            if (lastError != null) emptyList() else emptyList()
+        }
+    }
+
+    private fun fetch(url: String, query: String): Document =
+        Jsoup.connect(url)
             .data("q", query)
-            .data("setlang", "zh-hans")
+            .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+            .header("Referer", "https://www.google.com/")
             .userAgent(userAgent)
-            .timeout(15_000)
+            .timeout(12_000)
+            .followRedirects(true)
             .get()
+
+    private fun searchBing(query: String): List<SearchResult> {
+        val doc = fetch("https://cn.bing.com/search", query)
         return doc.select("li.b_algo").mapNotNull { el ->
             val h2 = el.selectFirst("h2") ?: return@mapNotNull null
-            val a = el.selectFirst("a:has(h2)") ?: el.selectFirst("h2 a[href]")
+            val a = el.selectFirst("h2 a[href]") ?: el.selectFirst("a:has(h2)")
             var url = a?.attr("href") ?: return@mapNotNull null
             url = decodeBingUrl(url)
+            if (!url.startsWith("http")) return@mapNotNull null
             val snippet = el.selectFirst(".b_caption p")?.text()?.trim().orEmpty()
             SearchResult(h2.text().trim(), url, snippet)
+        }
+    }
+
+    private fun searchBaidu(query: String): List<SearchResult> {
+        val doc = Jsoup.connect("https://www.baidu.com/s")
+            .data("wd", query)
+            .header("Accept-Language", "zh-CN,zh;q=0.9")
+            .userAgent(userAgent)
+            .timeout(12_000)
+            .get()
+        return doc.select("div.result").mapNotNull { el ->
+            val h3 = el.selectFirst("h3") ?: return@mapNotNull null
+            val a = h3.selectFirst("a[href]") ?: return@mapNotNull null
+            val url = runCatching { URLDecoder.decode(a.attr("href"), "UTF-8") }.getOrDefault(a.attr("href"))
+            if (!url.startsWith("http")) return@mapNotNull null
+            val snippet = el.selectFirst(".c-span-last span, [class*=content-right] span")?.text()?.trim().orEmpty()
+            SearchResult(h3.text().trim(), url, snippet)
+        }
+    }
+
+    private fun searchBrave(query: String): List<SearchResult> {
+        val doc = Jsoup.connect("https://search.brave.com/search")
+            .data("q", query)
+            .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+            .userAgent(userAgent)
+            .timeout(12_000)
+            .get()
+        return doc.select("div.snippet").mapNotNull { el ->
+            val a = el.selectFirst("a[href]") ?: return@mapNotNull null
+            val url = a.attr("href")
+            if (!url.startsWith("http")) return@mapNotNull null
+            val title = el.selectFirst(".snippet-title, .title")?.text()?.trim()
+                ?: a.text().trim()
+            val snippet = el.selectFirst(".snippet-description")?.text()?.trim().orEmpty()
+            SearchResult(title, url, snippet)
+        }
+    }
+
+    private fun searchDuckDuckGo(query: String): List<SearchResult> {
+        val doc = Jsoup.connect("https://html.duckduckgo.com/html/")
+            .data("q", query)
+            .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+            .userAgent(userAgent)
+            .timeout(12_000)
+            .get()
+        return doc.select("div.result").mapNotNull { el ->
+            val a = el.selectFirst("a.result__a") ?: return@mapNotNull null
+            val url = decodeDdgUrl(a.attr("href"))
+            if (!url.startsWith("http")) return@mapNotNull null
+            val snippet = el.selectFirst(".result__snippet")?.text()?.trim().orEmpty()
+            SearchResult(a.text().trim(), url, snippet)
+        }
+    }
+
+    private fun searchMojeek(query: String): List<SearchResult> {
+        val doc = Jsoup.connect("https://www.mojeek.com/search")
+            .data("q", query)
+            .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+            .userAgent(userAgent)
+            .timeout(12_000)
+            .get()
+        return doc.select("ul.results-standard li, .result").mapNotNull { el: Element ->
+            val a = el.selectFirst("a.title, h2 a") ?: return@mapNotNull null
+            val url = a.attr("href")
+            if (!url.startsWith("http")) return@mapNotNull null
+            val snippet = el.selectFirst("p.s, .s")?.text()?.trim().orEmpty()
+            SearchResult(a.text().trim(), url, snippet)
         }
     }
 
@@ -112,20 +192,6 @@ class WebSearchTool : DeviceTool {
             val decoded = String(android.util.Base64.decode(encoded, android.util.Base64.DEFAULT), Charsets.UTF_8)
             decoded.takeIf { it.startsWith("http") } ?: raw
         }.getOrDefault(raw)
-    }
-
-    private fun searchDuckDuckGo(query: String): List<SearchResult> {
-        val doc = Jsoup.connect("https://html.duckduckgo.com/html/")
-            .data("q", query)
-            .userAgent(userAgent)
-            .timeout(15_000)
-            .get()
-        return doc.select("div.result").mapNotNull { el ->
-            val a = el.selectFirst("a.result__a") ?: return@mapNotNull null
-            val url = decodeDdgUrl(a.attr("href"))
-            val snippet = el.selectFirst(".result__snippet")?.text()?.trim().orEmpty()
-            SearchResult(a.text().trim(), url, snippet)
-        }
     }
 
     private fun decodeDdgUrl(raw: String): String {
