@@ -1305,17 +1305,17 @@ private fun DeveloperSection(
                             val haloTransition = rememberInfiniteTransition(label = "halo")
                             val rotOuter by haloTransition.animateFloat(
                                 0f, 360f,
-                                infiniteRepeatable(tween(3200, easing = LinearEasing), RepeatMode.Restart),
+                                infiniteRepeatable(tween(5000, easing = LinearEasing), RepeatMode.Restart),
                                 label = "rotOuter"
                             )
                             val rotMid by haloTransition.animateFloat(
                                 0f, 360f,
-                                infiniteRepeatable(tween(2600, easing = LinearEasing), RepeatMode.Restart),
+                                infiniteRepeatable(tween(4200, easing = LinearEasing), RepeatMode.Restart),
                                 label = "rotMid"
                             )
                             val rotInner by haloTransition.animateFloat(
                                 0f, 360f,
-                                infiniteRepeatable(tween(2000, easing = LinearEasing), RepeatMode.Restart),
+                                infiniteRepeatable(tween(3400, easing = LinearEasing), RepeatMode.Restart),
                                 label = "rotInner"
                             )
                             Box(
@@ -1333,29 +1333,6 @@ private fun DeveloperSection(
                                             ccw: Boolean = false
                                         ) {
                                             val base = if (ccw) -startAngle else startAngle
-                                            // 光晕层（更宽、更淡）
-                                            drawArc(
-                                                brush = Brush.sweepGradient(
-                                                    center = center,
-                                                    colors = listOf(
-                                                        Color.Transparent,
-                                                        color.copy(alpha = 0.28f),
-                                                        Color.Transparent
-                                                    )
-                                                ),
-                                                startAngle = base + 25f,
-                                                sweepAngle = 220f,
-                                                useCenter = false,
-                                                topLeft = androidx.compose.ui.geometry.Offset(
-                                                    center.x - radius, center.y - radius
-                                                ),
-                                                size = androidx.compose.ui.geometry.Size(radius * 2, radius * 2),
-                                                style = androidx.compose.ui.graphics.drawscope.Stroke(
-                                                    width = stroke * 2.2f,
-                                                    cap = androidx.compose.ui.graphics.StrokeCap.Round
-                                                )
-                                            )
-                                            // 主弧
                                             drawArc(
                                                 brush = Brush.sweepGradient(
                                                     center = center,
