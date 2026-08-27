@@ -20,6 +20,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.background
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Column
@@ -1232,42 +1234,96 @@ private fun DeveloperSection(
 
         HorizontalDivider()
 
-        Text("仓库实时信息", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        var repoInfo by remember { mutableStateOf<RepoInfo?>(null) }
-        var repoLoading by remember { mutableStateOf(true) }
+        Text("开发者信息", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        var devInfo by remember { mutableStateOf<DeveloperInfo?>(null) }
+        var devLoading by remember { mutableStateOf(true) }
         LaunchedEffect(Unit) {
-            repoInfo = withContext(kotlinx.coroutines.Dispatchers.IO) { fetchRepoInfo() }
-            repoLoading = false
+            devInfo = withContext(kotlinx.coroutines.Dispatchers.IO) { fetchDeveloperInfo() }
+            devLoading = false
         }
-        if (repoLoading) {
+        if (devLoading) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                 Spacer(Modifier.width(10.dp))
-                Text("正在获取 GitHub 仓库信息…", style = MaterialTheme.typography.bodySmall)
+                Text("正在获取开发者信息…", style = MaterialTheme.typography.bodySmall)
             }
-        } else if (repoInfo != null) {
-            val info = repoInfo!!
+        } else if (devInfo != null) {
+            val info = devInfo!!
             Surface(
                 shape = MaterialTheme.shapes.medium,
                 color = MaterialTheme.colorScheme.surfaceVariant,
+                onClick = { openUrl("https://github.com/${info.login}") },
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(modifier = Modifier.padding(14.dp)) {
-                    Row {
-                        StatChip("★ ${info.stars}", "Star", info.stars)
-                        Spacer(Modifier.width(8.dp))
-                        StatChip("⑂ ${info.forks}", "Fork", info.forks)
-                        Spacer(Modifier.width(8.dp))
-                        StatChip("✓ ${info.license}", "License", info.license)
+                Row(modifier = Modifier.padding(16.dp)) {
+                    val avatar = info.avatarBytes?.let { bytes ->
+                        remember(bytes) {
+                            runCatching {
+                                android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                            }.getOrNull()
+                        }
                     }
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        "最后更新：${info.updatedAt}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    if (avatar != null) {
+                        Image(
+                            bitmap = avatar.asImageBitmap(),
+                            contentDescription = "头像",
+                            modifier = Modifier
+                                .size(64.dp)
+                                .clip(RoundedCornerShape(50))
+                        )
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .size(64.dp)
+                                .clip(RoundedCornerShape(50))
+                                .background(MaterialTheme.colorScheme.primary)
+                        ) {
+                            Text(
+                                info.login.take(1).uppercase(),
+                                modifier = Modifier.align(Alignment.Center),
+                                style = MaterialTheme.typography.titleLarge,
+                                color = MaterialTheme.colorScheme.onPrimary
+                            )
+                        }
+                    }
+                    Spacer(Modifier.width(14.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            info.name.ifBlank { info.login },
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            "@${info.login}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        if (info.bio.isNotBlank()) {
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                info.bio,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 3
+                            )
+                        }
+                        if (info.location.isNotBlank()) {
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                "📍 ${info.location}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 }
             }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                StatChip("${info.followers}", "关注者", info.followers)
+                StatChip("${info.following}", "正在关注", info.following)
+                StatChip("${info.publicRepos}", "公开仓库", info.publicRepos)
+            }
+            Spacer(Modifier.height(4.dp))
             Surface(
                 shape = MaterialTheme.shapes.medium,
                 color = MaterialTheme.colorScheme.surfaceVariant,
@@ -1280,7 +1336,7 @@ private fun DeveloperSection(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            "最新版本 ${info.latestVersion}",
+                            "项目最新版本 ${info.latestVersion}",
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Bold
                         )
@@ -1300,7 +1356,7 @@ private fun DeveloperSection(
             }
         } else {
             Text(
-                "无法获取仓库信息（网络不可用）。可访问 github.com/Verlintas/BetterAIChat 查看。",
+                "无法获取开发者信息（网络不可用）。可访问 github.com/Verlintas 查看。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -1442,11 +1498,16 @@ private fun EmailRow(
     }
 }
 
-private data class RepoInfo(
-    val stars: String,
-    val forks: String,
-    val license: String,
-    val updatedAt: String,
+private data class DeveloperInfo(
+    val name: String,
+    val login: String,
+    val bio: String,
+    val location: String,
+    val followers: String,
+    val following: String,
+    val publicRepos: String,
+    val createdAt: String,
+    val avatarBytes: ByteArray?,
     val latestVersion: String,
     val latestTitle: String,
     val latestDate: String
@@ -1474,20 +1535,43 @@ private fun StatChip(value: String, label: String, raw: String) {
     }
 }
 
-private fun fetchRepoInfo(): RepoInfo? = runCatching {
-    val repoJson = fetchJson("https://api.github.com/repos/Verlintas/BetterAIChat")
+private fun fetchDeveloperInfo(): DeveloperInfo? = runCatching {
+    val userJson = fetchJson("https://api.github.com/users/Verlintas")
     val releaseJson = fetchJson("https://api.github.com/repos/Verlintas/BetterAIChat/releases/latest")
-    val repo = kotlinx.serialization.json.Json.parseToJsonElement(repoJson).jsonObject
+    val user = kotlinx.serialization.json.Json.parseToJsonElement(userJson).jsonObject
     val release = kotlinx.serialization.json.Json.parseToJsonElement(releaseJson).jsonObject
     fun fmt(n: Long): String = when {
         n >= 1000 -> "%.1fk".format(n / 1000.0)
         else -> n.toString()
     }
-    RepoInfo(
-        stars = fmt(repo["stargazers_count"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0),
-        forks = fmt(repo["forks_count"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0),
-        license = repo["license"]?.jsonObject?.get("spdx_id")?.jsonPrimitive?.content ?: "MIT",
-        updatedAt = repo["pushed_at"]?.jsonPrimitive?.content?.substringBefore("T") ?: "未知",
+    val avatarUrl = user["avatar_url"]?.jsonPrimitive?.content
+    val avatarBytes = avatarUrl?.let { url ->
+        runCatching {
+            val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+            conn.connectTimeout = 10_000
+            conn.readTimeout = 10_000
+            conn.setRequestProperty("User-Agent", "BetterAIChat")
+            try {
+                if (conn.responseCode != 200) null
+                else conn.inputStream.use { it.readBytes() }
+            } finally {
+                conn.disconnect()
+            }
+        }.getOrNull()
+    }
+    val rawName = runCatching { user["name"]?.jsonPrimitive?.content }.getOrNull()
+        ?.takeIf { it.isNotBlank() && it != "null" } ?: ""
+    val rawBio = runCatching { user["bio"]?.jsonPrimitive?.content }.getOrNull().orEmpty()
+    DeveloperInfo(
+        name = rawName,
+        login = user["login"]?.jsonPrimitive?.content ?: "Verlintas",
+        bio = android.text.Html.fromHtml(rawBio, android.text.Html.FROM_HTML_MODE_LEGACY).toString().trim(),
+        location = user["location"]?.jsonPrimitive?.content ?: "",
+        followers = fmt(user["followers"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0),
+        following = fmt(user["following"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0),
+        publicRepos = fmt(user["public_repos"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0),
+        createdAt = user["created_at"]?.jsonPrimitive?.content?.substringBefore("T") ?: "",
+        avatarBytes = avatarBytes,
         latestVersion = release["tag_name"]?.jsonPrimitive?.content ?: "未知",
         latestTitle = release["name"]?.jsonPrimitive?.content ?: "",
         latestDate = release["published_at"]?.jsonPrimitive?.content?.substringBefore("T") ?: ""
