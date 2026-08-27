@@ -328,6 +328,20 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                                 }
                             )
                             DropdownMenuItem(
+                                text = { Text("提炼重要信息（长期记忆）") },
+                                onClick = {
+                                    menuOpen = false
+                                    vm.distillMemory()
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("导入最近对话") },
+                                onClick = {
+                                    menuOpen = false
+                                    vm.importRecentConversation()
+                                }
+                            )
+                            DropdownMenuItem(
                                 text = { Text("压缩上下文") },
                                 onClick = {
                                     menuOpen = false

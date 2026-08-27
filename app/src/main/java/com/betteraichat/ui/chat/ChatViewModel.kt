@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.betteraichat.AppContainer
+import com.betteraichat.core.catalog.ModelCatalog
 import com.betteraichat.core.chat.ChatRepository
 import com.betteraichat.core.db.MessageEntity
 import com.betteraichat.core.engine.ChatEngine
@@ -20,6 +21,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.serialization.builtins.ListSerializer
@@ -77,6 +79,9 @@ class ChatViewModel(
     private val providerFactory: (ProviderId) -> com.betteraichat.core.provider.ChatProvider,
     private val appContext: android.content.Context
 ) : ViewModel() {
+
+    private val db: com.betteraichat.core.db.AppDatabase
+        get() = (appContext.applicationContext as com.betteraichat.BetterAIChatApp).container.db
 
     private val speechPlayer: com.betteraichat.tools.SpeechPlayer
         get() = (appContext.applicationContext as com.betteraichat.BetterAIChatApp).container.speechPlayer
@@ -371,6 +376,9 @@ class ChatViewModel(
         )
     }
 
+    private var autoDistillCount = 0
+    private var needAutoCompress = false
+
     private fun runGeneration(cid: Long) {
         if (runJob?.isActive == true) return
         val s = _state.value
@@ -388,8 +396,9 @@ class ChatViewModel(
                 }
             }
             val history = repository.getHistory(cid).map { repository.messageToDomain(it) }
+            val historyWithMemory = injectMemory(history, cid)
             try {
-                engine.run(history, config, s.mode).collect { ev ->
+                engine.run(historyWithMemory, config, s.mode).collect { ev ->
                     when (ev) {
                         is EngineEvent.Delta -> {
                             if (streaming == null) {
@@ -430,6 +439,13 @@ class ChatViewModel(
                                 streaming = newStreamingMessage(config, s)
                             }
                             streaming = streaming?.copy(usageInput = ev.promptTokens, usageOutput = ev.completionTokens)
+                            val ctx = ModelCatalog.entryFor(config.provider, config.model).contextWindow
+                            if (ctx > 0 && ev.promptTokens * 100 / ctx >= 85) {
+                                needAutoCompress = true
+                                _state.update {
+                                    it.copy(notification = "上下文使用量已达 ${ev.promptTokens * 100 / ctx}%，完成后将自动压缩")
+                                }
+                            }
                         }
                         is EngineEvent.AssistantFinished -> {
                             val msg = ev.message
@@ -477,6 +493,15 @@ class ChatViewModel(
                             ) {
                                 titleGenerated = true
                                 launch { generateTitle(cid) }
+                            }
+                            autoDistillCount++
+                            if (autoDistillCount >= 10) {
+                                autoDistillCount = 0
+                                launch { distillMemoryInternal(cid, silent = true) }
+                            }
+                            if (needAutoCompress) {
+                                needAutoCompress = false
+                                launch { compressContext() }
                             }
                         }
                     }
@@ -651,6 +676,113 @@ class ChatViewModel(
         }
     }
 
+    private suspend fun injectMemory(
+        history: List<com.betteraichat.core.model.ChatMessage>,
+        cid: Long
+    ): List<com.betteraichat.core.model.ChatMessage> {
+        val memories = runCatching {
+            db.memoryDao().getMemories(cid)
+        }.getOrDefault(emptyList())
+        if (memories.isEmpty()) return history
+        val text = memories.joinToString("\n") { "- ${it.content}" }
+        return listOf(
+            com.betteraichat.core.model.ChatMessage(
+                role = ChatRole.SYSTEM,
+                content = "以下是用户在此对话中长期保存的重要信息，回答时请参考：\n$text"
+            )
+        ) + history
+    }
+
+    fun distillMemory() {
+        if (currentConversationId <= 0 || _state.value.isRunning) return
+        viewModelScope.launch {
+            distillMemoryInternal(currentConversationId, silent = false)
+        }
+    }
+
+    private suspend fun distillMemoryInternal(cid: Long, silent: Boolean) {
+        if (cid <= 0) return
+        runCatching {
+            val history = repository.getHistory(cid).takeLast(30)
+            if (history.isEmpty()) return@runCatching
+            if (!silent) _state.update { it.copy(processing = true) }
+            try {
+                val config = settings.configFor(_state.value.provider)
+                val provider = providerFactory(config.provider)
+                val existing = runCatching { db.memoryDao().getMemories(cid) }
+                    .getOrDefault(emptyList())
+                    .joinToString("\n") { "- ${it.content}" }
+                val sys = ChatMessage(
+                    role = ChatRole.SYSTEM,
+                    content = "你是记忆整理助手。从对话中提取用户的重要信息（姓名、身份、偏好、习惯、重要约定、关键事实），输出为简洁要点列表，每行一条，不要寒暄。已有记忆：\n${existing.ifBlank { "（无）" }}\n只输出新增的要点，不要重复已有内容。"
+                )
+                val sb = StringBuilder()
+                provider.chatStream(
+                    listOf(sys) + history.map { repository.messageToDomain(it) },
+                    config,
+                    emptyList()
+                ).flowOn(kotlinx.coroutines.Dispatchers.IO).collect { ev ->
+                    when (ev) {
+                        is StreamEvent.Delta -> sb.append(ev.text)
+                        is StreamEvent.Error -> throw IllegalStateException(ev.message)
+                        else -> Unit
+                    }
+                }
+                val lines = sb.toString().lines()
+                    .map { it.trim().removePrefix("-").removePrefix("*").trim() }
+                    .filter { it.length >= 3 && it.length <= 200 && !it.startsWith("已有记忆") && !it.startsWith("（无）") && !it.startsWith("只输出") }
+                if (lines.isNotEmpty()) {
+                    val now = System.currentTimeMillis()
+                    lines.forEach { line ->
+                        db.memoryDao().insert(
+                            com.betteraichat.core.db.MemoryEntity(
+                                conversationId = cid,
+                                type = "memory",
+                                content = line,
+                                createdAt = now,
+                                updatedAt = now
+                            )
+                        )
+                    }
+                    if (!silent) {
+                        _state.update { it.copy(notification = "已提炼 ${lines.size} 条重要信息，将长期保存") }
+                    }
+                } else if (!silent) {
+                    _state.update { it.copy(notification = "没有提炼到新的重要信息") }
+                }
+            } finally {
+                if (!silent) _state.update { it.copy(processing = false) }
+            }
+        }
+    }
+
+    fun importRecentConversation() {
+        if (currentConversationId <= 0) return
+        viewModelScope.launch {
+            val cid = currentConversationId
+            val snap = runCatching { db.memoryDao().getLatestSnapshot(cid) }.getOrNull()
+                ?: run {
+                    _state.update { it.copy(notification = "没有可导入的最近对话快照") }
+                    return@launch
+                }
+            val s = _state.value
+            repository.insertMessage(
+                repository.domainToMessage(
+                    ChatMessage(
+                        role = ChatRole.USER,
+                        content = "以下是此前的对话记录（上下文曾因超长被压缩），请基于这些内容继续，并提炼其中重要信息：\n\n${snap.content}",
+                        model = s.model,
+                        mode = s.mode
+                    ),
+                    cid
+                )
+            )
+            db.memoryDao().delete(snap.id)
+            refresh()
+            _state.update { it.copy(notification = "已导入最近对话记录，可继续对话") }
+        }
+    }
+
     fun compressContext() {
         if (currentConversationId <= 0 || _state.value.isRunning) return
         viewModelScope.launch {
@@ -665,6 +797,24 @@ class ChatViewModel(
                 val keepCount = 2
                 val toSummarize = history.dropLast(keepCount)
                 val keep = history.takeLast(keepCount)
+                val snapshotText = history.takeLast(6)
+                    .map { m ->
+                        val role = if (m.role == "USER") "用户" else "AI"
+                        "$role：${m.content.take(400)}"
+                    }
+                    .joinToString("\n\n")
+                if (snapshotText.isNotBlank()) {
+                    val now = System.currentTimeMillis()
+                    db.memoryDao().insert(
+                        com.betteraichat.core.db.MemoryEntity(
+                            conversationId = cid,
+                            type = "snapshot",
+                            content = snapshotText,
+                            createdAt = now,
+                            updatedAt = now
+                        )
+                    )
+                }
                 val config = settings.configFor(_state.value.provider)
                 val summary = summarize(toSummarize, config)
                 if (summary.isBlank()) {
@@ -685,7 +835,13 @@ class ChatViewModel(
                         cid
                     )
                 )
-                _state.update { it.copy(processing = false, error = null) }
+                _state.update {
+                    it.copy(
+                        processing = false,
+                        error = null,
+                        notification = "已自动压缩上下文。如需恢复最近对话，请使用「导入最近对话」"
+                    )
+                }
                 refresh()
             } catch (e: Exception) {
                 _state.update { it.copy(processing = false, error = "压缩失败：${e.message}") }

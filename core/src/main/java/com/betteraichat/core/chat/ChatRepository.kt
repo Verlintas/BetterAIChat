@@ -48,6 +48,7 @@ class ChatRepository(private val db: AppDatabase) {
 
     suspend fun deleteConversation(id: Long) = db.withTransaction {
         db.conversationDao().deleteMessages(id)
+        db.memoryDao().deleteForConversation(id)
         db.conversationDao().deleteById(id)
     }
 
