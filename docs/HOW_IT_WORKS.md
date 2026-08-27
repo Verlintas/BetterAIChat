@@ -859,6 +859,11 @@ class Parser(private val input: String) {
 | System settings | `WRITE_SETTINGS` | settings access | `set_brightness`, `set_screen_timeout` |
 | Notifications out | `POST_NOTIFICATIONS` | runtime permission | `send_notification`, `schedule_repeat` |
 | DND | `NotificationManager` | policy access (Android <15) | `set_dnd` |
+| Location | `LocationManager` | location permission | `get_location` |
+| Vibration / wake-lock | `Vibrator` / `PowerManager` | — (normal) | `vibrate`, `keep_screen_on` |
+| Reboot recovery | `BOOT_COMPLETED` receiver | — | re-registers repeat tasks & automations |
+| Record & transcribe | `SpeechRecognizer` | record audio | `transcribe_audio` |
+| Screen recording | `MediaProjection` + `MediaRecorder` | capture grant | `screen_record` |
 
 The Settings screen shows live status for each grant and deep-links to the system screen to grant it.
 
