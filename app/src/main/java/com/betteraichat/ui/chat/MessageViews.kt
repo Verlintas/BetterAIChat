@@ -47,6 +47,7 @@ import com.betteraichat.core.model.ChatRole
 import com.betteraichat.core.model.ToolCall
 import com.betteraichat.core.model.ToolCallStatus
 import com.mikepenz.markdown.m3.Markdown
+import com.mikepenz.markdown.m3.markdownTypography
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -158,7 +159,41 @@ fun MessageItem(
                         Box(modifier = Modifier.alpha(blinkAlpha)) {
                             Markdown(
                                 stripCodeBlocks(msg.content) + if (msg.streaming) "▋" else "",
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier.fillMaxWidth(),
+                                typography = markdownTypography(
+                                    text = androidx.compose.ui.text.TextStyle(
+                                        fontSize = 14.sp,
+                                        lineHeight = 20.sp
+                                    ),
+                                    paragraph = androidx.compose.ui.text.TextStyle(
+                                        fontSize = 14.sp,
+                                        lineHeight = 20.sp
+                                    ),
+                                    bullet = androidx.compose.ui.text.TextStyle(
+                                        fontSize = 14.sp,
+                                        lineHeight = 20.sp
+                                    ),
+                                    ordered = androidx.compose.ui.text.TextStyle(
+                                        fontSize = 14.sp,
+                                        lineHeight = 20.sp
+                                    ),
+                                    list = androidx.compose.ui.text.TextStyle(
+                                        fontSize = 14.sp,
+                                        lineHeight = 20.sp
+                                    ),
+                                    quote = androidx.compose.ui.text.TextStyle(
+                                        fontSize = 13.sp,
+                                        lineHeight = 19.sp
+                                    ),
+                                    code = androidx.compose.ui.text.TextStyle(
+                                        fontSize = 12.sp,
+                                        lineHeight = 18.sp
+                                    ),
+                                    inlineCode = androidx.compose.ui.text.TextStyle(
+                                        fontSize = 13.sp,
+                                        lineHeight = 19.sp
+                                    )
+                                )
                             )
                         }
                     }
@@ -436,13 +471,30 @@ private fun ToolCallCard(call: ToolCall, stepNumber: Int = 0) {
             }
             val result = call.result
             if (!result.isNullOrBlank()) {
+                var expanded by remember { mutableStateOf(false) }
                 Spacer(Modifier.size(4.dp))
                 Text(
                     result,
                     style = MaterialTheme.typography.bodySmall,
-                    maxLines = 6,
+                    maxLines = if (expanded) Int.MAX_VALUE else 6,
                     overflow = TextOverflow.Ellipsis
                 )
+                if (result.length > 180 && !expanded) {
+                    TextButton(
+                        onClick = { expanded = true },
+                        modifier = Modifier.padding(top = 2.dp)
+                    ) {
+                        Text("展开全部（${result.length} 字）", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+                if (expanded) {
+                    TextButton(
+                        onClick = { expanded = false },
+                        modifier = Modifier.padding(top = 2.dp)
+                    ) {
+                        Text("收起", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
             }
         }
     }
