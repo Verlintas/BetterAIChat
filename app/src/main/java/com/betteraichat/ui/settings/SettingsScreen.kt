@@ -1324,7 +1324,7 @@ private fun DeveloperSection(
                                     .scale(breath)
                                     .drawBehind {
                                         val r = size.minDimension / 2
-                                        val stroke = 5.dp.toPx()
+                                        val stroke = 3.dp.toPx()
                                         val center = androidx.compose.ui.geometry.Offset(size.width / 2, size.height / 2)
                                         fun haloRing(
                                             radius: Float,
