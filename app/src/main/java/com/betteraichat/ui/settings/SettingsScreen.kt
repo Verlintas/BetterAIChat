@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Notifications
@@ -71,6 +72,8 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.betteraichat.AppContainer
@@ -90,7 +93,8 @@ private enum class SettingsSection(val title: String) {
     PERMISSIONS("权限"),
     REPEAT_TASKS("定时任务"),
     AUTOMATIONS("自动化"),
-    STATS("使用统计")
+    STATS("使用统计"),
+    DEVELOPER("开发者")
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -161,6 +165,11 @@ fun SettingsScreen(onBack: () -> Unit) {
                 modifier = Modifier.fillMaxSize().padding(padding),
                 container = container
             )
+            SettingsSection.DEVELOPER -> DeveloperSection(
+                modifier = Modifier.fillMaxSize().padding(padding),
+                scope = scope,
+                snackbar = snackbar
+            )
         }
     }
 }
@@ -228,6 +237,14 @@ private fun SettingsMenu(
                 subtitle = "会话 · 消息 · Token · 工具调用",
                 icon = { Icon(Icons.Filled.List, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
                 onClick = { onOpenSection(SettingsSection.STATS) }
+            )
+        }
+        item {
+            SettingsMenuItem(
+                title = "开发者",
+                subtitle = "关于 · 项目仓库 · 联系",
+                icon = { Icon(Icons.Filled.Info, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                onClick = { onOpenSection(SettingsSection.DEVELOPER) }
             )
         }
     }
@@ -1126,5 +1143,155 @@ private fun AutomationsSection(
             }
         }
         Spacer(Modifier.height(24.dp))
+    }
+}
+
+@Composable
+private fun DeveloperSection(
+    modifier: Modifier,
+    scope: kotlinx.coroutines.CoroutineScope,
+    snackbar: SnackbarHostState
+) {
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+    val appVersion = remember {
+        runCatching {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName
+        }.getOrNull() ?: ""
+    }
+    fun openUrl(url: String) {
+        runCatching {
+            context.startActivity(
+                Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        }
+    }
+    fun copyEmail(email: String) {
+        clipboard.setText(AnnotatedString(email))
+        scope.launch { snackbar.showSnackbar("邮箱已复制：$email") }
+    }
+
+    Column(
+        modifier = modifier.verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Surface(
+            shape = MaterialTheme.shapes.medium,
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("BetterAIChat", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "由 Verlintas 独立开发的一款原生 Android AI 助手：自带 API Key、支持设备工具、屏幕分析与自动化。",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "版本 v$appVersion",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        HorizontalDivider()
+
+        Text("项目", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Surface(
+            shape = MaterialTheme.shapes.medium,
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            onClick = { openUrl("https://github.com/Verlintas/BetterAIChat") },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("GitHub 仓库", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                    Text(
+                        "github.com/Verlintas/BetterAIChat",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Icon(
+                    Icons.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        Surface(
+            shape = MaterialTheme.shapes.medium,
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            onClick = { openUrl("https://x.com/Verlintas") },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("X（Twitter）", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                    Text(
+                        "x.com/Verlintas",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Icon(
+                    Icons.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        HorizontalDivider()
+
+        Text("联系邮箱", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text(
+            "点击邮箱即可复制，欢迎反馈问题或建议。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        EmailRow("ulv777777@gmail.com", "主邮箱") { copyEmail(it) }
+        EmailRow("12321666@163.com", "副邮箱") { copyEmail(it) }
+        EmailRow("orcakkk@gmail.com", "副邮箱") { copyEmail(it) }
+        Spacer(Modifier.height(24.dp))
+    }
+}
+
+@Composable
+private fun EmailRow(
+    email: String,
+    label: String,
+    onCopy: (String) -> Unit
+) {
+    Surface(
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        onClick = { onCopy(email) },
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(email, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+            }
+            Text(
+                "复制",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
     }
 }
