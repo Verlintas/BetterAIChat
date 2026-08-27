@@ -6,6 +6,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -41,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -78,7 +81,9 @@ fun MessageItem(
     onSpeak: (String) -> Unit = {},
     onEdit: (Long) -> Unit = {},
     onOpenLink: (String) -> Unit = {},
-    onToggleStar: (Long) -> Unit = {}
+    onToggleStar: (Long) -> Unit = {},
+    onCopied: (() -> Unit)? = null,
+    onRetry: (() -> Unit)? = null
 ) {
     if (msg.role == ChatRole.TOOL) return
     val clipboard = LocalClipboardManager.current
@@ -86,6 +91,7 @@ fun MessageItem(
     val copyAction = {
         if (msg.content.isNotBlank()) {
             clipboard.setText(AnnotatedString(msg.content))
+            onCopied?.invoke()
         }
         showActions = false
     }
@@ -148,11 +154,7 @@ fun MessageItem(
             ) {
                 Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
                     if (msg.streaming && msg.content.isEmpty()) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                            Spacer(Modifier.width(8.dp))
-                            Text("AI 思考中…", style = MaterialTheme.typography.bodySmall)
-                        }
+                        ThinkingDots()
                     } else {
                         val blinkAlpha = if (msg.streaming) {
                             val transition = rememberInfiniteTransition(label = "cursor")
@@ -415,13 +417,34 @@ private fun UserBubble(msg: UiMessage, onLongPress: () -> Unit, modifier: Modifi
                 Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
                     if (msg.attachments.isNotEmpty()) {
                         msg.attachments.forEach { att ->
-                            Text(
-                                if (att.isImage) "图片：${att.name}" else "文件：${att.name}",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                            if (att.isImage && att.dataBase64.isNotBlank()) {
+                                val bitmap = remember(att.dataBase64) {
+                                    runCatching {
+                                        val bytes = android.util.Base64.decode(att.dataBase64, android.util.Base64.DEFAULT)
+                                        android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                                    }.getOrNull()
+                                }
+                                if (bitmap != null) {
+                                    val w = (bitmap.width * 140f / bitmap.height).toInt().coerceIn(80, 200)
+                                    Image(
+                                        bitmap = bitmap.asImageBitmap(),
+                                        contentDescription = att.name,
+                                        modifier = Modifier
+                                            .fillMaxWidth(0.6f)
+                                            .height((140 * bitmap.width / bitmap.height.toFloat()).dp)
+                                            .clip(RoundedCornerShape(10.dp))
+                                    )
+                                    Spacer(Modifier.size(4.dp))
+                                }
+                            } else {
+                                Text(
+                                    if (att.isImage) "图片：${att.name}" else "文件：${att.name}",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         }
                         Spacer(Modifier.size(4.dp))
                     }
@@ -666,5 +689,35 @@ private fun MarkdownTable(md: String, modifier: Modifier = Modifier) {
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ThinkingDots() {
+    val transition = rememberInfiniteTransition(label = "thinking")
+    val delays = listOf(0, 180, 360)
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        delays.forEach { delayMs ->
+            val alpha by transition.animateFloat(
+                initialValue = 0.25f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(500),
+                    repeatMode = RepeatMode.Reverse,
+                    initialStartOffset = androidx.compose.animation.core.StartOffset(delayMs)
+                ),
+                label = "dot"
+            )
+            Box(
+                modifier = Modifier
+                    .padding(horizontal = 3.dp)
+                    .size(7.dp)
+                    .alpha(alpha)
+                    .clip(RoundedCornerShape(50))
+                    .background(MaterialTheme.colorScheme.onSurfaceVariant)
+            )
+        }
+        Spacer(Modifier.width(4.dp))
+        Text("AI 思考中", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

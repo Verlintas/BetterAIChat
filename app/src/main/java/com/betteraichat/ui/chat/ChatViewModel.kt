@@ -963,6 +963,23 @@ class ChatViewModel(
         }
     }
 
+    fun retryLast() {
+        if (currentConversationId <= 0 || _state.value.isRunning) return
+        viewModelScope.launch {
+            val last = repository.getHistory(currentConversationId).lastOrNull { it.role == "USER" }
+                ?: run {
+                    _state.update { it.copy(notification = "没有可重试的消息") }
+                    return@launch
+                }
+            _state.update { it.copy(error = null) }
+            sendWithContent(last.content, emptyList())
+        }
+    }
+
+    fun dismissError() {
+        _state.update { it.copy(error = null) }
+    }
+
     fun dismissNotification() {
         _state.update { it.copy(notification = null) }
     }

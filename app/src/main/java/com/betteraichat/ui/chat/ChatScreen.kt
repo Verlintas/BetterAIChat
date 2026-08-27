@@ -14,6 +14,14 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.draw.scale
+import androidx.compose.foundation.Image
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -431,7 +439,9 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                                         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                                 )
                             }
-                        }
+                        },
+                        onCopied = { scope.launch { snackbarHostState.showSnackbar("已复制到剪贴板") } },
+                        onRetry = { vm.retryLast() }
                     )
                 }
                 state.error?.let { error ->
@@ -440,12 +450,23 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                             shape = RoundedCornerShape(8.dp),
                             color = MaterialTheme.colorScheme.errorContainer
                         ) {
-                            Text(
-                                "出错了：$error",
-                                modifier = Modifier.padding(12.dp),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onErrorContainer
-                            )
+                            Row(
+                                modifier = Modifier.padding(start = 12.dp, top = 8.dp, bottom = 8.dp, end = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    "出错了：$error",
+                                    modifier = Modifier.weight(1f),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                                TextButton(onClick = { vm.retryLast() }) {
+                                    Text("重试", color = MaterialTheme.colorScheme.onErrorContainer)
+                                }
+                                TextButton(onClick = { vm.dismissError() }) {
+                                    Text("忽略", color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.7f))
+                                }
+                            }
                         }
                     }
                 }
@@ -768,6 +789,7 @@ private fun InputBar(
     onSend: () -> Unit,
     onStop: () -> Unit
 ) {
+    val context = LocalContext.current
     var attachMenu by remember { mutableStateOf(false) }
     Column(modifier = Modifier.fillMaxWidth()) {
         if (pendingAttachments.isNotEmpty()) {
@@ -778,16 +800,45 @@ private fun InputBar(
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 pendingAttachments.forEach { att ->
-                    InputChip(
-                        selected = false,
-                        onClick = { },
-                        label = { Text(att.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                        trailingIcon = {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        modifier = Modifier.clip(RoundedCornerShape(10.dp))
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (att.kind == "image") {
+                                val bitmap = remember(att.uri) {
+                                    runCatching {
+                                        context.contentResolver.openInputStream(att.uri)?.use {
+                                            android.graphics.BitmapFactory.decodeStream(it)
+                                        }?.let {
+                                            val scale = 120f / it.width
+                                            android.graphics.Bitmap.createScaledBitmap(
+                                                it, 120, (it.height * scale).toInt().coerceAtLeast(1), true
+                                            )
+                                        }
+                                    }.getOrNull()
+                                }
+                                if (bitmap != null) {
+                                    Image(
+                                        bitmap = bitmap.asImageBitmap(),
+                                        contentDescription = att.name,
+                                        modifier = Modifier.size(44.dp).clip(RoundedCornerShape(8.dp))
+                                    )
+                                }
+                            }
+                            Text(
+                                att.name,
+                                modifier = Modifier.padding(horizontal = 8.dp),
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                             IconButton(onClick = { onRemoveAttachment(att.id) }) {
                                 Icon(Icons.Filled.Close, contentDescription = "移除", modifier = Modifier.size(16.dp))
                             }
                         }
-                    )
+                    }
                 }
             }
         }
@@ -886,9 +937,17 @@ private fun InputBar(
                 }
             )
             Spacer(Modifier.width(8.dp))
+            val haptic = LocalHapticFeedback.current
+            val interactionSource = remember { MutableInteractionSource() }
+            val pressed by interactionSource.collectIsPressedAsState()
             FilledIconButton(
-                onClick = { if (isRunning) onStop() else onSend() },
-                enabled = !processing && (isRunning || input.isNotBlank() || pendingAttachments.isNotEmpty())
+                onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    if (isRunning) onStop() else onSend()
+                },
+                enabled = !processing && (isRunning || input.isNotBlank() || pendingAttachments.isNotEmpty()),
+                interactionSource = interactionSource,
+                modifier = Modifier.scale(if (pressed) 0.88f else 1f)
             ) {
                 if (isRunning) {
                     CircularProgressIndicator(
