@@ -28,18 +28,39 @@ class WebSearchTool : DeviceTool {
 
     private data class SearchResult(val title: String, val url: String, val snippet: String)
 
+    companion object {
+        private val cache = LinkedHashMap<String, Pair<List<SearchResult>, Long>>(32)
+        private val cacheLock = Any()
+    }
+
     override suspend fun execute(context: ToolContext, arguments: JsonObject): String =
         withContext(Dispatchers.IO) {
             val query = arguments["query"]?.jsonPrimitive?.content?.trim()
                 ?: return@withContext "缺少 query 参数"
             val max = (arguments["max_results"]?.jsonPrimitive?.content?.toIntOrNull() ?: 5).coerceIn(1, 8)
+            val now = System.currentTimeMillis()
+            val cached = synchronized(cacheLock) {
+                cache[query]?.takeIf { now - it.second < 300_000 }?.first
+            }
             var results: List<SearchResult>
             var bingFailed: String? = null
-            try {
-                results = searchBing(query)
-            } catch (e: Exception) {
-                bingFailed = e.message
-                results = emptyList()
+            if (cached != null) {
+                results = cached
+            } else {
+                try {
+                    results = searchBing(query)
+                } catch (e: Exception) {
+                    bingFailed = e.message
+                    results = emptyList()
+                }
+                if (results.isNotEmpty()) {
+                    synchronized(cacheLock) {
+                        cache[query] = results to now
+                        if (cache.size > 30) {
+                            cache.entries.removeAll { now - it.value.second > 300_000 }
+                        }
+                    }
+                }
             }
             if (results.isEmpty() && bingFailed != null) {
                 results = try {

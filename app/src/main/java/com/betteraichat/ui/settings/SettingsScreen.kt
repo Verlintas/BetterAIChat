@@ -17,7 +17,11 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.background
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -1225,6 +1229,50 @@ private fun DeveloperSection(
 
         HorizontalDivider()
 
+        Text("功能亮点", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        val highlights = listOf(
+            "53 个设备工具" to "打开应用 · 屏幕分析 · 自动化",
+            "屏幕感知" to "截屏 · OCR · UI 自动化",
+            "长期记忆" to "自动提炼 · 跨轮次记住你",
+            "自动化引擎" to "定时/电量触发 · 无人值守",
+            "8 套主题" to "橙红点缀 · 即时切换",
+            "语音助手" to "免提对话 · 自动朗读",
+            "Shizuku 支持" to "root 级能力 · 可卸载",
+            "Skills 系统" to "opencode 风格 · 可导入",
+            "多模型" to "OpenAI · Claude · Gemini · 国产",
+            "隐私优先" to "自带 Key · 数据本地"
+        )
+        highlights.forEach { (title, sub) ->
+            Surface(
+                shape = MaterialTheme.shapes.small,
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(MaterialTheme.colorScheme.primary)
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Column {
+                        Text(title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                        Text(
+                            sub,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+
+        HorizontalDivider()
+
         Text("项目", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         Surface(
             shape = MaterialTheme.shapes.medium,
@@ -1251,6 +1299,40 @@ private fun DeveloperSection(
                 )
             }
         }
+        Surface(
+            shape = MaterialTheme.shapes.medium,
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            onClick = { openUrl("https://github.com/Verlintas/BetterAIChat/releases") },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("版本历史 · Releases", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                    Text(
+                        "查看更新日志与下载旧版本",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Icon(
+                    Icons.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        HorizontalDivider()
+
+        Text("关于", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text(
+            "技术栈：Kotlin · Jetpack Compose · Room · OkHttp · ML Kit · Shizuku\n开源协议：MIT License\n作者：Verlintas（独立开发）",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
 
         HorizontalDivider()
 

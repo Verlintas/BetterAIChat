@@ -70,7 +70,11 @@ class ChatEngine(
             return@flow
         }
         val effectiveConfig = config.copy(reasoning = config.reasoning && mode == AppMode.MAX)
-        var history = messages
+        var history = messages.map { m ->
+            if (m.role == ChatRole.TOOL) {
+                m.copy(content = truncateToolResult(m.content))
+            } else m
+        }
         var toolRounds = 0
         val maxRounds = 8
         while (true) {
@@ -176,7 +180,7 @@ class ChatEngine(
                 emit(EngineEvent.ToolCallFinished(finished))
                 history = history + ChatMessage(
                     role = ChatRole.TOOL,
-                    content = resultText,
+                    content = truncateToolResult(resultText),
                     toolCallId = call.id,
                     toolName = call.name
                 )
@@ -201,6 +205,11 @@ class ChatEngine(
         } catch (e: Exception) {
             ToolCallStatus.FAILED to (e.message ?: "工具执行失败")
         }
+    }
+
+    private fun truncateToolResult(text: String): String {
+        if (text.length <= 1500) return text
+        return text.take(1500) + "\n…（工具结果过长已截断，共 ${text.length} 字符）"
     }
 
     private fun gate(mode: AppMode, spec: ToolSpec?, call: ToolCall): GateResult {
