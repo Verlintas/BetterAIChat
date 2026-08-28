@@ -64,6 +64,17 @@ import java.util.Locale
 
 private val TIME_FORMAT = SimpleDateFormat("HH:mm", Locale.getDefault())
 
+private fun normalizeMarkdown(content: String): String {
+    val tableFixed = content.lines().map { line ->
+        if (line.contains('｜') && line.count { it == '｜' } >= 2) {
+            line.replace('｜', '|')
+        } else line
+    }.joinToString("\n")
+    return tableFixed
+        .replace(Regex("""\*\*\*([^*]+)\*\*\*"""), "**$1**")
+        .replace(Regex("""__([^_]+)__"""), "**$1**")
+}
+
 private val CODE_BLOCK_REGEX = Regex("```[^`\\n]*\\n([\\s\\S]*?)```")
 private val LINK_REGEX = Regex("\\[([^\\]]*)\\]\\(((?:https?|ftp)://[^\\s)]+)\\)")
 
@@ -181,7 +192,7 @@ fun MessageItem(
                         } else 1f
                         Box(modifier = Modifier.alpha(blinkAlpha)) {
                             Markdown(
-                                stripCodeBlocks(msg.content) + if (msg.streaming) "▋" else "",
+                                normalizeMarkdown(stripCodeBlocks(msg.content)),
                                 modifier = Modifier.fillMaxWidth(),
                                 typography = markdownTypography(
                                     h1 = androidx.compose.ui.text.TextStyle(
