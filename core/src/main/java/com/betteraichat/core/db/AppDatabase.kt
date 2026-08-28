@@ -186,6 +186,9 @@ data class MemoryEntity(
 
 @Dao
 interface MemoryDao {
+    @Query("SELECT * FROM memories ORDER BY updatedAt DESC")
+    suspend fun observeAll(): List<MemoryEntity>
+
     @Query("SELECT * FROM memories WHERE conversationId = :conversationId AND type = 'memory' ORDER BY updatedAt DESC")
     fun observeMemories(conversationId: Long): Flow<List<MemoryEntity>>
 

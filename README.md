@@ -92,6 +92,16 @@ The AI can create automations that run tool sequences automatically:
 - Executed in the background via AlarmManager (no confirmation needed), completion is reported via notification
 - Manage / toggle / delete them in Settings → Automations
 
+### Long-term memory
+- The AI automatically distills key user information (name, preferences, agreements) into **persistent local memory**
+- Memories are injected into every request, so the AI remembers you across sessions
+- Auto-distills every 10 messages; manual trigger via ⋮ menu → "提炼重要信息（长期记忆）"
+- Manage / delete memories in Settings → 记忆
+
+### Seamless context continuation
+- When usage reaches **85%** of the context window, the app warns and **auto-compresses** after the current turn
+- Before compressing, the last 6 turns are saved as a snapshot — "导入最近对话" restores them as a message, so you continue without losing recent context
+
 ### Full UI automation — the AI can *drive* your phone
 With two toggles in Settings (Accessibility + Usage access), the AI gains a complete automation loop:
 1. `screen_ocr` reads the text on screen
@@ -105,6 +115,12 @@ Works on any app — no root, no Shizuku needed for this path.
 - Skills can **define their own tools** with action types: `alarm`, `notification`, `clipboard`, `intent`, `settings` — including `{param}` templates
 - **Record actions into skills**: after the AI completes a multi-step task, save the tool sequence as a reusable Skill
 - Built-in action recorder, import/delete management
+
+### Themes
+8 accent color schemes (橙/红/粉/靛蓝/蓝/紫/绿/青), default orange matching the app icon, instant switching, vibrant light mode.
+
+### Multi-engine web search
+web_search merges **Bing / Baidu / Brave / DuckDuckGo / Mojeek** with URL dedup and 5-minute caching — reliable results even when one engine blocks scraping.
 
 ### Attachments & documents
 - Images (up to 4, auto-compressed, EXIF-corrected) sent to vision models

@@ -126,6 +126,7 @@ private enum class SettingsSection(val title: String) {
     REPEAT_TASKS("定时任务"),
     AUTOMATIONS("自动化"),
     STATS("使用统计"),
+    MEMORIES("记忆"),
     DEVELOPER("开发者")
 }
 
@@ -210,6 +211,12 @@ fun SettingsScreen(onBack: () -> Unit) {
                 modifier = Modifier.fillMaxSize().padding(padding),
                 container = container
             )
+            SettingsSection.MEMORIES -> MemoriesSection(
+                modifier = Modifier.fillMaxSize().padding(padding),
+                container = container,
+                scope = scope,
+                snackbar = snackbar
+            )
             SettingsSection.DEVELOPER -> DeveloperSection(
                 modifier = Modifier.fillMaxSize().padding(padding),
                 scope = scope,
@@ -283,6 +290,14 @@ private fun SettingsMenu(
                 subtitle = "会话 · 消息 · Token · 工具调用",
                 icon = { Icon(Icons.Filled.List, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
                 onClick = { onOpenSection(SettingsSection.STATS) }
+            )
+        }
+        item {
+            SettingsMenuItem(
+                title = "记忆",
+                subtitle = "AI 提炼的重要信息 · 快照",
+                icon = { Icon(Icons.Filled.Face, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                onClick = { onOpenSection(SettingsSection.MEMORIES) }
             )
         }
         item {
@@ -1748,4 +1763,117 @@ private fun TypewriterText(
         maxLines = maxLines,
         overflow = TextOverflow.Ellipsis
     )
+}
+
+@Composable
+private fun MemoriesSection(
+    modifier: Modifier,
+    container: AppContainer,
+    scope: kotlinx.coroutines.CoroutineScope,
+    snackbar: SnackbarHostState
+) {
+    var memories by remember { mutableStateOf(emptyList<com.betteraichat.core.db.MemoryEntity>()) }
+    var snapshots by remember { mutableStateOf(emptyList<com.betteraichat.core.db.MemoryEntity>()) }
+    LaunchedEffect(Unit) {
+        val all = runCatching { container.db.memoryDao().observeAll() }.getOrDefault(emptyList())
+        memories = all.filter { it.type == "memory" }
+        snapshots = all.filter { it.type == "snapshot" }
+    }
+    Column(
+        modifier = modifier.verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text(
+            "长期记忆：AI 在对话中自动提炼你的重要信息（姓名、偏好、约定等），并在每次对话时参考。可在对话菜单手动触发「提炼重要信息」。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        if (memories.isEmpty()) {
+            Text(
+                "暂无记忆。在对话中对 AI 说「记住我叫 xx」或使用 ⋮ 菜单 → 提炼重要信息。",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else {
+            Text(
+                "共 ${memories.size} 条记忆",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Bold
+            )
+            memories.forEach { m ->
+                Surface(
+                    shape = MaterialTheme.shapes.medium,
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(MaterialTheme.colorScheme.primary)
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            m.content,
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 3,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        TextButton(onClick = {
+                            scope.launch {
+                                container.db.memoryDao().delete(m.id)
+                                memories = memories.filter { it.id != m.id }
+                                snackbar.showSnackbar("已删除记忆")
+                            }
+                        }) {
+                            Text("删除", color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                }
+            }
+        }
+        HorizontalDivider()
+        Text("对话快照", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        if (snapshots.isEmpty()) {
+            Text(
+                "无快照。压缩上下文时自动保存最近对话，可在聊天菜单「导入最近对话」恢复。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else {
+            snapshots.forEach { snap ->
+                Surface(
+                    shape = MaterialTheme.shapes.medium,
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "压缩前保存 · ${snap.content.length} 字符",
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        TextButton(onClick = {
+                            scope.launch {
+                                container.db.memoryDao().delete(snap.id)
+                                snapshots = snapshots.filter { it.id != snap.id }
+                                snackbar.showSnackbar("已删除快照")
+                            }
+                        }) {
+                            Text("删除", color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(24.dp))
+    }
 }
