@@ -12,6 +12,12 @@ enum class ThemeMode(val displayName: String) {
     DARK("深色")
 }
 
+enum class AppLanguage(val displayName: String) {
+    SYSTEM("跟随系统"),
+    ZH("中文"),
+    EN("English")
+}
+
 enum class AccentColor(val displayName: String) {
     ORANGE("橙"),
     RED("红"),
@@ -125,6 +131,14 @@ class SettingsRepository(context: Context) {
 
     fun setVoiceAssistant(enabled: Boolean) {
         prefs.edit().putBoolean("voice_assistant", enabled).apply()
+    }
+
+    fun getLanguage(): AppLanguage = runCatching {
+        AppLanguage.valueOf(prefs.getString("language", AppLanguage.SYSTEM.name)!!)
+    }.getOrDefault(AppLanguage.SYSTEM)
+
+    fun setLanguage(language: AppLanguage) {
+        prefs.edit().putString("language", language.name).apply()
     }
 
     fun getAccentColor(): AccentColor = runCatching {

@@ -2,4 +2,31 @@
 <resources>
     <string name="app_name">BetterAIChat</string>
     <string name="accessibility_service_description">让 AI 可以通过无障碍服务在屏幕上输入文本、点击、滑动和执行系统按键（用于 Build/Max 模式的任务执行）。</string>
+    <string name="settings_provider">服务商与模型</string>
+    <string name="settings_provider_sub">API Key · Base URL · 模型 · 连接检测</string>
+    <string name="settings_conversation">对话</string>
+    <string name="settings_conversation_sub">默认模式 · 外观 · 自动朗读</string>
+    <string name="settings_skills">技能</string>
+    <string name="settings_skills_sub">导入 · 管理 SKILL.md</string>
+    <string name="settings_permissions">权限</string>
+    <string name="settings_permissions_sub">Shizuku · 系统权限授权</string>
+    <string name="settings_tasks">定时任务</string>
+    <string name="settings_tasks_sub">查看 · 取消重复提醒</string>
+    <string name="settings_automations">自动化</string>
+    <string name="settings_automations_sub">条件触发 · 自动执行工具</string>
+    <string name="settings_stats">使用统计</string>
+    <string name="settings_stats_sub">会话 · 消息 · Token · 工具调用</string>
+    <string name="settings_memories">记忆</string>
+    <string name="settings_memories_sub">AI 提炼的重要信息 · 快照</string>
+    <string name="settings_developer">开发者</string>
+    <string name="settings_developer_sub">关于 · 项目仓库 · 联系</string>
+    <string name="input_hint">输入文字…</string>
+    <string name="chat_analyze_screen">分析屏幕</string>
+    <string name="chat_save_skill">保存为技能</string>
+    <string name="chat_distill_memory">提炼重要信息（长期记忆）</string>
+    <string name="chat_import_recent">导入最近对话</string>
+    <string name="chat_compress">压缩上下文</string>
+    <string name="chat_export">导出对话</string>
+    <string name="chat_clear">清除上下文</string>
+    <string name="chat_select_model">选择模型</string>
 </resources>

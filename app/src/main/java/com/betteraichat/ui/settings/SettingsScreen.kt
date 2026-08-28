@@ -95,6 +95,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -238,72 +239,72 @@ private fun SettingsMenu(
     ) {
         item {
             SettingsMenuItem(
-                title = "服务商与模型",
-                subtitle = "API Key · Base URL · 模型 · 连接检测",
+                title = stringResource(com.betteraichat.R.string.settings_provider),
+                subtitle = stringResource(com.betteraichat.R.string.settings_provider_sub),
                 icon = { Icon(Icons.Filled.Settings, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
                 onClick = { onOpenSection(SettingsSection.PROVIDER) }
             )
         }
         item {
             SettingsMenuItem(
-                title = "对话",
-                subtitle = "默认模式 · 外观 · 自动朗读",
+                title = stringResource(com.betteraichat.R.string.settings_conversation),
+                subtitle = stringResource(com.betteraichat.R.string.settings_conversation_sub),
                 icon = { Icon(Icons.Filled.Face, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
                 onClick = { onOpenSection(SettingsSection.CONVERSATION) }
             )
         }
         item {
             SettingsMenuItem(
-                title = "技能",
-                subtitle = "导入 · 管理 SKILL.md",
+                title = stringResource(com.betteraichat.R.string.settings_skills),
+                subtitle = stringResource(com.betteraichat.R.string.settings_skills_sub),
                 icon = { Icon(Icons.Filled.Build, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
                 onClick = { onOpenSection(SettingsSection.SKILLS) }
             )
         }
         item {
             SettingsMenuItem(
-                title = "权限",
-                subtitle = "Shizuku · 系统权限授权",
+                title = stringResource(com.betteraichat.R.string.settings_permissions),
+                subtitle = stringResource(com.betteraichat.R.string.settings_permissions_sub),
                 icon = { Icon(Icons.Filled.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
                 onClick = { onOpenSection(SettingsSection.PERMISSIONS) }
             )
         }
         item {
             SettingsMenuItem(
-                title = "定时任务",
-                subtitle = "查看 · 取消重复提醒",
+                title = stringResource(com.betteraichat.R.string.settings_tasks),
+                subtitle = stringResource(com.betteraichat.R.string.settings_tasks_sub),
                 icon = { Icon(Icons.Filled.Notifications, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
                 onClick = { onOpenSection(SettingsSection.REPEAT_TASKS) }
             )
         }
         item {
             SettingsMenuItem(
-                title = "自动化",
-                subtitle = "条件触发 · 自动执行工具",
+                title = stringResource(com.betteraichat.R.string.settings_automations),
+                subtitle = stringResource(com.betteraichat.R.string.settings_automations_sub),
                 icon = { Icon(Icons.Filled.Build, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
                 onClick = { onOpenSection(SettingsSection.AUTOMATIONS) }
             )
         }
         item {
             SettingsMenuItem(
-                title = "使用统计",
-                subtitle = "会话 · 消息 · Token · 工具调用",
+                title = stringResource(com.betteraichat.R.string.settings_stats),
+                subtitle = stringResource(com.betteraichat.R.string.settings_stats_sub),
                 icon = { Icon(Icons.Filled.List, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
                 onClick = { onOpenSection(SettingsSection.STATS) }
             )
         }
         item {
             SettingsMenuItem(
-                title = "记忆",
-                subtitle = "AI 提炼的重要信息 · 快照",
+                title = stringResource(com.betteraichat.R.string.settings_memories),
+                subtitle = stringResource(com.betteraichat.R.string.settings_memories_sub),
                 icon = { Icon(Icons.Filled.Face, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
                 onClick = { onOpenSection(SettingsSection.MEMORIES) }
             )
         }
         item {
             SettingsMenuItem(
-                title = "开发者",
-                subtitle = "关于 · 项目仓库 · 联系",
+                title = stringResource(com.betteraichat.R.string.settings_developer),
+                subtitle = stringResource(com.betteraichat.R.string.settings_developer_sub),
                 icon = { Icon(Icons.Filled.Info, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
                 onClick = { onOpenSection(SettingsSection.DEVELOPER) }
             )
@@ -529,8 +530,10 @@ private fun ConversationSection(
     scope: kotlinx.coroutines.CoroutineScope,
     snackbar: SnackbarHostState
 ) {
+    val context = LocalContext.current
     var defaultMode by remember { mutableStateOf(settings.getDefaultMode()) }
     var themeMode by remember { mutableStateOf(settings.getThemeMode()) }
+    var language by remember { mutableStateOf(settings.getLanguage()) }
     var autoSpeak by remember { mutableStateOf(settings.getAutoSpeak()) }
     var voiceAssistant by remember { mutableStateOf(settings.getVoiceAssistant()) }
     var accentColor by remember { mutableStateOf(settings.getAccentColor()) }
@@ -554,6 +557,26 @@ private fun ConversationSection(
                         settings.setDefaultMode(m)
                     },
                     label = { Text(m.displayName) }
+                )
+            }
+        }
+
+        HorizontalDivider()
+
+        Text("语言", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            com.betteraichat.core.storage.AppLanguage.entries.forEach { lang ->
+                FilterChip(
+                    selected = language == lang,
+                    onClick = {
+                        language = lang
+                        settings.setLanguage(lang)
+                        context.startActivity(
+                            Intent(context, com.betteraichat.MainActivity::class.java)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                        )
+                    },
+                    label = { Text(lang.displayName) }
                 )
             }
         }

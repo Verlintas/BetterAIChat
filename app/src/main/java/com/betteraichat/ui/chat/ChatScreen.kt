@@ -93,6 +93,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -323,14 +324,14 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                         }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                             DropdownMenuItem(
-                                text = { Text("选择模型（${state.model}）") },
+                                text = { Text(stringResource(com.betteraichat.R.string.chat_select_model) + "（${state.model}）") },
                                 onClick = {
                                     menuOpen = false
                                     showModelPicker = true
                                 }
                             )
                             DropdownMenuItem(
-                                text = { Text("分析屏幕") },
+                                text = { Text(stringResource(com.betteraichat.R.string.chat_analyze_screen)) },
                                 onClick = {
                                     menuOpen = false
                                     vm.analyzeScreen {
@@ -348,42 +349,42 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                                 }
                             )
                             DropdownMenuItem(
-                                text = { Text("保存为技能") },
+                                text = { Text(stringResource(com.betteraichat.R.string.chat_save_skill)) },
                                 onClick = {
                                     menuOpen = false
                                     vm.saveAsSkill()
                                 }
                             )
                             DropdownMenuItem(
-                                text = { Text("提炼重要信息（长期记忆）") },
+                                text = { Text(stringResource(com.betteraichat.R.string.chat_distill_memory)) },
                                 onClick = {
                                     menuOpen = false
                                     vm.distillMemory()
                                 }
                             )
                             DropdownMenuItem(
-                                text = { Text("导入最近对话") },
+                                text = { Text(stringResource(com.betteraichat.R.string.chat_import_recent)) },
                                 onClick = {
                                     menuOpen = false
                                     vm.importRecentConversation()
                                 }
                             )
                             DropdownMenuItem(
-                                text = { Text("压缩上下文") },
+                                text = { Text(stringResource(com.betteraichat.R.string.chat_compress)) },
                                 onClick = {
                                     menuOpen = false
                                     showCompressConfirm = true
                                 }
                             )
                             DropdownMenuItem(
-                                text = { Text("导出对话") },
+                                text = { Text(stringResource(com.betteraichat.R.string.chat_export)) },
                                 onClick = {
                                     menuOpen = false
                                     shareConversationInternal(context, vm.buildExportText())
                                 }
                             )
                             DropdownMenuItem(
-                                text = { Text("清除上下文") },
+                                text = { Text(stringResource(com.betteraichat.R.string.chat_clear)) },
                                 onClick = {
                                     menuOpen = false
                                     showClearContext = true
@@ -962,7 +963,7 @@ private fun InputBar(
                 onValueChange = onInputChange,
                 modifier = Modifier.weight(1f).animateContentSize(),
                 placeholder = {
-                    Text("输入文字…")
+                    Text(stringResource(com.betteraichat.R.string.input_hint))
                 },
                 maxLines = 6,
                 minLines = 1,

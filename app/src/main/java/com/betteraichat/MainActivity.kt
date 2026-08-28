@@ -12,6 +12,20 @@ import rikka.shizuku.Shizuku
 
 class MainActivity : ComponentActivity() {
 
+    private fun applyLanguage() {
+        val lang = (application as BetterAIChatApp).container.settings.getLanguage()
+        val locale = when (lang) {
+            com.betteraichat.core.storage.AppLanguage.ZH -> java.util.Locale("zh")
+            com.betteraichat.core.storage.AppLanguage.EN -> java.util.Locale("en")
+            else -> null
+        }
+        if (locale != null) {
+            val config = android.content.res.Configuration(resources.configuration)
+            config.setLocale(locale)
+            resources.updateConfiguration(config, resources.displayMetrics)
+        }
+    }
+
     private val shizukuListener =
         rikka.shizuku.Shizuku.OnRequestPermissionResultListener { requestCode, result ->
             if (requestCode == ShizukuManager.REQUEST_CODE) {
@@ -23,6 +37,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        applyLanguage()
         enableEdgeToEdge()
         Shizuku.addRequestPermissionResultListener(shizukuListener)
         handleShareIntent(intent)

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">BetterAIChat</string>
+    <string name="accessibility_service_description">Lets the AI type, tap, swipe and press system keys on screen through the accessibility service (used in Build/Max mode).</string>
+    <string name="settings_provider">Providers &amp; Models</string>
+    <string name="settings_provider_sub">API Key · Base URL · Model · Test</string>
+    <string name="settings_conversation">Chat</string>
+    <string name="settings_conversation_sub">Default mode · Appearance · Auto read-aloud</string>
+    <string name="settings_skills">Skills</string>
+    <string name="settings_skills_sub">Import · Manage SKILL.md</string>
+    <string name="settings_permissions">Permissions</string>
+    <string name="settings_permissions_sub">Shizuku · System access</string>
+    <string name="settings_tasks">Scheduled tasks</string>
+    <string name="settings_tasks_sub">View · Cancel repeats</string>
+    <string name="settings_automations">Automations</string>
+    <string name="settings_automations_sub">Triggers · Auto tools</string>
+    <string name="settings_stats">Usage stats</string>
+    <string name="settings_stats_sub">Sessions · Messages · Tokens · Tools</string>
+    <string name="settings_memories">Memory</string>
+    <string name="settings_memories_sub">AI-distilled facts · Snapshots</string>
+    <string name="settings_developer">Developer</string>
+    <string name="settings_developer_sub">About · Repo · Contact</string>
+    <string name="input_hint">Type a message…</string>
+    <string name="chat_analyze_screen">Analyze screen</string>
+    <string name="chat_save_skill">Save as skill</string>
+    <string name="chat_distill_memory">Distill important info</string>
+    <string name="chat_import_recent">Import recent chat</string>
+    <string name="chat_compress">Compress context</string>
+    <string name="chat_export">Export chat</string>
+    <string name="chat_clear">Clear context</string>
+    <string name="chat_select_model">Select model</string>
+</resources>
