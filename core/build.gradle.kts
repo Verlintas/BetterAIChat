@@ -34,4 +34,8 @@ dependencies {
     api(libs.room.ktx)
     api(libs.snakeyaml)
     ksp(libs.room.compiler)
+    testImplementation(libs.junit)
+    testImplementation(libs.mockito.core)
 }
+
+

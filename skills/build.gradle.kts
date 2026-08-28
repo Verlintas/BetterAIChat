@@ -31,4 +31,8 @@ dependencies {
     api(libs.shizuku)
     api(libs.shizuku.provider)
     api(libs.zxing.core)
+    testImplementation(libs.junit)
+    testImplementation(libs.mockito.core)
 }
+
+

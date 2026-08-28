@@ -66,6 +66,11 @@ private class Parser(private val input: String) {
         while (true) {
             skipSpaces()
             when {
+                peek() == '^' -> {
+                    pos++
+                    val right = parseTerm()
+                    value = Math.pow(value, right)
+                }
                 peek() == '*' -> { pos++; value *= parseFactor() }
                 peek() == '/' -> {
                     pos++
@@ -94,12 +99,6 @@ private class Parser(private val input: String) {
                 if (peek() != ')') throw IllegalArgumentException("缺少右括号")
                 pos++
                 v
-            }
-            peek() == '^' -> {
-                pos++
-                val base = parseFactor()
-                val exp = parseFactor()
-                Math.pow(base, exp)
             }
             else -> parseNumber()
         }
