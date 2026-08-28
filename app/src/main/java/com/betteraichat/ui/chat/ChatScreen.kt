@@ -266,6 +266,13 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
         }
     }
 
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.isScrollInProgress }
+            .collect { scrolling ->
+                if (scrolling) forceFollow = false
+            }
+    }
+
     LaunchedEffect(state.notification) {
         state.notification?.let {
             snackbarHostState.showSnackbar(it)
@@ -490,14 +497,11 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                     onClick = {
                         forceFollow = true
                         scope.launch {
-                            repeat(12) {
-                                runCatching {
-                                    listState.scrollToItem(
-                                        listState.layoutInfo.totalItemsCount - 1,
-                                        Int.MAX_VALUE
-                                    )
-                                }
-                                delay(100)
+                            runCatching {
+                                listState.animateScrollToItem(
+                                    listState.layoutInfo.totalItemsCount - 1,
+                                    Int.MAX_VALUE
+                                )
                             }
                         }
                     },

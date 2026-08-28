@@ -518,7 +518,14 @@ class ChatViewModel(
         runJob = currentJob
     }
 
-    private fun smartError(raw: String): String = when {        raw.contains("401") -> "API Key 无效或已过期，请到设置页检查（HTTP 401）"
+    private fun smartError(raw: String): String = when {
+        raw.contains("image", ignoreCase = true) &&
+            (raw.contains("not support", ignoreCase = true) ||
+                raw.contains("unsupported", ignoreCase = true) ||
+                raw.contains("does not", ignoreCase = true) ||
+                raw.contains("cannot process", ignoreCase = true)) ->
+            "当前模型不支持图片输入。请切换到支持视觉的模型，或点「重试」自动移除图片重发"
+        raw.contains("401") -> "API Key 无效或已过期，请到设置页检查（HTTP 401）"
         raw.contains("403") -> "API Key 无权限访问该资源（HTTP 403）"
         raw.contains("404") -> "模型不存在或 Base URL 不正确，请到设置页检测连接（HTTP 404）"
         raw.contains("429") -> "请求过于频繁或额度不足，请稍后重试（HTTP 429）"
@@ -972,7 +979,13 @@ class ChatViewModel(
                     return@launch
                 }
             _state.update { it.copy(error = null) }
+            val hadAttachments = runCatching {
+                last.attachmentsJson != null && last.attachmentsJson!!.isNotBlank()
+            }.getOrDefault(false)
             sendWithContent(last.content, emptyList())
+            if (hadAttachments) {
+                _state.update { it.copy(notification = "已重发消息（图片已移除，当前模型可能不支持图片）") }
+            }
         }
     }
 
