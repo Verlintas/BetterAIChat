@@ -790,18 +790,23 @@ class ChatViewModel(
         }
     }
 
-    fun compressContext() {
+    fun compressContext(level: Int = 2) {
         if (currentConversationId <= 0 || _state.value.isRunning) return
         viewModelScope.launch {
             val cid = currentConversationId
             val history = repository.getHistory(cid)
-            if (history.size < 6) {
-                _state.update { it.copy(error = "消息太少（少于 6 条），暂不需要压缩") }
+            val minKeep = if (level == 1) 6 else 0
+            if (history.size < minKeep + 2) {
+                _state.update { it.copy(error = "消息太少，暂不需要压缩") }
                 return@launch
             }
             _state.update { it.copy(processing = true) }
             try {
-                val keepCount = 2
+                val keepCount = when (level) {
+                    1 -> 6
+                    3 -> 0
+                    else -> 2
+                }
                 val toSummarize = history.dropLast(keepCount)
                 val keep = history.takeLast(keepCount)
                 val snapshotText = history.takeLast(6)
@@ -906,27 +911,43 @@ class ChatViewModel(
         val sb = StringBuilder()
         sb.appendLine("# ${_state.value.title}")
         sb.appendLine()
+        sb.appendLine("> 由 BetterAIChat 导出 · 可导入任意 AI 对话工具继续阅读")
+        sb.appendLine()
+        val timeFmt = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
         dbMessages.forEach { msg ->
+            val time = if (msg.createdAt > 0) timeFmt.format(java.util.Date(msg.createdAt)) else ""
             when (msg.role) {
                 ChatRole.USER -> {
                     sb.appendLine("## 用户")
+                    if (time.isNotBlank()) sb.appendLine("> $time")
                     if (msg.attachments.isNotEmpty()) {
-                        sb.appendLine("（附件：${msg.attachments.joinToString { a -> a.name }}）")
+                        sb.appendLine("> 附件：${msg.attachments.joinToString { a -> a.name }}")
                     }
+                    sb.appendLine()
                     sb.appendLine(msg.content)
                     sb.appendLine()
                 }
                 ChatRole.ASSISTANT -> {
                     sb.appendLine("## AI")
+                    if (time.isNotBlank()) sb.appendLine("> $time")
+                    sb.appendLine()
                     sb.appendLine(msg.content)
                     msg.toolCalls.forEach { call ->
-                        sb.appendLine("- 工具 [${call.name}]：${call.result ?: ""}")
+                        sb.appendLine()
+                        sb.appendLine("> 调用工具：**${call.name}**")
+                        sb.appendLine("> 参数：`${call.arguments.take(200)}`")
+                        val callResult = call.result
+                        if (!callResult.isNullOrBlank()) {
+                            sb.appendLine("> 结果：${callResult.take(500)}")
+                        }
                     }
                     sb.appendLine()
                 }
                 else -> Unit
             }
         }
+        sb.appendLine("---")
+        sb.appendLine("> 导出时间：${timeFmt.format(java.util.Date())}")
         return sb.toString()
     }
 

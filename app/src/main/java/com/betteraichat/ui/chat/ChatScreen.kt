@@ -72,6 +72,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.InputChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -220,18 +221,24 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
             if (total == 0) return@derivedStateOf true
             val lastVisible = info.visibleItemsInfo.lastOrNull()
                 ?: return@derivedStateOf false
-            lastVisible.index >= total - 1 &&
-                lastVisible.offset + lastVisible.size >= info.viewportEndOffset - 160
+            lastVisible.index >= total - 2 ||
+                (lastVisible.index >= total - 1 &&
+                    lastVisible.offset + lastVisible.size >= info.viewportEndOffset - 200)
         }
+    }
+
+    var wasAtBottom by remember { mutableStateOf(true) }
+    LaunchedEffect(listState) {
+        snapshotFlow { shouldAutoScroll }.collect { wasAtBottom = it }
     }
 
     var initialScrollDone by remember { mutableStateOf(false) }
     var forceFollow by remember { mutableStateOf(false) }
     val streaming = state.messages.lastOrNull()?.streaming == true
 
-    LaunchedEffect(streaming, shouldAutoScroll, forceFollow, initialScrollDone) {
+    LaunchedEffect(streaming, shouldAutoScroll, forceFollow, wasAtBottom, initialScrollDone) {
         if (state.messages.isEmpty()) return@LaunchedEffect
-        if (initialScrollDone && !forceFollow && !shouldAutoScroll) return@LaunchedEffect
+        if (initialScrollDone && !forceFollow && !wasAtBottom) return@LaunchedEffect
         var attempts = 0
         while (attempts++ < 60) {
             val info = listState.layoutInfo
@@ -556,18 +563,29 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
     }
 
     if (showCompressConfirm) {
+        var compressLevel by remember { mutableStateOf(2) }
         AlertDialog(
             onDismissRequest = { showCompressConfirm = false },
             title = { Text("压缩上下文？") },
             text = {
-                Text(
-                    "将总结之前对话并保留最近一轮，AI 将基于摘要继续。适合长对话节省上下文。",
-                    style = MaterialTheme.typography.bodyMedium
-                )
+                Column {
+                    Text(
+                        "将总结之前的对话，AI 基于摘要继续。选择压缩程度：",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    listOf(1 to "轻度：保留最近 6 条对话", 2 to "中度：保留最近 2 条对话", 3 to "深度：全部总结为摘要").forEach { (lv, label) ->
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                            RadioButton(selected = compressLevel == lv, onClick = { compressLevel = lv })
+                            Text(label, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                }
             },
             confirmButton = {
                 TextButton(onClick = {
-                    vm.compressContext()
+                    showCompressConfirm = false
+                    vm.compressContext(compressLevel)
                     showCompressConfirm = false
                 }) { Text("压缩") }
             },
