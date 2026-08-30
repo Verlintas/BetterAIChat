@@ -735,7 +735,7 @@ private fun SkillsSection(
                             skills = container.skillRepository.loadAll()
                             scope.launch { snackbar.showSnackbar("Skill「${skill.name}」已删除") }
                         }) {
-                            Text("删除", color = MaterialTheme.colorScheme.error)
+                            Text(stringResource(com.betteraichat.R.string.memories_delete), color = MaterialTheme.colorScheme.error)
                         }
                     }
                 }
@@ -1040,7 +1040,7 @@ private fun RepeatTasksSection(
                             scope.launch { container.db.repeatTaskDao().deleteByRequestCode(task.requestCode) }
                             scope.launch { snackbar.showSnackbar("定时任务已删除") }
                         }) {
-                            Text("删除", color = MaterialTheme.colorScheme.error)
+                            Text(stringResource(com.betteraichat.R.string.memories_delete), color = MaterialTheme.colorScheme.error)
                         }
                     }
                 }
@@ -1228,7 +1228,7 @@ private fun AutomationsSection(
                                 snackbar.showSnackbar("自动化「${a.name}」已删除")
                             }
                         }) {
-                            Text("删除", color = MaterialTheme.colorScheme.error)
+                            Text(stringResource(com.betteraichat.R.string.memories_delete), color = MaterialTheme.colorScheme.error)
                         }
                     }
                 }
@@ -1292,7 +1292,7 @@ private fun DeveloperSection(
 
         HorizontalDivider()
 
-        Text("开发者信息", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text(stringResource(com.betteraichat.R.string.dev_repo_info), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         var devInfo by remember { mutableStateOf<DeveloperInfo?>(null) }
         var devLoading by remember { mutableStateOf(true) }
         LaunchedEffect(Unit) {
@@ -1303,7 +1303,7 @@ private fun DeveloperSection(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                 Spacer(Modifier.width(10.dp))
-                Text("正在获取开发者信息…", style = MaterialTheme.typography.bodySmall)
+                Text(stringResource(com.betteraichat.R.string.dev_loading), style = MaterialTheme.typography.bodySmall)
             }
         } else if (devInfo != null) {
             val info = devInfo!!
@@ -1470,9 +1470,9 @@ private fun DeveloperSection(
                 enter = fadeIn(tween(500, delayMillis = 150)) + slideInVertically(tween(500, delayMillis = 150)) { it / 6 }
             ) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    StatChip("${info.followers}", "关注者", info.followers)
-                    StatChip("${info.following}", "正在关注", info.following)
-                    StatChip("${info.publicRepos}", "公开仓库", info.publicRepos)
+                    StatChip("${info.followers}", stringResource(com.betteraichat.R.string.dev_followers), info.followers)
+                    StatChip("${info.following}", stringResource(com.betteraichat.R.string.dev_following), info.following)
+                    StatChip("${info.publicRepos}", stringResource(com.betteraichat.R.string.dev_repos), info.publicRepos)
                 }
             }
             Spacer(Modifier.height(4.dp))
@@ -1492,7 +1492,7 @@ private fun DeveloperSection(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                "项目最新版本 ${info.latestVersion}",
+                                stringResource(com.betteraichat.R.string.dev_latest_release, info.latestVersion),
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.Bold
                             )
@@ -1513,7 +1513,7 @@ private fun DeveloperSection(
             }
         } else {
             Text(
-                "无法获取开发者信息（网络不可用）。可访问 github.com/Verlintas 查看。",
+                stringResource(com.betteraichat.R.string.dev_unavailable),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -1795,6 +1795,7 @@ private fun MemoriesSection(
     scope: kotlinx.coroutines.CoroutineScope,
     snackbar: SnackbarHostState
 ) {
+    val context = LocalContext.current
     var memories by remember { mutableStateOf(emptyList<com.betteraichat.core.db.MemoryEntity>()) }
     var snapshots by remember { mutableStateOf(emptyList<com.betteraichat.core.db.MemoryEntity>()) }
     LaunchedEffect(Unit) {
@@ -1807,19 +1808,19 @@ private fun MemoriesSection(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text(
-            "长期记忆：AI 在对话中自动提炼你的重要信息（姓名、偏好、约定等），并在每次对话时参考。可在对话菜单手动触发「提炼重要信息」。",
+            stringResource(com.betteraichat.R.string.memories_intro),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         if (memories.isEmpty()) {
             Text(
-                "暂无记忆。在对话中对 AI 说「记住我叫 xx」或使用 ⋮ 菜单 → 提炼重要信息。",
+                stringResource(com.betteraichat.R.string.memories_empty),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         } else {
             Text(
-                "共 ${memories.size} 条记忆",
+                stringResource(com.betteraichat.R.string.memories_count, memories.size),
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.Bold
             )
@@ -1851,20 +1852,20 @@ private fun MemoriesSection(
                             scope.launch {
                                 container.db.memoryDao().delete(m.id)
                                 memories = memories.filter { it.id != m.id }
-                                snackbar.showSnackbar("已删除记忆")
+                                snackbar.showSnackbar(context.getString(com.betteraichat.R.string.memories_deleted))
                             }
                         }) {
-                            Text("删除", color = MaterialTheme.colorScheme.error)
+                            Text(stringResource(com.betteraichat.R.string.memories_delete), color = MaterialTheme.colorScheme.error)
                         }
                     }
                 }
             }
         }
         HorizontalDivider()
-        Text("对话快照", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text(stringResource(com.betteraichat.R.string.memories_snapshots_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         if (snapshots.isEmpty()) {
             Text(
-                "无快照。压缩上下文时自动保存最近对话，可在聊天菜单「导入最近对话」恢复。",
+                stringResource(com.betteraichat.R.string.memories_snapshots_empty),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -1880,7 +1881,7 @@ private fun MemoriesSection(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            "压缩前保存 · ${snap.content.length} 字符",
+                            stringResource(com.betteraichat.R.string.memories_snapshot_item, snap.content.length),
                             modifier = Modifier.weight(1f),
                             style = MaterialTheme.typography.bodySmall
                         )
@@ -1888,10 +1889,10 @@ private fun MemoriesSection(
                             scope.launch {
                                 container.db.memoryDao().delete(snap.id)
                                 snapshots = snapshots.filter { it.id != snap.id }
-                                snackbar.showSnackbar("已删除快照")
+                                snackbar.showSnackbar(context.getString(com.betteraichat.R.string.memories_snapshot_deleted))
                             }
                         }) {
-                            Text("删除", color = MaterialTheme.colorScheme.error)
+                            Text(stringResource(com.betteraichat.R.string.memories_delete), color = MaterialTheme.colorScheme.error)
                         }
                     }
                 }

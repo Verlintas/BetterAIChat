@@ -46,6 +46,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -314,7 +315,7 @@ fun MessageItem(
                         onClick = { onOpenLink(link) }
                     ) {
                         Text(
-                            "打开链接：${link.take(40)}",
+                            stringResource(com.betteraichat.R.string.chat_open_link, link.take(40)),
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.primary,
@@ -482,7 +483,7 @@ private fun UserBubble(
                                 }
                             } else {
                                 Text(
-                                    if (att.isImage) "图片：${att.name}" else "文件：${att.name}",
+                                    if (att.isImage) stringResource(com.betteraichat.R.string.chat_image_att, att.name) else stringResource(com.betteraichat.R.string.chat_file_att, att.name),
                                     style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
                                     maxLines = 1,
@@ -593,7 +594,7 @@ private fun ToolCallCard(call: ToolCall, stepNumber: Int = 0) {
                         onClick = { expanded = true },
                         modifier = Modifier.padding(top = 2.dp)
                     ) {
-                        Text("展开全部（${result.length} 字）", style = MaterialTheme.typography.labelSmall)
+                        Text(stringResource(com.betteraichat.R.string.chat_expand_all, result.length), style = MaterialTheme.typography.labelSmall)
                     }
                 }
                 if (expanded) {
@@ -601,7 +602,7 @@ private fun ToolCallCard(call: ToolCall, stepNumber: Int = 0) {
                         onClick = { expanded = false },
                         modifier = Modifier.padding(top = 2.dp)
                     ) {
-                        Text("收起", style = MaterialTheme.typography.labelSmall)
+                        Text(stringResource(com.betteraichat.R.string.chat_collapse), style = MaterialTheme.typography.labelSmall)
                     }
                 }
             }
@@ -653,7 +654,7 @@ private fun HighlightedCodeCard(code: String, onCopy: () -> Unit) {
         Column(modifier = Modifier.padding(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    "代码",
+                    stringResource(com.betteraichat.R.string.chat_code),
                     style = MaterialTheme.typography.labelSmall,
                     color = Color(0xFF9CDCFE)
                 )
@@ -762,7 +763,7 @@ private fun ThinkingDots() {
             )
         }
         Spacer(Modifier.width(4.dp))
-        Text("AI 思考中", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(stringResource(com.betteraichat.R.string.chat_thinking), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -789,16 +790,16 @@ private fun QuickActionBar(
         ) {
             Row(modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)) {
                 TextButton(onClick = onCopy, contentPadding = PaddingValues(horizontal = 6.dp)) {
-                    Text("复制", style = MaterialTheme.typography.labelMedium)
+                    Text(stringResource(com.betteraichat.R.string.chat_copy), style = MaterialTheme.typography.labelMedium)
                 }
                 TextButton(onClick = onSpeak, contentPadding = PaddingValues(horizontal = 6.dp)) {
-                    Text("朗读", style = MaterialTheme.typography.labelMedium)
+                    Text(stringResource(com.betteraichat.R.string.chat_speak), style = MaterialTheme.typography.labelMedium)
                 }
                 TextButton(onClick = onStar, contentPadding = PaddingValues(horizontal = 6.dp)) {
-                    Text("收藏", style = MaterialTheme.typography.labelMedium)
+                    Text(stringResource(com.betteraichat.R.string.chat_star), style = MaterialTheme.typography.labelMedium)
                 }
                 TextButton(onClick = onDelete, contentPadding = PaddingValues(horizontal = 6.dp)) {
-                    Text("删除", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error)
+                    Text(stringResource(com.betteraichat.R.string.chat_delete), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error)
                 }
             }
         }

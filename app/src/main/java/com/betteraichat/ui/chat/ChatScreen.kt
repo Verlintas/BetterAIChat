@@ -461,7 +461,10 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                                 )
                             }
                         },
-                        onCopied = { scope.launch { snackbarHostState.showSnackbar("已复制到剪贴板") } },
+                        onCopied = {
+                            val msg = context.getString(com.betteraichat.R.string.chat_copied)
+                            scope.launch { snackbarHostState.showSnackbar(msg) }
+                        },
                         onRetry = { vm.retryLast() },
                         onViewImage = { viewImageB64 = it }
                     )
@@ -477,16 +480,16 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    "出错了：$error",
+                                    stringResource(com.betteraichat.R.string.chat_error_prefix) + error,
                                     modifier = Modifier.weight(1f),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onErrorContainer
                                 )
                                 TextButton(onClick = { vm.retryLast() }) {
-                                    Text("重试", color = MaterialTheme.colorScheme.onErrorContainer)
+                                    Text(stringResource(com.betteraichat.R.string.chat_retry), color = MaterialTheme.colorScheme.onErrorContainer)
                                 }
                                 TextButton(onClick = { vm.dismissError() }) {
-                                    Text("忽略", color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.7f))
+                                    Text(stringResource(com.betteraichat.R.string.chat_ignore), color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.7f))
                                 }
                             }
                         }
@@ -519,7 +522,7 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer
                 ) {
-                    Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "回到底部")
+                    Icon(Icons.Filled.KeyboardArrowDown, contentDescription = stringResource(com.betteraichat.R.string.chat_back_to_bottom))
                 }
             }
         }
@@ -566,15 +569,15 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
         var compressLevel by remember { mutableStateOf(2) }
         AlertDialog(
             onDismissRequest = { showCompressConfirm = false },
-            title = { Text("压缩上下文？") },
+            title = { Text(stringResource(com.betteraichat.R.string.chat_compress_title)) },
             text = {
                 Column {
                     Text(
-                        "将总结之前的对话，AI 基于摘要继续。选择压缩程度：",
+                        stringResource(com.betteraichat.R.string.chat_compress_body),
                         style = MaterialTheme.typography.bodyMedium
                     )
                     Spacer(Modifier.height(8.dp))
-                    listOf(1 to "轻度：保留最近 6 条对话", 2 to "中度：保留最近 2 条对话", 3 to "深度：全部总结为摘要").forEach { (lv, label) ->
+                    listOf(1 to stringResource(com.betteraichat.R.string.chat_compress_light), 2 to stringResource(com.betteraichat.R.string.chat_compress_medium), 3 to stringResource(com.betteraichat.R.string.chat_compress_deep)).forEach { (lv, label) ->
                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                             RadioButton(selected = compressLevel == lv, onClick = { compressLevel = lv })
                             Text(label, style = MaterialTheme.typography.bodyMedium)
@@ -590,7 +593,7 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                 }) { Text("压缩") }
             },
             dismissButton = {
-                TextButton(onClick = { showCompressConfirm = false }) { Text("取消") }
+                TextButton(onClick = { showCompressConfirm = false }) { Text(stringResource(com.betteraichat.R.string.cancel)) }
             }
         )
     }
@@ -598,7 +601,7 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
     editingMessage?.let { msg ->
         AlertDialog(
             onDismissRequest = { editingMessage = null },
-            title = { Text("编辑消息") },
+            title = { Text(stringResource(com.betteraichat.R.string.chat_edit_msg)) },
             text = {
                 OutlinedTextField(
                     value = editText,
@@ -613,7 +616,7 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                 }) { Text("重发") }
             },
             dismissButton = {
-                TextButton(onClick = { editingMessage = null }) { Text("取消") }
+                TextButton(onClick = { editingMessage = null }) { Text(stringResource(com.betteraichat.R.string.cancel)) }
             }
         )
     }
@@ -621,7 +624,7 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
     if (showClearContext) {
         AlertDialog(
             onDismissRequest = { showClearContext = false },
-            title = { Text("清除上下文？") },
+            title = { Text(stringResource(com.betteraichat.R.string.chat_clear_confirm_title)) },
             text = {
                 Text(
                     "将删除本会话全部消息，AI 将不再记得之前的对话内容（会话本身会保留）。",
@@ -635,7 +638,7 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                 }) { Text("清除") }
             },
             dismissButton = {
-                TextButton(onClick = { showClearContext = false }) { Text("取消") }
+                TextButton(onClick = { showClearContext = false }) { Text(stringResource(com.betteraichat.R.string.cancel)) }
             }
         )
     }
@@ -643,7 +646,7 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
     if (showMaxConfirm) {
         AlertDialog(
             onDismissRequest = { showMaxConfirm = false },
-            title = { Text("切换到 Max 模式？") },
+            title = { Text(stringResource(com.betteraichat.R.string.chat_max_confirm_title)) },
             text = {
                 Column {
                     Text(
@@ -665,7 +668,7 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                 }) { Text("切换") }
             },
             dismissButton = {
-                TextButton(onClick = { showMaxConfirm = false }) { Text("取消") }
+                TextButton(onClick = { showMaxConfirm = false }) { Text(stringResource(com.betteraichat.R.string.cancel)) }
             }
         )
     }
@@ -1014,7 +1017,7 @@ private fun InputBar(
                         color = MaterialTheme.colorScheme.onPrimary
                     )
                 } else {
-                    Icon(Icons.Filled.Send, contentDescription = "发送")
+                    Icon(Icons.Filled.Send, contentDescription = stringResource(com.betteraichat.R.string.chat_send))
                 }
             }
         }
@@ -1101,10 +1104,10 @@ private fun ModelSelector(
                 TextButton(onClick = {
                     onSelect(customInput.trim())
                     showCustom = false
-                }) { Text("确定") }
+                }) { Text(stringResource(com.betteraichat.R.string.confirm)) }
             },
             dismissButton = {
-                TextButton(onClick = { showCustom = false }) { Text("取消") }
+                TextButton(onClick = { showCustom = false }) { Text(stringResource(com.betteraichat.R.string.cancel)) }
             }
         )
     }
