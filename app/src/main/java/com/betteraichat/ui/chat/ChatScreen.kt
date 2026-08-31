@@ -229,18 +229,32 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
 
     var wasAtBottom by remember { mutableStateOf(true) }
     LaunchedEffect(listState) {
-        snapshotFlow { shouldAutoScroll }.collect { wasAtBottom = it }
+        snapshotFlow { listState.isScrollInProgress }
+            .collect { scrolling ->
+                if (scrolling) {
+                    wasAtBottom = false
+                } else {
+                    val info = listState.layoutInfo
+                    val last = info.visibleItemsInfo.lastOrNull { it.index == info.totalItemsCount - 1 }
+                    val pinned = last != null && last.offset + last.size >= info.viewportEndOffset - 40
+                    if (pinned) wasAtBottom = true
+                }
+            }
     }
 
     var initialScrollDone by remember { mutableStateOf(false) }
     var forceFollow by remember { mutableStateOf(false) }
     val streaming = state.messages.lastOrNull()?.streaming == true
 
-    LaunchedEffect(streaming, shouldAutoScroll, forceFollow, wasAtBottom, initialScrollDone) {
+    LaunchedEffect(streaming, forceFollow, wasAtBottom, initialScrollDone) {
         if (state.messages.isEmpty()) return@LaunchedEffect
         if (initialScrollDone && !forceFollow && !wasAtBottom) return@LaunchedEffect
         var attempts = 0
         while (attempts++ < 60) {
+            if (listState.isScrollInProgress) {
+                forceFollow = false
+                break
+            }
             val info = listState.layoutInfo
             val total = info.totalItemsCount
             if (total > 0) {
@@ -498,7 +512,7 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
             }
             }
             AnimatedVisibility(
-                visible = !shouldAutoScroll && initialScrollDone && state.messages.isNotEmpty(),
+                visible = !wasAtBottom && initialScrollDone && state.messages.isNotEmpty(),
                 enter = androidx.compose.animation.fadeIn() +
                     androidx.compose.animation.scaleIn(initialScale = 0.6f),
                 exit = androidx.compose.animation.fadeOut() +
@@ -506,7 +520,6 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
             ) {
                 FloatingActionButton(
                     onClick = {
-                        forceFollow = true
                         scope.launch {
                             runCatching {
                                 listState.animateScrollToItem(
@@ -514,6 +527,7 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                                     Int.MAX_VALUE
                                 )
                             }
+                            wasAtBottom = true
                         }
                     },
                     modifier = Modifier
