@@ -176,6 +176,7 @@ class OpenAiProvider : ChatProvider {
                 val toolAcc = mutableMapOf<Int, ToolAcc>()
                 var callsEmitted = false
                 var completed = false
+                var doneEmitted = false
                 SseParser.parse(body) { _, data ->
                     if (data == "[DONE]") {
                         if (!callsEmitted) {
@@ -183,6 +184,7 @@ class OpenAiProvider : ChatProvider {
                             emit(StreamEvent.ToolCallsDone(toolAcc.toToolCalls()))
                         }
                         emit(StreamEvent.Done)
+                        doneEmitted = true
                         completed = true
                         return@parse false
                     }
@@ -216,7 +218,7 @@ class OpenAiProvider : ChatProvider {
                                 arg == acc.args -> Unit
                                 arg.length > acc.args.length && arg.startsWith(acc.args) -> acc.args = arg
                                 acc.args.length > arg.length && acc.args.startsWith(arg) -> Unit
-                                else -> acc.args += arg
+                                arg.length > acc.args.length -> acc.args = arg
                             }
                         }
                     }
@@ -233,7 +235,9 @@ class OpenAiProvider : ChatProvider {
                     if (!callsEmitted) {
                         emit(StreamEvent.ToolCallsDone(toolAcc.toToolCalls()))
                     }
-                    emit(StreamEvent.Done)
+                    if (!doneEmitted) {
+                        emit(StreamEvent.Done)
+                    }
                 }
             }
         } finally {

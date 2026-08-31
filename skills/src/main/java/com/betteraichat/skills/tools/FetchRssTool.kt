@@ -28,7 +28,7 @@ class FetchRssTool : DeviceTool {
             runCatching {
                 val url = arguments["url"]?.jsonPrimitive?.content ?: return@runCatching "url 参数无效"
                 val limit = (arguments["limit"]?.jsonPrimitive?.content?.toIntOrNull() ?: 10).coerceIn(1, 20)
-                val doc = Jsoup.connect(url)
+                val doc = Jsoup.connect(url).maxBodySize(2 * 1024 * 1024)
                     .timeout(15_000)
                     .userAgent("BetterAIChat/0.19 RSS reader")
                     .get()

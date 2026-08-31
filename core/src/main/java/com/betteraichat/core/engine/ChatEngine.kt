@@ -141,6 +141,7 @@ class ChatEngine(
                         val deferred = CompletableDeferred<Boolean>()
                         pendingConfirms[call.id] = deferred
                         var emitFailed = false
+                        var timedOut = false
                         val allow = if (!confirmRequestsFlow.tryEmit(call)) {
                             emitFailed = true
                             pendingConfirms.remove(call.id)
@@ -151,6 +152,7 @@ class ChatEngine(
                             } catch (e: CancellationException) {
                                 throw e
                             } catch (e: Exception) {
+                                timedOut = true
                                 false
                             } finally {
                                 pendingConfirms.remove(call.id)
@@ -158,10 +160,10 @@ class ChatEngine(
                         }
                         if (!allow) {
                             status = ToolCallStatus.REJECTED
-                            resultText = if (emitFailed) {
-                                "确认请求未送达，已拒绝该工具调用"
-                            } else {
-                                "用户拒绝了该工具调用"
+                            resultText = when {
+                                emitFailed -> "确认请求未送达，已拒绝该工具调用"
+                                timedOut -> "用户未在 5 分钟内确认，已自动跳过该工具调用"
+                                else -> "用户拒绝了该工具调用"
                             }
                         } else {
                             val (s, r) = executeTool(call, spec) { emit(it) }

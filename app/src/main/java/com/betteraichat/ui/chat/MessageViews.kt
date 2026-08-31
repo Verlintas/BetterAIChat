@@ -65,25 +65,9 @@ import java.util.Locale
 
 private val TIME_FORMAT = SimpleDateFormat("HH:mm", Locale.getDefault())
 
-private fun normalizeMarkdown(content: String): String {
-    val tableFixed = content.lines().map { line ->
-        if (line.contains('｜') && line.count { it == '｜' } >= 2) {
-            line.replace('｜', '|')
-        } else line
-    }.joinToString("\n")
-    return tableFixed
-        .replace(Regex("""\*\*\*([^*]+)\*\*\*"""), "**$1**")
-        .replace(Regex("""__([^_]+)__"""), "**$1**")
-}
 
-private val CODE_BLOCK_REGEX = Regex("```[^`\\n]*\\n([\\s\\S]*?)```")
-private val LINK_REGEX = Regex("\\[([^\\]]*)\\]\\(((?:https?|ftp)://[^\\s)]+)\\)")
 
-private fun extractCodeBlocks(content: String): List<String> =
-    CODE_BLOCK_REGEX.findAll(content).map { it.groupValues[1].trim() }.filter { it.isNotEmpty() }.toList()
 
-private fun extractLinks(content: String): List<String> =
-    LINK_REGEX.findAll(content).map { it.groupValues[2].trimEnd(')') }.distinct().toList()
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -193,7 +177,9 @@ fun MessageItem(
                         } else 1f
                         Box(modifier = Modifier.alpha(blinkAlpha)) {
                             Markdown(
-                                normalizeMarkdown(stripCodeBlocks(msg.content)),
+                                com.betteraichat.core.chat.MarkdownNormalizer.normalize(
+                                com.betteraichat.core.chat.MarkdownNormalizer.stripCodeBlocks(msg.content)
+                            ),
                                 modifier = Modifier.fillMaxWidth(),
                                 typography = markdownTypography(
                                     h1 = androidx.compose.ui.text.TextStyle(
@@ -292,7 +278,7 @@ fun MessageItem(
                     )
                 }
             }
-            val codeBlocks = extractCodeBlocks(msg.content)
+            val codeBlocks = com.betteraichat.core.chat.MarkdownNormalizer.extractCodeBlocks(msg.content)
             if (codeBlocks.isNotEmpty() && !msg.streaming) {
                 codeBlocks.forEach { code ->
                     Spacer(Modifier.size(6.dp))
@@ -305,7 +291,7 @@ fun MessageItem(
                     )
                 }
             }
-            val links = extractLinks(msg.content)
+            val links = com.betteraichat.core.chat.MarkdownNormalizer.extractLinks(msg.content)
             if (links.isNotEmpty() && !msg.streaming) {
                 Spacer(Modifier.size(4.dp))
                 links.take(3).forEach { link ->
@@ -638,11 +624,6 @@ private fun StatusBadge(status: ToolCallStatus) {
     }
 }
 
-
-private val CODE_BLOCK_STRIP_REGEX = Regex("```[^`\n]*\n[\\s\\S]*?```")
-
-private fun stripCodeBlocks(content: String): String =
-    CODE_BLOCK_STRIP_REGEX.replace(content, "````")
 
 @Composable
 private fun HighlightedCodeCard(code: String, onCopy: () -> Unit) {

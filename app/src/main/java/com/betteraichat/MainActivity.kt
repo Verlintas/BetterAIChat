@@ -12,17 +12,38 @@ import rikka.shizuku.Shizuku
 
 class MainActivity : ComponentActivity() {
 
-    private fun applyLanguage() {
+    private fun currentLocale(): java.util.Locale? {
         val lang = (application as BetterAIChatApp).container.settings.getLanguage()
-        val locale = when (lang) {
+        return when (lang) {
             com.betteraichat.core.storage.AppLanguage.ZH -> java.util.Locale("zh")
             com.betteraichat.core.storage.AppLanguage.EN -> java.util.Locale("en")
             else -> null
         }
-        if (locale != null) {
-            val config = android.content.res.Configuration(resources.configuration)
-            config.setLocale(locale)
-            resources.updateConfiguration(config, resources.displayMetrics)
+    }
+
+    override fun attachBaseContext(newBase: android.content.Context) {
+        val locale = runCatching { (newBase.applicationContext as BetterAIChatApp).container.settings.getLanguage() }
+            .getOrDefault(com.betteraichat.core.storage.AppLanguage.SYSTEM)
+        val loc = when (locale) {
+            com.betteraichat.core.storage.AppLanguage.ZH -> java.util.Locale("zh")
+            com.betteraichat.core.storage.AppLanguage.EN -> java.util.Locale("en")
+            else -> null
+        }
+        val base = if (loc != null && android.os.Build.VERSION.SDK_INT < 33) {
+            val config = android.content.res.Configuration(newBase.resources.configuration)
+            config.setLocale(loc)
+            newBase.createConfigurationContext(config)
+        } else newBase
+        super.attachBaseContext(base)
+    }
+
+    private fun applyLanguage() {
+        val locale = currentLocale() ?: return
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            runCatching {
+                val lm = getSystemService(android.app.LocaleManager::class.java)
+                lm.applicationLocales = android.os.LocaleList(locale)
+            }
         }
     }
 

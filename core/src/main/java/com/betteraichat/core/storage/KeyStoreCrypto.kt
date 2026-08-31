@@ -62,6 +62,10 @@ class KeyStoreCrypto(context: Context) {
         }
     }
 
+    fun remove(name: String) {
+        prefs.edit().remove(name).apply()
+    }
+
     fun get(name: String): String {
         val v = prefs.getString(name, null) ?: return ""
         return try {

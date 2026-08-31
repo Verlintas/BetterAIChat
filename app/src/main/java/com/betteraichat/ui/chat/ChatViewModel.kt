@@ -96,7 +96,7 @@ class ChatViewModel(
     val state = _state.asStateFlow()
 
     private var dbMessages: List<UiMessage> = emptyList()
-    private var streaming: UiMessage? = null
+    @Volatile private var streaming: UiMessage? = null
     private var currentConversationId: Long = conversationId
     private var runJob: Job? = null
     private var streamTickerJob: Job? = null
@@ -109,6 +109,7 @@ class ChatViewModel(
     private var voiceInputHelper: com.betteraichat.tools.SpeechInputHelper? = null
     private var voiceListening = false
     private var toolCallRoundsThisRun = 0
+    private var runToken = 0
 
     private fun appInForeground(): Boolean =
         (appContext.applicationContext as com.betteraichat.BetterAIChatApp).container.appInForeground
@@ -197,6 +198,7 @@ class ChatViewModel(
                         mode = settings.getDefaultMode()
                     )
                 }
+                consumePendingShare()
                 return@launch
             }
             val provider = runCatching { ProviderId.valueOf(c.provider) }.getOrDefault(ProviderId.OPENAI_COMPAT)
@@ -282,7 +284,7 @@ class ChatViewModel(
     private fun speakAndListen(text: String) {
         stopVoiceInput()
         speechPlayer.speakWithCallback(text) {
-            startVoiceInput()
+            android.os.Handler(android.os.Looper.getMainLooper()).post { startVoiceInput() }
         }
     }
 
@@ -382,23 +384,27 @@ class ChatViewModel(
     private fun runGeneration(cid: Long) {
         if (runJob?.isActive == true) return
         val s = _state.value
-        val config = settings.configFor(s.provider)
+        val config = settings.configFor(s.provider).copy(model = s.model)
         _state.update { it.copy(isRunning = true) }
         streaming = newStreamingMessage(config, s)
         toolCallRoundsThisRun = 0
         refresh()
+        val myToken = ++runToken
         var currentJob: Job? = null
         currentJob = viewModelScope.launch {
-            streamTickerJob = viewModelScope.launch {
-                while (true) {
-                    delay(100)
-                    if (streaming != null) refresh()
-                }
-            }
-            val history = repository.getHistory(cid).map { repository.messageToDomain(it) }
-            val historyWithMemory = injectMemory(history, cid)
+            var myTicker: Job? = null
             try {
+                myTicker = viewModelScope.launch {
+                    while (true) {
+                        delay(100)
+                        if (streaming != null) refresh()
+                    }
+                }
+                streamTickerJob = myTicker
+                val history = repository.getHistory(cid).map { repository.messageToDomain(it) }
+                val historyWithMemory = injectMemory(history, cid)
                 engine.run(historyWithMemory, config, s.mode).collect { ev ->
+                    if (myToken != runToken) return@collect
                     when (ev) {
                         is EngineEvent.Delta -> {
                             if (streaming == null) {
@@ -499,19 +505,27 @@ class ChatViewModel(
                                 autoDistillCount = 0
                                 launch { distillMemoryInternal(cid, silent = true) }
                             }
-                            if (needAutoCompress) {
-                                needAutoCompress = false
-                                launch { compressContext() }
-                            }
                         }
                     }
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                streaming = null
+                _state.update { it.copy(error = smartError(e.message ?: "生成失败")) }
+                refresh()
             } finally {
-                streamTickerJob?.cancel()
-                streamTickerJob = null
+                if (streamTickerJob === myTicker) {
+                    streamTickerJob?.cancel()
+                    streamTickerJob = null
+                }
                 refresh()
                 if (runJob === currentJob) {
                     _state.update { it.copy(isRunning = false) }
+                    if (needAutoCompress) {
+                        needAutoCompress = false
+                        launch { compressContext() }
+                    }
                 }
             }
         }
@@ -543,13 +557,14 @@ class ChatViewModel(
     }
 
     private suspend fun persistToolResult(call: ToolCall, cid: Long) {
+        val stored = call.copy(result = call.result?.take(2000))
         repository.insertMessage(
             repository.domainToMessage(
                 ChatMessage(
                     role = ChatRole.TOOL,
-                    content = call.result ?: "",
-                    toolCallId = call.id,
-                    toolName = call.name
+                    content = stored.result ?: "",
+                    toolCallId = stored.id,
+                    toolName = stored.name
                 ),
                 cid
             )
@@ -561,7 +576,7 @@ class ChatViewModel(
                     (pendingAssistantEntity?.toolCallsJson?.let {
                         runCatching { json.decodeFromString<List<ToolCall>>(it) }.getOrDefault(emptyList())
                     } ?: emptyList())
-                        .map { c -> if (c.id == call.id) call else c }
+                        .map { c -> if (c.id == stored.id) stored else c }
                 )
             }.getOrNull()
         )
@@ -572,7 +587,8 @@ class ChatViewModel(
         val st = streaming ?: return
         if (st.content.isBlank() && st.toolCalls.isEmpty()) return
         val sameRound = pendingAssistantEntity != null &&
-            pendingAssistantEntity?.conversationId == cid
+            pendingAssistantEntity?.conversationId == cid &&
+            pendingRound == streamingRound
         if (sameRound) {
             val entity = pendingAssistantEntity!!
             val mergedCalls = runCatching {
@@ -605,6 +621,7 @@ class ChatViewModel(
 
     fun stop() {
         sendCancelled = true
+        runToken++
         runJob?.cancel()
         runJob = null
         streamTickerJob?.cancel()
@@ -654,6 +671,7 @@ class ChatViewModel(
     fun clearContext() {
         if (currentConversationId <= 0) return
         viewModelScope.launch {
+            runToken++
             runJob?.cancel()
             runJob = null
             streamTickerJob?.cancel()
@@ -670,13 +688,14 @@ class ChatViewModel(
     fun deleteMessage(messageId: Long) {
         if (messageId <= 0) return
         viewModelScope.launch {
+            val cid = currentConversationId
             if (pendingAssistantEntity?.id == messageId) {
                 pendingAssistantEntity = null
                 pendingRound = -1
             }
             val target = dbMessages.firstOrNull { it.id == messageId }
             if (target != null && target.role == ChatRole.ASSISTANT && target.toolCalls.isNotEmpty()) {
-                repository.deleteToolMessages(target.toolCalls.map { it.id })
+                repository.deleteToolMessages(cid, target.toolCalls.map { it.id })
             }
             repository.deleteMessage(messageId)
             refresh()
@@ -715,6 +734,7 @@ class ChatViewModel(
             if (!silent) _state.update { it.copy(processing = true) }
             try {
                 val config = settings.configFor(_state.value.provider)
+                    .copy(model = _state.value.model)
                 val provider = providerFactory(config.provider)
                 val existing = runCatching { db.memoryDao().getMemories(cid) }
                     .getOrDefault(emptyList())
@@ -759,6 +779,10 @@ class ChatViewModel(
                 }
             } finally {
                 if (!silent) _state.update { it.copy(processing = false) }
+            }
+        }.onFailure { e ->
+            if (!silent) {
+                _state.update { it.copy(notification = "记忆提炼失败：${e.message ?: "未知错误"}") }
             }
         }
     }
@@ -808,7 +832,10 @@ class ChatViewModel(
                     else -> 2
                 }
                 val toSummarize = history.dropLast(keepCount)
-                val keep = history.takeLast(keepCount)
+                if (toSummarize.isEmpty()) {
+                    _state.update { it.copy(processing = false, error = "消息太少，暂不需要压缩") }
+                    return@launch
+                }
                 val snapshotText = history.takeLast(6)
                     .map { m ->
                         val role = if (m.role == "USER") "用户" else "AI"
@@ -828,6 +855,7 @@ class ChatViewModel(
                     )
                 }
                 val config = settings.configFor(_state.value.provider)
+                    .copy(model = _state.value.model)
                 val summary = summarize(toSummarize, config)
                 if (summary.isBlank()) {
                     _state.update { it.copy(processing = false, error = "压缩失败：未获得摘要") }
@@ -887,6 +915,7 @@ class ChatViewModel(
         if (text.isEmpty() || currentConversationId <= 0 || _state.value.isRunning) return
         viewModelScope.launch {
             val cid = currentConversationId
+            runToken++
             runJob?.cancel()
             runJob = null
             streamTickerJob?.cancel()
@@ -962,6 +991,7 @@ class ChatViewModel(
     private suspend fun generateTitle(cid: Long) {
         try {
             val config = settings.configFor(_state.value.provider)
+                .copy(model = _state.value.model)
             val history = repository.getHistory(cid).takeLast(6)
             if (history.isEmpty()) return
             val provider = providerFactory(config.provider)
@@ -1058,10 +1088,18 @@ class ChatViewModel(
         viewModelScope.launch {
             if (currentConversationId <= 0) {
                 val s = _state.value
-                val cid = repository.createConversation(s.provider, s.model, s.mode)
+                val cid = repository.createConversation(
+                    s.provider, s.model, s.mode,
+                    defaultTitle = appContext.getString(com.betteraichat.R.string.chat_new_chat)
+                )
                 currentConversationId = cid
-                repository.updateTitle(cid, text.take(30).ifBlank { "对话" })
-                _state.update { it.copy(conversationId = cid, title = text.take(30).ifBlank { "对话" }) }
+                repository.updateTitle(cid, text.take(30).ifBlank { appContext.getString(com.betteraichat.R.string.chat_new_chat) })
+                _state.update {
+                    it.copy(
+                        conversationId = cid,
+                        title = text.take(30).ifBlank { appContext.getString(com.betteraichat.R.string.chat_new_chat) }
+                    )
+                }
                 startObserving(cid)
             }
             val cid = currentConversationId

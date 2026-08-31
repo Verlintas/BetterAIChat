@@ -20,6 +20,29 @@ class OcrFileTool : DeviceTool {
     override suspend fun execute(context: ToolContext, arguments: JsonObject): String {
         val ocr = context.ocrProvider ?: return "ERROR:当前版本不支持文字识别（需完整版）"
         val path = arguments["path"]?.jsonPrimitive?.content ?: return "path 参数无效"
+        if (!isAllowedPath(context, path)) {
+            return "ERROR:仅允许识别应用缓存、应用文件目录、外部私有目录或公共下载/图片目录中的图片"
+        }
         return ocr.ocrImageFile(path)
+    }
+
+    private fun isAllowedPath(context: ToolContext, path: String): Boolean {
+        val normalized = runCatching { java.io.File(path).canonicalPath }.getOrNull() ?: return false
+        val app = context.appContext
+        val roots = buildList {
+            runCatching { add(app.cacheDir.canonicalPath) }
+            runCatching { add(app.filesDir.canonicalPath) }
+            runCatching { app.getExternalFilesDir(null)?.let { add(it.canonicalPath) } }
+            if (android.os.Build.VERSION.SDK_INT >= 29) {
+                add("/storage/emulated/0/Download")
+                add("/storage/emulated/0/Pictures")
+            } else {
+                runCatching {
+                    add(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS).canonicalPath)
+                    add(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_PICTURES).canonicalPath)
+                }
+            }
+        }
+        return roots.any { normalized == it || normalized.startsWith(it + "/") }
     }
 }

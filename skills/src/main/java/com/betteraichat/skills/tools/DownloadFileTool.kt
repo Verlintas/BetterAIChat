@@ -41,26 +41,26 @@ class DownloadFileTool : DeviceTool {
                     instanceFollowRedirects = true
                     setRequestProperty("User-Agent", "BetterAIChat/0.18")
                 }
-                conn.connect()
-                if (conn.responseCode !in 200..299) {
-                    return@runCatching "ERROR:下载失败 HTTP ${conn.responseCode}"
-                }
-                val size = conn.contentLengthLong
-                if (size > 100L * 1024 * 1024) {
-                    return@runCatching "ERROR:文件过大（${size / 1024 / 1024}MB），已拒绝下载（上限 100MB）"
-                }
-                val fileName = arguments["filename"]?.jsonPrimitive?.content
-                    ?.takeIf { it.isNotBlank() }
-                    ?: inferName(url, conn)
                 try {
+                    conn.connect()
+                    if (conn.responseCode !in 200..299) {
+                        return@runCatching "ERROR:下载失败 HTTP ${conn.responseCode}"
+                    }
+                    val size = conn.contentLengthLong
+                    if (size > 100L * 1024 * 1024) {
+                        return@runCatching "ERROR:文件过大（${size / 1024 / 1024}MB），已拒绝下载（上限 100MB）"
+                    }
+                    val fileName = arguments["filename"]?.jsonPrimitive?.content
+                        ?.takeIf { it.isNotBlank() }
+                        ?: inferName(url, conn)
                     conn.inputStream.use { input ->
                         saveToDownloads(appContext, fileName, input, size)
                     }
+                    val sizeText = if (size > 0) "，${size / 1024 / 1024}MB" else ""
+                    "下载完成：$fileName$sizeText"
                 } finally {
                     conn.disconnect()
                 }
-                val sizeText = if (size > 0) "，${size / 1024 / 1024}MB" else ""
-                "下载完成：$fileName$sizeText"
             }.getOrElse { e -> "ERROR:下载失败：${e.message}" }
         }
     }

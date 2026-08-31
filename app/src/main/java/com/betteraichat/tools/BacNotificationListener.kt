@@ -33,7 +33,7 @@ object NotificationCache {
         }
     }
 
-    private val labelCache = HashMap<String, String>()
+    private val labelCache = java.util.concurrent.ConcurrentHashMap<String, String>()
     private fun appLabel(pm: PackageManager, pkg: String): String = labelCache.getOrPut(pkg) {
         runCatching {
             pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()

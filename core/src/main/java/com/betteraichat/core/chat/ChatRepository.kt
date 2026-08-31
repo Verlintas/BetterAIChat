@@ -32,10 +32,10 @@ class ChatRepository(private val db: AppDatabase) {
 
     suspend fun setStarred(id: Long, starred: Boolean) = db.messageDao().updateStarred(id, starred)
 
-    suspend fun createConversation(provider: ProviderId, model: String, mode: AppMode): Long =
+    suspend fun createConversation(provider: ProviderId, model: String, mode: AppMode, defaultTitle: String = "New Chat"): Long =
         db.conversationDao().insert(
             ConversationEntity(
-                title = "新对话",
+                title = defaultTitle,
                 provider = provider.name,
                 model = model,
                 mode = mode.name,
@@ -87,9 +87,9 @@ class ChatRepository(private val db: AppDatabase) {
 
     suspend fun deleteMessage(id: Long) = db.messageDao().deleteById(id)
 
-    suspend fun deleteToolMessages(toolCallIds: List<String>) {
+    suspend fun deleteToolMessages(conversationId: Long, toolCallIds: List<String>) {
         if (toolCallIds.isEmpty()) return
-        db.messageDao().deleteByToolCallIds(toolCallIds)
+        db.messageDao().deleteByToolCallIds(conversationId, toolCallIds)
     }
 
     fun messageToDomain(e: MessageEntity): ChatMessage = ChatMessage(

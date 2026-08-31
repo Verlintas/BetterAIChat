@@ -6,6 +6,7 @@ import com.betteraichat.skills.intProp
 import com.betteraichat.skills.schemaOf
 import com.betteraichat.skills.stringProp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -68,7 +69,7 @@ class WebSearchTool : DeviceTool {
             }
         }
 
-    private fun searchAllEngines(query: String): List<SearchResult> {
+    private suspend fun searchAllEngines(query: String): List<SearchResult> {
         val engines = listOf(
             ::searchBing,
             ::searchBaidu,
@@ -76,23 +77,27 @@ class WebSearchTool : DeviceTool {
             ::searchDuckDuckGo,
             ::searchMojeek
         )
-        val merged = LinkedHashMap<String, SearchResult>()
-        var lastError: String? = null
-        engines.forEach { engine ->
-            if (merged.size >= 6) return@forEach
-            try {
-                engine(query).forEach { r ->
-                    if (r.url.startsWith("http") && r.title.isNotBlank()) {
-                        merged.putIfAbsent(r.url, r)
+        val engineResults = kotlinx.coroutines.coroutineScope {
+            engines.map { engine ->
+                async {
+                    try {
+                        engine(query)
+                    } catch (e: Exception) {
+                        emptyList()
                     }
                 }
-            } catch (e: Exception) {
-                lastError = e.message
+            }.map { it.await() }
+        }
+        val merged = LinkedHashMap<String, SearchResult>()
+        engineResults.forEach { list ->
+            if (merged.size >= 6) return@forEach
+            list.forEach { r ->
+                if (r.url.startsWith("http") && r.title.isNotBlank()) {
+                    merged.putIfAbsent(r.url, r)
+                }
             }
         }
-        return merged.values.toList().ifEmpty {
-            if (lastError != null) emptyList() else emptyList()
-        }
+        return merged.values.toList()
     }
 
     private fun fetch(url: String, query: String): Document =
@@ -101,7 +106,7 @@ class WebSearchTool : DeviceTool {
             .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
             .header("Referer", "https://www.google.com/")
             .userAgent(userAgent)
-            .timeout(12_000)
+            .timeout(8_000)
             .followRedirects(true)
             .get()
 
@@ -123,7 +128,7 @@ class WebSearchTool : DeviceTool {
             .data("wd", query)
             .header("Accept-Language", "zh-CN,zh;q=0.9")
             .userAgent(userAgent)
-            .timeout(12_000)
+            .timeout(8_000)
             .get()
         return doc.select("div.result").mapNotNull { el ->
             val h3 = el.selectFirst("h3") ?: return@mapNotNull null
@@ -140,7 +145,7 @@ class WebSearchTool : DeviceTool {
             .data("q", query)
             .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
             .userAgent(userAgent)
-            .timeout(12_000)
+            .timeout(8_000)
             .get()
         return doc.select("div.snippet").mapNotNull { el ->
             val a = el.selectFirst("a[href]") ?: return@mapNotNull null
@@ -158,7 +163,7 @@ class WebSearchTool : DeviceTool {
             .data("q", query)
             .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
             .userAgent(userAgent)
-            .timeout(12_000)
+            .timeout(8_000)
             .get()
         return doc.select("div.result").mapNotNull { el ->
             val a = el.selectFirst("a.result__a") ?: return@mapNotNull null
@@ -174,7 +179,7 @@ class WebSearchTool : DeviceTool {
             .data("q", query)
             .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
             .userAgent(userAgent)
-            .timeout(12_000)
+            .timeout(8_000)
             .get()
         return doc.select("ul.results-standard li, .result").mapNotNull { el: Element ->
             val a = el.selectFirst("a.title, h2 a") ?: return@mapNotNull null

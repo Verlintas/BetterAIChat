@@ -40,7 +40,7 @@ class SettingsRepository(context: Context) {
 
     fun setApiKey(provider: ProviderId, key: String) {
         if (key.isBlank()) {
-            prefs.edit().remove(providerKey(provider, "apikey")).apply()
+            keys.remove(providerKey(provider, "apikey"))
             return
         }
         keys.put(providerKey(provider, "apikey"), key)
@@ -143,7 +143,7 @@ class SettingsRepository(context: Context) {
 
     fun getAccentColor(): AccentColor = runCatching {
         AccentColor.valueOf(prefs.getString("accent_color", AccentColor.ORANGE.name)!!)
-    }.getOrDefault(AccentColor.BLUE)
+    }.getOrDefault(AccentColor.ORANGE)
 
     fun setAccentColor(accent: AccentColor) {
         prefs.edit().putString("accent_color", accent.name).apply()

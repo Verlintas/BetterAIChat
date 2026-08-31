@@ -33,7 +33,7 @@ fun AppNavHost() {
     }
     val shareTick by container.shareNavTick.collectAsStateWithLifecycle()
     LaunchedEffect(shareTick) {
-        if (shareTick > 0) {
+        if (shareTick > 0 && navController.currentDestination?.route != Routes.CHAT) {
             navController.navigate(Routes.chat(-1L))
         }
     }

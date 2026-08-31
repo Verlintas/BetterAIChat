@@ -46,6 +46,8 @@ class BootReceiver : BroadcastReceiver() {
                     val app = context.applicationContext as com.betteraichat.BetterAIChatApp
                     app.container.automationScheduler.scheduleAll()
                 }
+            } catch (e: Exception) {
+                android.util.Log.w("BootReceiver", "boot reschedule failed", e)
             } finally {
                 pending.finish()
             }

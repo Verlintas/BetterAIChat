@@ -25,6 +25,7 @@ private val PurpleLight = lightColorScheme(
 )
 private val PurpleDark = darkColorScheme(
     primary = Color(0xFFD0BCFF),
+    onPrimary = Color(0xFF381E72),
     primaryContainer = Color(0xFF4F378B)
 )
 private val GreenLight = lightColorScheme(
@@ -33,6 +34,7 @@ private val GreenLight = lightColorScheme(
 )
 private val GreenDark = darkColorScheme(
     primary = Color(0xFF81C995),
+    onPrimary = Color(0xFF06300F),
     primaryContainer = Color(0xFF1E5A2E)
 )
 private val TealLight = lightColorScheme(
@@ -41,10 +43,29 @@ private val TealLight = lightColorScheme(
 )
 private val TealDark = darkColorScheme(
     primary = Color(0xFF4DB6AC),
+    onPrimary = Color(0xFF003732),
     primaryContainer = Color(0xFF00695C)
 )
+private val BlueLight = lightColorScheme(
+    primary = Color(0xFF1565C0),
+    onPrimary = Color.White,
+    primaryContainer = Color(0xFFD6E3FF),
+    onPrimaryContainer = Color(0xFF001B3E),
+    secondary = Color(0xFF565F71),
+    secondaryContainer = Color(0xFFDAE2F9),
+    onSecondaryContainer = Color(0xFF131C2B)
+)
+private val BlueDark = darkColorScheme(
+    primary = Color(0xFFA6C8FF),
+    onPrimary = Color(0xFF00305E),
+    primaryContainer = Color(0xFF004A8C),
+    onPrimaryContainer = Color(0xFFD6E3FF),
+    secondary = Color(0xFFBEC6DC),
+    secondaryContainer = Color(0xFF3E4759),
+    onSecondaryContainer = Color(0xFFDAE2F9)
+)
 private val OrangeLight = lightColorScheme(
-    primary = Color(0xFFE65100),
+    primary = Color(0xFFBF360C),
     onPrimary = Color.White,
     primaryContainer = Color(0xFFFFD9C0),
     onPrimaryContainer = Color(0xFF5A1E00),
@@ -142,10 +163,7 @@ fun BetterAIChatTheme(
         AccentColor.PURPLE -> if (effectiveDark) PurpleDark else PurpleLight
         AccentColor.GREEN -> if (effectiveDark) GreenDark else GreenLight
         AccentColor.TEAL -> if (effectiveDark) TealDark else TealLight
-        AccentColor.BLUE ->
-            if (dynamicColor && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-                if (effectiveDark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-            } else if (effectiveDark) DarkColors else LightColors
+        AccentColor.BLUE -> if (effectiveDark) BlueDark else BlueLight
     }
     }
     MaterialTheme(colorScheme = colorScheme, content = content)

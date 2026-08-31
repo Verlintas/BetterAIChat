@@ -34,17 +34,18 @@ import java.io.FileOutputStream
 
 object ScreenshotBridge {
     private val lock = Any()
-    private var pendingCapture: CompletableDeferred<String>? = null
+    private val pending = HashMap<Long, CompletableDeferred<String>>()
+    private var nextId = 0L
 
-    fun registerCapture(): CompletableDeferred<String> = synchronized(lock) {
-        pendingCapture?.complete("ERROR:截屏请求被新的请求覆盖")
-        CompletableDeferred<String>().also { pendingCapture = it }
+    fun registerCapture(): Pair<Long, CompletableDeferred<String>> = synchronized(lock) {
+        nextId++
+        val id = nextId
+        id to CompletableDeferred<String>().also { pending[id] = it }
     }
 
-    fun completeCapture(result: String) {
+    fun completeCapture(id: Long, result: String) {
         synchronized(lock) {
-            pendingCapture?.complete(result)
-            pendingCapture = null
+            pending.remove(id)?.complete(result)
         }
     }
 }
@@ -81,14 +82,15 @@ class ScreenshotManager(private val context: Context) : ScreenshotProvider {
             clearProjection()
             return "ERROR:截屏授权已失效，请到设置页重新授权"
         }
-        val deferred = ScreenshotBridge.registerCapture()
+        val (reqId, deferred) = ScreenshotBridge.registerCapture()
         try {
             val intent = Intent(context, ScreenshotProjectionService::class.java)
                 .putExtra("resultCode", resultCode)
                 .putExtra("data", data)
+                .putExtra("reqId", reqId)
             context.startForegroundService(intent)
         } catch (e: Exception) {
-            ScreenshotBridge.completeCapture("ERROR:无法启动截屏服务（后台启动限制），请回到应用后重试")
+            ScreenshotBridge.completeCapture(reqId, "ERROR:无法启动截屏服务（后台启动限制），请回到应用后重试")
             return deferred.await()
         }
         return withTimeoutOrNull(60_000) { deferred.await() }
@@ -142,24 +144,26 @@ class ScreenshotProjectionService : Service() {
                 @Suppress("DEPRECATION")
                 intent?.getParcelableExtra("data")
             }
+            val reqId = intent?.getLongExtra("reqId", 0L) ?: 0L
             if (data == null) {
-                ScreenshotBridge.completeCapture("ERROR:截屏授权数据丢失，请重新授权")
+                ScreenshotBridge.completeCapture(reqId, "ERROR:截屏授权数据丢失，请重新授权")
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
                 return START_NOT_STICKY
             }
             val created = createProjection(code, data)
             if (!created) {
-                ScreenshotBridge.completeCapture("ERROR:截屏授权已失效，请到设置页重新授权")
+                ScreenshotBridge.completeCapture(reqId, "ERROR:截屏授权已失效，请到设置页重新授权")
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
                 return START_NOT_STICKY
             }
         }
 
+        val reqId = intent?.getLongExtra("reqId", 0L) ?: 0L
         scope.launch {
             val result = captureOnce()
-            ScreenshotBridge.completeCapture(result)
+            ScreenshotBridge.completeCapture(reqId, result)
         }
         return START_NOT_STICKY
     }

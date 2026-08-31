@@ -7,8 +7,8 @@ import com.betteraichat.core.skills.SkillToolDef
 
 class ToolRegistry(private val builtinTools: List<DeviceTool>) : ToolCatalog {
 
-    private val dynamicTools = mutableMapOf<String, SkillDefinedTool>()
-    private val skillOwners = mutableMapOf<String, String>()
+    private val dynamicTools = java.util.concurrent.ConcurrentHashMap<String, SkillDefinedTool>()
+    private val skillOwners = java.util.concurrent.ConcurrentHashMap<String, String>()
 
     fun registerSkillTools(skillName: String, defs: List<SkillToolDef>, executor: SkillActionExecutor) {
         defs.forEach { def ->
@@ -19,8 +19,12 @@ class ToolRegistry(private val builtinTools: List<DeviceTool>) : ToolCatalog {
     }
 
     fun unregisterSkillTools(skillName: String) {
-        dynamicTools.entries.removeAll { it.value.skillName == skillName }
-        skillOwners.entries.removeAll { it.value == skillName }
+        dynamicTools.keys.toList().forEach { name ->
+            if (dynamicTools[name]?.skillName == skillName) dynamicTools.remove(name)
+        }
+        skillOwners.keys.toList().forEach { name ->
+            if (skillOwners[name] == skillName) skillOwners.remove(name)
+        }
     }
 
     fun findTool(name: String): DeviceTool? =

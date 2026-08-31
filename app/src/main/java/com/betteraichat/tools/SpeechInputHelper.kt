@@ -11,7 +11,7 @@ import java.util.Locale
 class SpeechInputHelper(context: Context) {
 
     private val recognizer = SpeechRecognizer.createSpeechRecognizer(context.applicationContext)
-    private var isListening = false
+    @Volatile private var isListening = false
 
     fun start(
         onPartial: (String) -> Unit,

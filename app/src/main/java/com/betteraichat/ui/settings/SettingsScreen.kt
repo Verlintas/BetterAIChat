@@ -86,6 +86,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -111,6 +112,7 @@ import com.betteraichat.core.catalog.ModelCatalog
 import com.betteraichat.core.mode.AppMode
 import com.betteraichat.core.model.ProviderId
 import com.betteraichat.core.storage.SettingsRepository
+import com.betteraichat.R
 import com.betteraichat.core.storage.ThemeMode
 import com.betteraichat.ui.rememberContainer
 import kotlinx.coroutines.delay
@@ -119,16 +121,16 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.coroutines.launch
 
-private enum class SettingsSection(val title: String) {
-    PROVIDER("服务商与模型"),
-    CONVERSATION("对话"),
-    SKILLS("技能"),
-    PERMISSIONS("权限"),
-    REPEAT_TASKS("定时任务"),
-    AUTOMATIONS("自动化"),
-    STATS("使用统计"),
-    MEMORIES("记忆"),
-    DEVELOPER("开发者")
+private enum class SettingsSection(@androidx.annotation.StringRes val titleRes: Int) {
+    PROVIDER(R.string.settings_provider),
+    CONVERSATION(R.string.settings_conversation),
+    SKILLS(R.string.settings_skills),
+    PERMISSIONS(R.string.settings_permissions),
+    REPEAT_TASKS(R.string.settings_tasks),
+    AUTOMATIONS(R.string.settings_automations),
+    STATS(R.string.settings_stats),
+    MEMORIES(R.string.settings_memories),
+    DEVELOPER(R.string.settings_developer)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -147,10 +149,10 @@ fun SettingsScreen(onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(section?.title ?: "设置") },
+                title = { Text(section?.let { stringResource(it.titleRes) } ?: stringResource(R.string.settings_settings)) },
                 navigationIcon = {
                     IconButton(onClick = { if (section == null) onBack() else section = null }) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = "返回")
+                        Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.settings_back))
                     }
                 }
             )
@@ -383,7 +385,7 @@ private fun ProviderSection(
         modifier = modifier.verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Text("服务商", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text(stringResource(R.string.settings_provider_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ProviderId.entries.forEach { p ->
                 FilterChip(
@@ -396,29 +398,29 @@ private fun ProviderSection(
 
         HorizontalDivider()
 
-        Text("${selectedProvider.displayName} 配置", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text(stringResource(R.string.settings_provider_config, selectedProvider.displayName), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         OutlinedTextField(
             value = apiKey,
             onValueChange = { apiKey = it },
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("API Key（本地加密存储）") },
+            label = { Text(stringResource(R.string.settings_api_key)) },
             singleLine = true,
             visualTransformation = if (showKey) VisualTransformation.None else PasswordVisualTransformation(),
             trailingIcon = {
-                TextButton(onClick = { showKey = !showKey }) { Text(if (showKey) "隐藏" else "显示") }
+                TextButton(onClick = { showKey = !showKey }) { Text(stringResource(if (showKey) R.string.settings_key_hide else R.string.settings_key_show)) }
             }
         )
         OutlinedTextField(
             value = baseUrl,
             onValueChange = { baseUrl = it },
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("Base URL（默认 ${ModelCatalog.defaultBaseUrl(selectedProvider)}）") },
+            label = { Text(stringResource(R.string.settings_base_url, ModelCatalog.defaultBaseUrl(selectedProvider))) },
             singleLine = true
         )
         OutlinedButton(
             onClick = {
                 if (apiKey.isBlank()) {
-                    scope.launch { snackbar.showSnackbar("请先填写 API Key") }
+                    scope.launch { snackbar.showSnackbar(container.appContext.getString(R.string.settings_key_first)) }
                 } else {
                     val providerAtClick = selectedProvider
                     val baseUrlAtClick = baseUrl
@@ -444,17 +446,17 @@ private fun ProviderSection(
             if (probing) {
                 CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                 Spacer(Modifier.width(8.dp))
-                Text("正在检测…")
+                Text(stringResource(R.string.settings_detecting))
             } else {
                 Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("测试连接并获取模型")
+                Text(stringResource(R.string.settings_detect_models))
             }
         }
 
         HorizontalDivider()
 
-        Text("模型", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text(stringResource(R.string.settings_model), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             items(ModelCatalog.modelsFor(selectedProvider).size) { i ->
                 val entry = ModelCatalog.modelsFor(selectedProvider)[i]
@@ -469,11 +471,11 @@ private fun ProviderSection(
             value = model,
             onValueChange = { model = it },
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("模型 ID（可手动输入或点击上方检测）") },
+            label = { Text(stringResource(R.string.settings_model_id_hint)) },
             singleLine = true
         )
 
-        Text("温度 ${"%.1f".format(temperature)}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text(stringResource(R.string.settings_temperature, "%.1f".format(temperature)), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         androidx.compose.material3.Slider(
             value = temperature.toFloat(),
             onValueChange = { temperature = it.toDouble() },
@@ -491,9 +493,9 @@ private fun ProviderSection(
 
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
-                Text("Max 模式深度推理", style = MaterialTheme.typography.bodyMedium)
+                Text(stringResource(R.string.settings_reasoning), style = MaterialTheme.typography.bodyMedium)
                 Text(
-                    "Max 模式下向模型发送高推理强度参数（按模型能力自动适配）",
+                    stringResource(R.string.settings_reasoning_sub),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -512,11 +514,11 @@ private fun ProviderSection(
                 settings.setTemperature(selectedProvider, temperature)
                 settings.setMaxTokens(selectedProvider, maxTokens.toIntOrNull() ?: 4096)
                 settings.setReasoning(selectedProvider, reasoning)
-                scope.launch { snackbar.showSnackbar("配置已保存") }
+                scope.launch { snackbar.showSnackbar(container.appContext.getString(R.string.settings_save_success)) }
             },
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("保存配置")
+            Text(stringResource(R.string.settings_save))
         }
         Spacer(Modifier.height(24.dp))
     }
@@ -542,9 +544,9 @@ private fun ConversationSection(
         modifier = modifier.verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Text("默认模式", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text(stringResource(R.string.settings_default_mode), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         Text(
-            "新建对话时使用的模式：Chat 纯对话 / Plan 只读分析 / Build 工具需确认 / Max 自主执行",
+            stringResource(R.string.settings_default_mode_sub),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -563,7 +565,7 @@ private fun ConversationSection(
 
         HorizontalDivider()
 
-        Text("语言", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text(stringResource(R.string.settings_language), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             com.betteraichat.core.storage.AppLanguage.entries.forEach { lang ->
                 FilterChip(
@@ -583,7 +585,7 @@ private fun ConversationSection(
 
         HorizontalDivider()
 
-        Text("外观", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text(stringResource(R.string.settings_appearance), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ThemeMode.entries.forEach { mode ->
                 FilterChip(
@@ -600,7 +602,7 @@ private fun ConversationSection(
 
         HorizontalDivider()
 
-        Text("强调色", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text(stringResource(R.string.settings_accent), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier
@@ -624,9 +626,9 @@ private fun ConversationSection(
 
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
-                Text("语音助手模式", style = MaterialTheme.typography.bodyMedium)
+                Text(stringResource(R.string.settings_voice_assistant), style = MaterialTheme.typography.bodyMedium)
                 Text(
-                    "免提对话：AI 回复自动朗读，说完自动开麦，识别到内容自动发送",
+                    stringResource(R.string.settings_voice_assistant_sub),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -644,9 +646,9 @@ private fun ConversationSection(
 
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
-                Text("自动朗读回复", style = MaterialTheme.typography.bodyMedium)
+                Text(stringResource(R.string.settings_auto_speak), style = MaterialTheme.typography.bodyMedium)
                 Text(
-                    "AI 回复完成后自动用语音朗读（可配合 Max 模式当语音助手用）",
+                    stringResource(R.string.settings_auto_speak_sub),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -671,7 +673,21 @@ private fun SkillsSection(
     snackbar: SnackbarHostState
 ) {
     val context = LocalContext.current
-    var skills by remember { mutableStateOf(container.skillRepository.loadAll()) }
+    var skills by remember {
+        mutableStateOf<List<com.betteraichat.core.skills.Skill>>(emptyList())
+    }
+    LaunchedEffect(Unit) {
+        skills = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            container.skillRepository.loadAll()
+        }
+    }
+    val reloadSkills: () -> Unit = {
+        scope.launch {
+            skills = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                container.skillRepository.loadAll()
+            }
+        }
+    }
     val skillLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
@@ -684,9 +700,9 @@ private fun SkillsSection(
             } ?: ""
             if (content.isNotBlank()) {
                 val result = container.skillRepository.import(fileName, content)
-                result.onSuccess { scope.launch { snackbar.showSnackbar("Skill「${it.name}」导入成功") } }
-                    .onFailure { scope.launch { snackbar.showSnackbar("导入失败：${it.message}") } }
-                skills = container.skillRepository.loadAll()
+                result.onSuccess { scope.launch { snackbar.showSnackbar(context.getString(R.string.settings_skill_imported, it.name)) } }
+                    .onFailure { scope.launch { snackbar.showSnackbar(context.getString(R.string.settings_skill_import_failed, it.message ?: "")) } }
+                reloadSkills()
             }
         }
     }
@@ -696,16 +712,16 @@ private fun SkillsSection(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text(
-            "导入 opencode 风格的 SKILL.md（含 name/description frontmatter），AI 可通过 load_skill 工具加载执行，技能可自带工具。",
+            stringResource(R.string.settings_skills_intro),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Button(onClick = { skillLauncher.launch(arrayOf("*/*")) }, modifier = Modifier.fillMaxWidth()) {
-            Text("导入 Skill 文件")
+            Text(stringResource(R.string.settings_import_skill))
         }
         if (skills.isEmpty()) {
             Text(
-                "暂无技能。导入后可在 Build/Max 模式对 AI 说「加载 xx 技能」执行；也可在对话里用「保存为技能」自动录制。",
+                stringResource(R.string.settings_skills_empty),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -732,8 +748,8 @@ private fun SkillsSection(
                         TextButton(onClick = {
                             container.registry.unregisterSkillTools(skill.name)
                             container.skillRepository.delete(skill.name)
-                            skills = container.skillRepository.loadAll()
-                            scope.launch { snackbar.showSnackbar("Skill「${skill.name}」已删除") }
+                            reloadSkills()
+                            scope.launch { snackbar.showSnackbar(context.getString(R.string.settings_skill_deleted, skill.name)) }
                         }) {
                             Text(stringResource(com.betteraichat.R.string.memories_delete), color = MaterialTheme.colorScheme.error)
                         }
@@ -802,25 +818,25 @@ private fun PermissionsSection(
         modifier = modifier.verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Text("Shizuku（高级权限）", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text(stringResource(R.string.settings_shizuku), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         Text(
-            "授权后 AI 可通过 run_shell 工具执行任意 shell 命令（pm/am/dumpsys 等），达到 root 级操作能力。",
+            stringResource(R.string.settings_shizuku_sub),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         PermissionRow(
             title = "Shizuku",
             status = when {
-                !shizukuInstalled -> "未安装 Shizuku 应用"
-                !shizukuBinder -> "Shizuku 未启动"
-                !shizukuGranted -> "未授权"
-                else -> "已授权，可执行 shell 命令"
+                !shizukuInstalled -> context.getString(R.string.shizuku_status_not_installed)
+                !shizukuBinder -> context.getString(R.string.shizuku_status_not_started)
+                !shizukuGranted -> context.getString(R.string.shizuku_status_unauthorized)
+                else -> context.getString(R.string.shizuku_status_ready)
             },
             buttonText = when {
-                !shizukuInstalled -> "下载"
-                !shizukuBinder -> "打开"
-                !shizukuGranted -> "授权"
-                else -> "已授权"
+                !shizukuInstalled -> context.getString(R.string.shizuku_action_download)
+                !shizukuBinder -> context.getString(R.string.shizuku_action_open)
+                !shizukuGranted -> context.getString(R.string.shizuku_action_grant)
+                else -> context.getString(R.string.shizuku_action_granted)
             },
             onAction = {
                 when {
@@ -834,29 +850,29 @@ private fun PermissionsSection(
 
         HorizontalDivider()
 
-        Text("系统权限", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text(stringResource(R.string.settings_system_permissions), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         PermissionRow(
-            title = "通知",
-            status = if (notificationEnabled) "已授权" else "未授权",
-            buttonText = "授权",
+            title = context.getString(R.string.perm_notification),
+            status = if (notificationEnabled) context.getString(R.string.perm_granted) else context.getString(R.string.perm_denied),
+            buttonText = context.getString(R.string.perm_action_grant),
             onAction = {
                 if (Build.VERSION.SDK_INT >= 33) {
                     notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                 } else {
-                    scope.launch { snackbar.showSnackbar("Android 12 及以下通知默认已授权") }
+                    scope.launch { snackbar.showSnackbar(context.getString(R.string.perm_notification_legacy)) }
                 }
             }
         )
         PermissionRow(
-            title = "相机（闪光灯/手电筒）",
-            status = if (hasCamera) "已授权" else "未授权",
-            buttonText = "授权",
+            title = context.getString(R.string.perm_camera),
+            status = if (hasCamera) context.getString(R.string.perm_granted) else context.getString(R.string.perm_denied),
+            buttonText = context.getString(R.string.perm_action_grant),
             onAction = { cameraPermissionLauncher.launch(Manifest.permission.CAMERA) }
         )
         PermissionRow(
-            title = "修改系统设置（亮度等）",
-            status = if (canWriteSettings) "已授权" else "未授权",
-            buttonText = "授权",
+            title = context.getString(R.string.perm_write_settings),
+            status = if (canWriteSettings) context.getString(R.string.perm_granted) else context.getString(R.string.perm_denied),
+            buttonText = context.getString(R.string.perm_action_grant),
             onAction = {
                 writeSettingsLauncher.launch(
                     Intent(
@@ -867,9 +883,9 @@ private fun PermissionsSection(
             }
         )
         PermissionRow(
-            title = "截屏（MediaProjection）",
-            status = if (hasScreenshot) "已授权" else "未授权",
-            buttonText = "授权",
+            title = context.getString(R.string.perm_screenshot),
+            status = if (hasScreenshot) context.getString(R.string.perm_granted) else context.getString(R.string.perm_denied),
+            buttonText = context.getString(R.string.perm_action_grant),
             onAction = {
                 val mpm = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
                 if (Build.VERSION.SDK_INT >= 34) {
@@ -882,9 +898,9 @@ private fun PermissionsSection(
         )
         Text(
             if (container.screenshotManagerRef.isServiceRunning()) {
-                "截屏服务运行中，AI 可随时分析屏幕。完成使用后建议点击下方按钮停止（停止后再次使用需重新授权）。"
+                context.getString(R.string.perm_screenshot_running)
             } else {
-                "Android 15 授权流程：开始录制 → 选择 BetterAIChat。授权后截屏服务将在后台运行以支持屏幕分析。"
+                context.getString(R.string.perm_screenshot_idle)
             },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -894,63 +910,69 @@ private fun PermissionsSection(
                 onClick = { container.screenshotManagerRef.stopProjectionService() },
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("停止截屏服务")
+                Text(stringResource(R.string.perm_stop_screenshot))
             }
         }
 
         HorizontalDivider()
 
-        Text("AI 控制屏幕（无障碍）", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text(stringResource(R.string.settings_accessibility), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         Text(
-            "开启后 AI 可通过 ua_type / ua_press / ua_tap / ua_swipe 工具在任意应用里输入文字、点击和滑动，配合屏幕识别即可全自动操作手机。",
+            stringResource(R.string.settings_accessibility_sub),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
         val accessibilityEnabled = remember { mutableStateOf(false) }
+        val usageAccessGranted = remember { mutableStateOf(false) }
+        fun pollAccessibility() {
+            accessibilityEnabled.value = com.betteraichat.tools.BacAccessibilityService.connected()
+            usageAccessGranted.value = checkUsageAccess(context)
+        }
+        DisposableEffect(lifecycleOwner) {
+            val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+                if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) pollAccessibility()
+            }
+            lifecycleOwner.lifecycle.addObserver(observer)
+            onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+        }
         LaunchedEffect(Unit) {
-            while (true) {
-                accessibilityEnabled.value = com.betteraichat.tools.BacAccessibilityService.connected()
+            while (lifecycleOwner.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
+                pollAccessibility()
                 delay(1500)
             }
         }
         PermissionRow(
-            title = "无障碍控制",
-            status = if (accessibilityEnabled.value) "已开启" else "未开启",
-            buttonText = if (accessibilityEnabled.value) "已开启" else "开启",
+            title = context.getString(R.string.perm_accessibility),
+            status = if (accessibilityEnabled.value) context.getString(R.string.perm_on) else context.getString(R.string.perm_off),
+            buttonText = if (accessibilityEnabled.value) context.getString(R.string.perm_on) else context.getString(R.string.perm_action_enable),
             onAction = {
                 context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
             }
         )
-        val usageAccessGranted = remember { mutableStateOf(false) }
-        LaunchedEffect(Unit) {
-            while (true) {
-                usageAccessGranted.value = checkUsageAccess(context)
-                delay(1500)
-            }
-        }
         PermissionRow(
-            title = "使用情况访问（前台应用检测）",
-            status = if (usageAccessGranted.value) "已授权" else "未授权",
-            buttonText = "授权",
+            title = context.getString(R.string.perm_usage),
+            status = if (usageAccessGranted.value) context.getString(R.string.perm_granted) else context.getString(R.string.perm_denied),
+            buttonText = context.getString(R.string.perm_action_grant),
             onAction = {
                 context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
             }
         )
         Text(
-            "授权后 AI 可通过 get_foreground_app 知道当前正在使用哪个应用，用于判断任务上下文。",
+            stringResource(R.string.perm_usage_sub),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         PermissionRow(
-            title = "通知使用权（读取通知）",
-            status = if (notificationListenerEnabled(context)) "已开启" else "未开启",
-            buttonText = "开启",
+            title = context.getString(R.string.perm_notif_listener),
+            status = if (notificationListenerEnabled(context)) context.getString(R.string.perm_on) else context.getString(R.string.perm_off),
+            buttonText = context.getString(R.string.perm_action_enable),
             onAction = {
                 context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
             }
         )
         Text(
-            "开启后 AI 可通过 read_notifications 读取最近收到的通知（消息、提醒等），用于感知手机动态。",
+            stringResource(R.string.perm_notif_listener_sub),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -994,13 +1016,13 @@ private fun RepeatTasksSection(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text(
-            "AI 创建的重复提醒任务（每天/每周/每小时）。可在通知里一键停止，也可在此删除。",
+            stringResource(R.string.tasks_intro),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         if (tasks.isEmpty()) {
             Text(
-                "暂无定时任务。可在 Build/Max 模式让 AI 设置，例如「每天 9 点提醒我喝水」。",
+                stringResource(R.string.tasks_empty),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -1022,7 +1044,7 @@ private fun RepeatTasksSection(
                                 maxLines = 2
                             )
                             Text(
-                                "${intervalLabel(task)} · 下次：${formatNext(task.nextTriggerAt)}",
+                                stringResource(R.string.tasks_next, intervalLabel(task), formatNext(task.nextTriggerAt)),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -1038,7 +1060,7 @@ private fun RepeatTasksSection(
                             )
                             am.cancel(pi)
                             scope.launch { container.db.repeatTaskDao().deleteByRequestCode(task.requestCode) }
-                            scope.launch { snackbar.showSnackbar("定时任务已删除") }
+                            scope.launch { snackbar.showSnackbar(container.appContext.getString(R.string.tasks_deleted)) }
                         }) {
                             Text(stringResource(com.betteraichat.R.string.memories_delete), color = MaterialTheme.colorScheme.error)
                         }
@@ -1052,7 +1074,7 @@ private fun RepeatTasksSection(
 
 private fun intervalLabel(task: com.betteraichat.core.db.RepeatTaskEntity): String = when (task.interval) {
     "daily" -> "每天 ${task.time}"
-    "weekly" -> "每周周${task.weekday} ${task.time}"
+    "weekly" -> "每周 周${task.weekday} ${task.time}"
     else -> "每 ${task.everyHours} 小时"
 }
 
@@ -1097,13 +1119,13 @@ private fun StatsSection(
         modifier = modifier.verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        StatRow("会话数", conversations.toString())
-        StatRow("用户消息", userMessages.toString())
-        StatRow("AI 回复", assistantMessages.toString())
-        StatRow("输入 Token 累计", formatCount(inputTokens))
-        StatRow("输出 Token 累计", formatCount(outputTokens))
-        StatRow("工具调用次数", toolCalls.toString())
-        StatRow("定时任务", repeatTasks.toString())
+        StatRow(stringResource(R.string.stats_conversations), conversations.toString())
+        StatRow(stringResource(R.string.stats_user_msgs), userMessages.toString())
+        StatRow(stringResource(R.string.stats_ai_replies), assistantMessages.toString())
+        StatRow(stringResource(R.string.stats_input_tokens), formatCount(inputTokens))
+        StatRow(stringResource(R.string.stats_output_tokens), formatCount(outputTokens))
+        StatRow(stringResource(R.string.stats_tool_calls), toolCalls.toString())
+        StatRow(stringResource(R.string.stats_tasks), repeatTasks.toString())
         Spacer(Modifier.height(24.dp))
     }
 }
@@ -1176,13 +1198,13 @@ private fun AutomationsSection(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text(
-            "自动化：满足条件时自动执行一系列工具操作，无需人工确认。可让 AI 创建，例如「每天 22:00 开启勿扰并静音」「电量低于 20% 时提醒充电」。",
+            stringResource(R.string.automations_intro),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         if (automations.isEmpty()) {
             Text(
-                "暂无自动化。在 Build/Max 模式对 AI 说「创建一个自动化：每天晚上 10 点静音并开启勿扰」。",
+                stringResource(R.string.automations_empty),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -1201,8 +1223,11 @@ private fun AutomationsSection(
                             Text(a.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
                             Text(
                                 when (a.triggerType) {
-                                    "time" -> "每天 ${a.triggerValue}（${if (a.days == "all") "每天" else a.days}）"
-                                    "battery" -> "电量${if (a.triggerValue.startsWith("low")) "低于" else "高于"} ${a.triggerValue.substringAfter(":")}%"
+                                    "time" -> container.appContext.getString(R.string.automation_time, a.triggerValue,
+                                        if (a.days == "all") container.appContext.getString(R.string.every_day) else a.days)
+                                    "battery" -> container.appContext.getString(R.string.automation_battery,
+                                        if (a.triggerValue.startsWith("low")) container.appContext.getString(R.string.below) else container.appContext.getString(R.string.above),
+                                        a.triggerValue.substringAfter(":"))
                                     else -> a.triggerType
                                 },
                                 style = MaterialTheme.typography.bodySmall,
@@ -1217,7 +1242,6 @@ private fun AutomationsSection(
                                     val updated = a.copy(enabled = on)
                                     if (on) container.automationScheduler.reschedule(updated)
                                     else container.automationScheduler.cancel(updated)
-                                    container.automationScheduler.scheduleAll()
                                 }
                             }
                         )
@@ -1225,7 +1249,7 @@ private fun AutomationsSection(
                             scope.launch {
                                 container.db.automationDao().delete(a.id)
                                 container.automationScheduler.cancel(a)
-                                snackbar.showSnackbar("自动化「${a.name}」已删除")
+                                snackbar.showSnackbar(container.appContext.getString(R.string.automation_deleted, a.name))
                             }
                         }) {
                             Text(stringResource(com.betteraichat.R.string.memories_delete), color = MaterialTheme.colorScheme.error)
@@ -1261,7 +1285,7 @@ private fun DeveloperSection(
     }
     fun copyEmail(email: String) {
         clipboard.setText(AnnotatedString(email))
-        scope.launch { snackbar.showSnackbar("邮箱已复制：$email") }
+        scope.launch { snackbar.showSnackbar(context.getString(R.string.dev_email_copied, email)) }
     }
 
     Column(
@@ -1277,13 +1301,13 @@ private fun DeveloperSection(
                 Text("BetterAIChat", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "由 Verlintas 独立开发的一款原生 Android AI 助手：自带 API Key、支持设备工具、屏幕分析与自动化。",
+                    stringResource(R.string.dev_about_desc),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "版本 v$appVersion",
+                    stringResource(R.string.dev_version, appVersion),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1295,7 +1319,9 @@ private fun DeveloperSection(
         Text(stringResource(com.betteraichat.R.string.dev_repo_info), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         var devInfo by remember { mutableStateOf<DeveloperInfo?>(null) }
         var devLoading by remember { mutableStateOf(true) }
-        LaunchedEffect(Unit) {
+        var devRetryTick by remember { mutableStateOf(0) }
+        LaunchedEffect(devRetryTick) {
+            devLoading = true
             devInfo = withContext(kotlinx.coroutines.Dispatchers.IO) { fetchDeveloperInfo() }
             devLoading = false
         }
@@ -1305,7 +1331,15 @@ private fun DeveloperSection(
                 Spacer(Modifier.width(10.dp))
                 Text(stringResource(com.betteraichat.R.string.dev_loading), style = MaterialTheme.typography.bodySmall)
             }
-        } else if (devInfo != null) {
+        } else if (devInfo == null) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(stringResource(com.betteraichat.R.string.dev_failed), style = MaterialTheme.typography.bodySmall)
+                Spacer(Modifier.size(8.dp))
+                OutlinedButton(onClick = { devRetryTick = devRetryTick + 1 }) {
+                    Text(stringResource(com.betteraichat.R.string.retry))
+                }
+            }
+        } else {
             val info = devInfo!!
             var devVisible by remember { mutableStateOf(false) }
             LaunchedEffect(Unit) { devVisible = true }
@@ -1409,7 +1443,7 @@ private fun DeveloperSection(
                                 if (avatar != null) {
                                     Image(
                                         bitmap = avatar.asImageBitmap(),
-                                        contentDescription = "头像",
+                                        contentDescription = stringResource(R.string.dev_avatar),
                                         modifier = Modifier
                                             .size(60.dp)
                                             .clip(RoundedCornerShape(50))
@@ -1470,9 +1504,9 @@ private fun DeveloperSection(
                 enter = fadeIn(tween(500, delayMillis = 150)) + slideInVertically(tween(500, delayMillis = 150)) { it / 6 }
             ) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    StatChip("${info.followers}", stringResource(com.betteraichat.R.string.dev_followers), info.followers)
-                    StatChip("${info.following}", stringResource(com.betteraichat.R.string.dev_following), info.following)
-                    StatChip("${info.publicRepos}", stringResource(com.betteraichat.R.string.dev_repos), info.publicRepos)
+                    StatChip("${info.followers}", stringResource(com.betteraichat.R.string.dev_followers))
+                    StatChip("${info.following}", stringResource(com.betteraichat.R.string.dev_following))
+                    StatChip("${info.publicRepos}", stringResource(com.betteraichat.R.string.dev_repos))
                 }
             }
             Spacer(Modifier.height(4.dp))
@@ -1511,17 +1545,11 @@ private fun DeveloperSection(
                     }
                 }
             }
-        } else {
-            Text(
-                stringResource(com.betteraichat.R.string.dev_unavailable),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
         }
 
         HorizontalDivider()
 
-        Text("项目", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text(stringResource(R.string.dev_project), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         Surface(
             shape = MaterialTheme.shapes.medium,
             color = MaterialTheme.colorScheme.surfaceVariant,
@@ -1533,7 +1561,7 @@ private fun DeveloperSection(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("GitHub 仓库", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.dev_github_repo), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
                     Text(
                         "github.com/Verlintas/BetterAIChat",
                         style = MaterialTheme.typography.bodySmall,
@@ -1558,9 +1586,9 @@ private fun DeveloperSection(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("版本历史 · Releases", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.dev_releases), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
                     Text(
-                        "查看更新日志与下载旧版本",
+                        stringResource(R.string.dev_releases_sub),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1575,16 +1603,16 @@ private fun DeveloperSection(
 
         HorizontalDivider()
 
-        Text("关于", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text(stringResource(R.string.dev_about), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         Text(
-            "技术栈：Kotlin · Jetpack Compose · Room · OkHttp · ML Kit · Shizuku\n开源协议：MIT License\n作者：Verlintas（独立开发）",
+            stringResource(R.string.dev_stack),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
         HorizontalDivider()
 
-        Text("联系开发者", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text(stringResource(R.string.dev_contact), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         Surface(
             shape = MaterialTheme.shapes.medium,
             color = MaterialTheme.colorScheme.surfaceVariant,
@@ -1613,15 +1641,15 @@ private fun DeveloperSection(
 
         HorizontalDivider()
 
-        Text("联系邮箱", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text(stringResource(R.string.dev_email), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         Text(
-            "点击邮箱即可复制，欢迎反馈问题或建议。",
+            stringResource(R.string.dev_email_sub),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        EmailRow("ulv777777@gmail.com", "主邮箱") { copyEmail(it) }
-        EmailRow("12321666@163.com", "副邮箱") { copyEmail(it) }
-        EmailRow("orcakkk@gmail.com", "副邮箱") { copyEmail(it) }
+        EmailRow("ulv777777@gmail.com", context.getString(R.string.dev_primary)) { copyEmail(it) }
+        EmailRow("12321666@163.com", context.getString(R.string.dev_secondary)) { copyEmail(it) }
+        EmailRow("orcakkk@gmail.com", context.getString(R.string.dev_secondary)) { copyEmail(it) }
         Spacer(Modifier.height(24.dp))
     }
 }
@@ -1647,7 +1675,7 @@ private fun EmailRow(
                 Text(email, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
             }
             Text(
-                "复制",
+                stringResource(R.string.copy),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.primary
             )
@@ -1671,7 +1699,7 @@ private data class DeveloperInfo(
 )
 
 @Composable
-private fun StatChip(value: String, label: String, raw: String) {
+private fun StatChip(value: String, label: String) {
     Surface(
         shape = RoundedCornerShape(8.dp),
         color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
@@ -1699,7 +1727,8 @@ private fun AnimatedNumber(value: String, style: androidx.compose.ui.text.TextSt
         )
     }
     Text(
-        if (suffix == "k") "%.1f".format(animated.value) + "k" else animated.value.toInt().toString(),
+        if (suffix == "k") String.format(java.util.Locale.US, "%.1f", animated.value) + "k"
+        else animated.value.toInt().toString(),
         style = style,
         fontWeight = FontWeight.Bold,
         color = MaterialTheme.colorScheme.primary
@@ -1743,7 +1772,7 @@ private fun fetchDeveloperInfo(): DeveloperInfo? = runCatching {
         publicRepos = fmt(user["public_repos"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0),
         createdAt = user["created_at"]?.jsonPrimitive?.content?.substringBefore("T") ?: "",
         avatarBytes = avatarBytes,
-        latestVersion = release["tag_name"]?.jsonPrimitive?.content ?: "未知",
+        latestVersion = release["tag_name"]?.jsonPrimitive?.content ?: "unknown",
         latestTitle = release["name"]?.jsonPrimitive?.content ?: "",
         latestDate = release["published_at"]?.jsonPrimitive?.content?.substringBefore("T") ?: ""
     )

@@ -40,9 +40,11 @@ class TranscribeAudioTool : DeviceTool {
             return "ERROR:缺少录音权限，请到设置页授权录音权限"
         }
         return withContext(Dispatchers.Main) {
-            runCatching {
+            var recognizer: SpeechRecognizer? = null
+            try {
                 val result = CompletableDeferred<String>()
-                val recognizer = SpeechRecognizer.createSpeechRecognizer(appContext)
+                recognizer = SpeechRecognizer.createSpeechRecognizer(appContext)
+                val recognizerRef = recognizer
                 val listener = object : RecognitionListener {
                     override fun onReadyForSpeech(params: Bundle?) {}
                     override fun onBeginningOfSpeech() {}
@@ -67,7 +69,7 @@ class TranscribeAudioTool : DeviceTool {
                     override fun onPartialResults(partialResults: Bundle?) {}
                     override fun onEvent(eventType: Int, params: Bundle?) {}
                 }
-                recognizer.setRecognitionListener(listener)
+                recognizerRef.setRecognitionListener(listener)
                 val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                     putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
                     putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.CHINESE.toString())
@@ -78,16 +80,24 @@ class TranscribeAudioTool : DeviceTool {
                     putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 1_000L)
                 }
                 try {
-                    recognizer.startListening(intent)
+                    recognizerRef.startListening(intent)
                 } catch (e: Exception) {
-                    recognizer.destroy()
-                    return@runCatching "ERROR:语音识别不可用：${e.message}"
+                    recognizerRef.destroy()
+                    recognizer = null
+                    return@withContext "ERROR:语音识别不可用：${e.message}"
                 }
                 val text = withTimeoutOrNull((duration + 15) * 1000L) { result.await() }
                     ?: "ERROR:录音超时"
-                recognizer.destroy()
+                recognizerRef.destroy()
+                recognizer = null
                 if (text.startsWith("ERROR:")) text else "录音转写完成（${duration} 秒）：$text"
-            }.getOrElse { e -> "ERROR:录音转写失败：${e.message}" }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                recognizer?.destroy()
+                throw e
+            } catch (e: Exception) {
+                recognizer?.destroy()
+                "ERROR:录音转写失败：${e.message}"
+            }
         }
     }
 }

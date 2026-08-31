@@ -132,10 +132,10 @@ interface MessageDao {
     @Query("DELETE FROM messages WHERE conversationId = :conversationId AND id >= :fromId AND id <= :toId")
     suspend fun deleteRange(conversationId: Long, fromId: Long, toId: Long)
 
-    @Query("DELETE FROM messages WHERE toolCallId IN (:toolCallIds)")
-    suspend fun deleteByToolCallIds(toolCallIds: List<String>)
+    @Query("DELETE FROM messages WHERE conversationId = :conversationId AND toolCallId IN (:toolCallIds)")
+    suspend fun deleteByToolCallIds(conversationId: Long, toolCallIds: List<String>)
 
-    @Query("DELETE FROM messages WHERE conversationId = :conversationId")
+    @Query("DELETE FROM messages WHERE conversationId = :conversationId AND starred = 0")
     suspend fun deleteAllForConversation(conversationId: Long)
 }
 

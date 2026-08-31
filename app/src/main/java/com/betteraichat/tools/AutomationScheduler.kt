@@ -39,6 +39,7 @@ class AutomationScheduler(
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private val batteryThresholds = HashMap<Long, Pair<String, Int>>()
+    private val batteryTriggered = java.util.concurrent.ConcurrentHashMap<Long, Boolean>()
     private val running = java.util.concurrent.ConcurrentHashMap<Long, Boolean>()
     @Volatile
     private var receiverRegistered = false
@@ -69,6 +70,7 @@ class AutomationScheduler(
         synchronized(batteryThresholds) {
             batteryThresholds.remove(automation.id)
         }
+        batteryTriggered.remove(automation.id)
     }
 
     private fun registerBatteryReceiverIfNeeded() {
@@ -153,14 +155,20 @@ class AutomationScheduler(
             snapshot.forEach { (id, config) ->
                 val (direction, threshold) = config
                 val hit = if (direction == "low") level <= threshold else level >= threshold
-                if (hit && running.putIfAbsent(id, true) == null) {
-                    scope.launch {
-                        try {
-                            executeAutomation(id)
-                        } finally {
-                            running.remove(id)
+                if (hit) {
+                    if (batteryTriggered.putIfAbsent(id, true) == null &&
+                        running.putIfAbsent(id, true) == null
+                    ) {
+                        scope.launch {
+                            try {
+                                executeAutomation(id)
+                            } finally {
+                                running.remove(id)
+                            }
                         }
                     }
+                } else {
+                    batteryTriggered.remove(id)
                 }
             }
         }

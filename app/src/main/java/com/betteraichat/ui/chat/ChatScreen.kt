@@ -83,7 +83,6 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -102,11 +101,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.betteraichat.R
 import com.betteraichat.core.catalog.ModelCatalog
+import com.betteraichat.core.model.ChatRole
 import com.betteraichat.core.mode.AppMode
 import com.betteraichat.ui.rememberContainer
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -119,7 +121,6 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
     )
     val state by vm.state.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
-    val last = state.messages.lastOrNull()
     var showMaxConfirm by remember { mutableStateOf(false) }
     var showClearContext by remember { mutableStateOf(false) }
     var showCompressConfirm by remember { mutableStateOf(false) }
@@ -150,7 +151,7 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                 }
             )
         } else {
-            scope.launch { snackbarHostState.showSnackbar("需要录音权限才能语音输入") }
+            scope.launch { snackbarHostState.showSnackbar(context.getString(R.string.speech_perm_required)) }
         }
     }
     DisposableEffect(Unit) {
@@ -214,19 +215,6 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
         " · ${formatTokens(totalPromptTokens)}（$usagePercent%）"
     } else ""
 
-    val shouldAutoScroll by remember {
-        derivedStateOf {
-            val info = listState.layoutInfo
-            val total = info.totalItemsCount
-            if (total == 0) return@derivedStateOf true
-            val lastVisible = info.visibleItemsInfo.lastOrNull()
-                ?: return@derivedStateOf false
-            lastVisible.index >= total - 2 ||
-                (lastVisible.index >= total - 1 &&
-                    lastVisible.offset + lastVisible.size >= info.viewportEndOffset - 200)
-        }
-    }
-
     var wasAtBottom by remember { mutableStateOf(true) }
     LaunchedEffect(listState) {
         snapshotFlow { listState.isScrollInProgress }
@@ -236,7 +224,8 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                 } else {
                     val info = listState.layoutInfo
                     val last = info.visibleItemsInfo.lastOrNull { it.index == info.totalItemsCount - 1 }
-                    val pinned = last != null && last.offset + last.size >= info.viewportEndOffset - 40
+                    val pinned = last != null && last.offset >= 0 &&
+                        last.offset + last.size <= info.viewportEndOffset + 1
                     if (pinned) wasAtBottom = true
                 }
             }
@@ -250,7 +239,7 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
         if (state.messages.isEmpty()) return@LaunchedEffect
         if (initialScrollDone && !forceFollow && !wasAtBottom) return@LaunchedEffect
         var attempts = 0
-        while (attempts++ < 60) {
+        while (attempts++ < 2400) {
             if (listState.isScrollInProgress) {
                 forceFollow = false
                 break
@@ -262,12 +251,10 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                 val lastItem = info.visibleItemsInfo.lastOrNull { it.index == total - 1 }
                 val bottom = lastItem?.let { it.offset + it.size } ?: -1
                 val viewportBottom = info.viewportEndOffset
-                if (lastItem != null && bottom >= viewportBottom - 20) {
-                    initialScrollDone = true
-                    break
-                }
+                val pinned = lastItem != null && bottom >= viewportBottom - 20
+                if (pinned && !streaming && !forceFollow) break
             }
-            delay(120)
+            delay(80)
         }
         initialScrollDone = true
     }
@@ -297,6 +284,7 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
 
     LaunchedEffect(state.notification) {
         state.notification?.let {
+            snackbarHostState.currentSnackbarData?.dismiss()
             snackbarHostState.showSnackbar(it)
             vm.dismissNotification()
         }
@@ -452,8 +440,9 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                items(state.messages.size, key = { state.messages[it].id }) { idx ->
-                    val msg = state.messages[idx]
+                val displayMessages = state.messages.filter { it.role != ChatRole.TOOL }
+                items(displayMessages.size, key = { displayMessages[it].id }) { idx ->
+                    val msg = displayMessages[idx]
                     MessageItem(
                         msg = msg,
                         modifier = Modifier.animateItem(),
@@ -543,11 +532,14 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
     }
 
     viewImageB64?.let { b64 ->
-        val bitmap = remember(b64) {
-            runCatching {
-                val bytes = android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
-                android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-            }.getOrNull()
+        var bitmap by remember(b64) { mutableStateOf<android.graphics.Bitmap?>(null) }
+        LaunchedEffect(b64) {
+            bitmap = withContext(kotlinx.coroutines.Dispatchers.Default) {
+                runCatching {
+                    val bytes = android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
+                    android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                }.getOrNull()
+            }
         }
         if (bitmap != null) {
             Dialog(onDismissRequest = { viewImageB64 = null }) {
@@ -559,8 +551,8 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                     contentAlignment = Alignment.Center
                 ) {
                     Image(
-                        bitmap = bitmap.asImageBitmap(),
-                        contentDescription = "查看图片",
+                        bitmap = (bitmap ?: return@Dialog).asImageBitmap(),
+                        contentDescription = stringResource(R.string.chat_view_image),
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
@@ -604,7 +596,7 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                     showCompressConfirm = false
                     vm.compressContext(compressLevel)
                     showCompressConfirm = false
-                }) { Text("压缩") }
+                }) { Text(stringResource(R.string.chat_compress_confirm)) }
             },
             dismissButton = {
                 TextButton(onClick = { showCompressConfirm = false }) { Text(stringResource(com.betteraichat.R.string.cancel)) }
@@ -627,7 +619,7 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                 TextButton(onClick = {
                     vm.editAndResend(msg.id, editText)
                     editingMessage = null
-                }) { Text("重发") }
+                }) { Text(stringResource(R.string.chat_resend)) }
             },
             dismissButton = {
                 TextButton(onClick = { editingMessage = null }) { Text(stringResource(com.betteraichat.R.string.cancel)) }
@@ -641,7 +633,7 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
             title = { Text(stringResource(com.betteraichat.R.string.chat_clear_confirm_title)) },
             text = {
                 Text(
-                    "将删除本会话全部消息，AI 将不再记得之前的对话内容（会话本身会保留）。",
+                    stringResource(R.string.chat_clear_confirm_body),
                     style = MaterialTheme.typography.bodyMedium
                 )
             },
@@ -649,7 +641,7 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                 TextButton(onClick = {
                     vm.clearContext()
                     showClearContext = false
-                }) { Text("清除") }
+                }) { Text(stringResource(R.string.chat_clear_confirm)) }
             },
             dismissButton = {
                 TextButton(onClick = { showClearContext = false }) { Text(stringResource(com.betteraichat.R.string.cancel)) }
@@ -664,12 +656,12 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
             text = {
                 Column {
                     Text(
-                        "Max 模式下 AI 将自主调用设备工具完成任务，无需每一步确认。",
+                        stringResource(R.string.chat_max_body),
                         style = MaterialTheme.typography.bodyMedium
                     )
                     Spacer(Modifier.size(8.dp))
                     Text(
-                        "包括：打开应用、发送通知、调整亮度/音量、截屏、联网搜索。",
+                        stringResource(R.string.chat_max_body2),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -679,7 +671,7 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                 TextButton(onClick = {
                     vm.updateMode(AppMode.MAX)
                     showMaxConfirm = false
-                }) { Text("切换") }
+                }) { Text(stringResource(R.string.chat_switch_max)) }
             },
             dismissButton = {
                 TextButton(onClick = { showMaxConfirm = false }) { Text(stringResource(com.betteraichat.R.string.cancel)) }
@@ -690,12 +682,12 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
     state.confirmRequest?.let { req ->
         AlertDialog(
             onDismissRequest = { vm.respondConfirm(false) },
-            title = { Text("AI 请求执行设备工具") },
+            title = { Text(stringResource(R.string.chat_confirm_title)) },
             text = {
                 Column {
-                    Text("工具：${req.call.name}", fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.chat_confirm_tool, req.call.name), fontWeight = FontWeight.Bold)
                     Spacer(Modifier.size(8.dp))
-                    Text("参数：", style = MaterialTheme.typography.bodySmall)
+                    Text(stringResource(R.string.chat_confirm_params), style = MaterialTheme.typography.bodySmall)
                     Text(
                         prettyJson(req.call.arguments),
                         style = MaterialTheme.typography.bodySmall,
@@ -703,7 +695,7 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                     )
                     Spacer(Modifier.size(8.dp))
                     Text(
-                        "当前模式：${req.mode.displayName}。确认执行吗？",
+                        stringResource(R.string.chat_confirm_mode, req.mode.displayName),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -712,15 +704,15 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                         onClick = { vm.stop() },
                         modifier = Modifier.align(Alignment.End)
                     ) {
-                        Text("停止整个任务", color = MaterialTheme.colorScheme.error)
+                        Text(stringResource(R.string.chat_confirm_stop_task), color = MaterialTheme.colorScheme.error)
                     }
                 }
             },
             confirmButton = {
-                TextButton(onClick = { vm.respondConfirm(true) }) { Text("允许") }
+                TextButton(onClick = { vm.respondConfirm(true) }) { Text(stringResource(R.string.chat_allow)) }
             },
             dismissButton = {
-                TextButton(onClick = { vm.respondConfirm(false) }) { Text("拒绝") }
+                TextButton(onClick = { vm.respondConfirm(false) }) { Text(stringResource(R.string.chat_deny)) }
             }
         )
     }
@@ -777,7 +769,7 @@ private fun WelcomePanel(
         Text("BetterAIChat", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         Spacer(Modifier.size(8.dp))
         Text(
-            "当前模式：${mode.displayName}",
+            stringResource(R.string.welcome_current_mode, mode.displayName),
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.primary
         )
@@ -790,7 +782,7 @@ private fun WelcomePanel(
         )
         Spacer(Modifier.size(24.dp))
         Text(
-            "试试这样说：",
+            stringResource(R.string.welcome_examples),
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -809,13 +801,13 @@ private fun WelcomePanel(
         }
         Spacer(Modifier.size(16.dp))
         Text(
-            "长按消息可复制/朗读/编辑",
+            stringResource(R.string.welcome_hint_longpress),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
         )
         Spacer(Modifier.size(24.dp))
         Text(
-            "提示词模板：",
+            stringResource(R.string.welcome_prompt_templates),
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -882,21 +874,25 @@ private fun InputBar(
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             if (att.kind == "image") {
-                                val bitmap = remember(att.uri) {
-                                    runCatching {
-                                        context.contentResolver.openInputStream(att.uri)?.use {
-                                            android.graphics.BitmapFactory.decodeStream(it)
-                                        }?.let {
-                                            val scale = 120f / it.width
-                                            android.graphics.Bitmap.createScaledBitmap(
-                                                it, 120, (it.height * scale).toInt().coerceAtLeast(1), true
-                                            )
-                                        }
-                                    }.getOrNull()
+                                var bitmap by remember(att.uri) { mutableStateOf<android.graphics.Bitmap?>(null) }
+                                LaunchedEffect(att.uri) {
+                                    bitmap = withContext(kotlinx.coroutines.Dispatchers.Default) {
+                                        runCatching {
+                                            context.contentResolver.openInputStream(att.uri)?.use {
+                                                android.graphics.BitmapFactory.decodeStream(it)
+                                            }?.let {
+                                                val scale = 120f / it.width
+                                                android.graphics.Bitmap.createScaledBitmap(
+                                                    it, 120, (it.height * scale).toInt().coerceAtLeast(1), true
+                                                )
+                                            }
+                                        }.getOrNull()
+                                    }
                                 }
-                                if (bitmap != null) {
+                                val bmp = bitmap
+                                if (bmp != null) {
                                     Image(
-                                        bitmap = bitmap.asImageBitmap(),
+                                        bitmap = bmp.asImageBitmap(),
                                         contentDescription = att.name,
                                         modifier = Modifier.size(44.dp).clip(RoundedCornerShape(8.dp))
                                     )
@@ -910,7 +906,7 @@ private fun InputBar(
                                 overflow = TextOverflow.Ellipsis
                             )
                             IconButton(onClick = { onRemoveAttachment(att.id) }) {
-                                Icon(Icons.Filled.Close, contentDescription = "移除", modifier = Modifier.size(16.dp))
+                                Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.chat_remove_att), modifier = Modifier.size(16.dp))
                             }
                         }
                     }
@@ -933,7 +929,7 @@ private fun InputBar(
                 CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    "正在解析文档…",
+                    stringResource(R.string.input_parsing),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -951,7 +947,7 @@ private fun InputBar(
                 )
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    "正在聆听…",
+                    stringResource(R.string.input_listening),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error
                 )
@@ -970,14 +966,14 @@ private fun InputBar(
                 }
                 DropdownMenu(expanded = attachMenu, onDismissRequest = { attachMenu = false }) {
                     DropdownMenuItem(
-                        text = { Text("选择图片（可多选）") },
+                        text = { Text(stringResource(R.string.input_attach_image)) },
                         onClick = {
                             attachMenu = false
                             onPickImages()
                         }
                     )
                     DropdownMenuItem(
-                        text = { Text("选择文件") },
+                        text = { Text(stringResource(R.string.input_attach_file)) },
                         onClick = {
                             attachMenu = false
                             onPickFile()
@@ -988,7 +984,7 @@ private fun InputBar(
             IconButton(onClick = onToggleSpeech) {
                 Icon(
                     MicIcon,
-                    contentDescription = if (speechActive) "停止语音输入" else "语音输入",
+                    contentDescription = if (speechActive) stringResource(R.string.chat_stop) else stringResource(R.string.chat_voice_input),
                     tint = if (speechActive) MaterialTheme.colorScheme.error
                     else MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1006,7 +1002,7 @@ private fun InputBar(
                 trailingIcon = {
                     if (input.isNotEmpty() && !isRunning) {
                         IconButton(onClick = { onInputChange("") }) {
-                            Icon(Icons.Filled.Clear, contentDescription = "清空")
+                            Icon(Icons.Filled.Clear, contentDescription = stringResource(R.string.input_clear))
                         }
                     }
                 }
@@ -1070,64 +1066,6 @@ private fun ModeSelector(current: AppMode, onSelect: (AppMode) -> Unit) {
 }
 
 @Composable
-private fun ModelSelector(
-    provider: com.betteraichat.core.model.ProviderId,
-    current: String,
-    onSelect: (String) -> Unit
-) {
-    var expanded by remember { mutableStateOf(false) }
-    var showCustom by remember { mutableStateOf(false) }
-    var customInput by remember { mutableStateOf("") }
-    Box {
-        TextButton(
-            onClick = { expanded = true },
-            contentPadding = PaddingValues(horizontal = 6.dp),
-            modifier = Modifier.padding(0.dp)
-        ) {
-            Text(current.take(10), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null, Modifier.size(16.dp))
-        }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            ModelListContent(
-                provider = provider,
-                current = current,
-                onPick = {
-                    onSelect(it)
-                    expanded = false
-                },
-                onOpenCustom = {
-                    expanded = false
-                    customInput = current
-                    showCustom = true
-                }
-            )
-        }
-    }
-    if (showCustom) {
-        AlertDialog(
-            onDismissRequest = { showCustom = false },
-            title = { Text("自定义模型") },
-            text = {
-                OutlinedTextField(
-                    value = customInput,
-                    onValueChange = { customInput = it },
-                    placeholder = { Text("模型 ID，如 my-model-v1") }
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    onSelect(customInput.trim())
-                    showCustom = false
-                }) { Text(stringResource(com.betteraichat.R.string.confirm)) }
-            },
-            dismissButton = {
-                TextButton(onClick = { showCustom = false }) { Text(stringResource(com.betteraichat.R.string.cancel)) }
-            }
-        )
-    }
-}
-
-@Composable
 private fun ModelListContent(
     provider: com.betteraichat.core.model.ProviderId,
     current: String,
@@ -1153,7 +1091,7 @@ private fun ModelListContent(
         DropdownMenuItem(
             text = {
                 Text(
-                    "服务端模型（检测到的 ${serverModels.size} 个）",
+                    stringResource(R.string.chat_server_models, serverModels.size),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1165,7 +1103,7 @@ private fun ModelListContent(
                 text = {
                     Column {
                         Text(id)
-                        Text("服务端 · 设置页检测", style = MaterialTheme.typography.bodySmall)
+                        Text(stringResource(R.string.chat_server_model_note), style = MaterialTheme.typography.bodySmall)
                     }
                 },
                 onClick = { onPick(id) }
@@ -1174,13 +1112,13 @@ private fun ModelListContent(
     }
     if (current !in catalogIds && current !in serverModels) {
         DropdownMenuItem(
-            text = { Text("$current（自定义）") },
+            text = { Text(stringResource(R.string.chat_custom_badge, current)) },
             onClick = { onPick(current) }
         )
     }
     HorizontalDivider()
     DropdownMenuItem(
-        text = { Text("自定义模型…") },
+        text = { Text(stringResource(R.string.chat_custom_model_ellipsis)) },
         onClick = onOpenCustom
     )
 }
@@ -1198,7 +1136,7 @@ private fun ModelPickerDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
-                "选择模型",
+                stringResource(R.string.chat_select_model),
                 style = MaterialTheme.typography.titleMedium
             )
         },
@@ -1223,23 +1161,23 @@ private fun ModelPickerDialog(
                     OutlinedTextField(
                         value = customInput,
                         onValueChange = { customInput = it },
-                        placeholder = { Text("模型 ID，如 my-model-v1") }
+                        placeholder = { Text(stringResource(R.string.chat_model_id_ph)) }
                     )
                     Spacer(Modifier.height(12.dp))
                     Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
-                        TextButton(onClick = { customMode = false }) { Text("返回列表") }
+                        TextButton(onClick = { customMode = false }) { Text(stringResource(R.string.chat_back_to_list)) }
                         Spacer(Modifier.width(8.dp))
                         Button(onClick = {
                             onSelect(customInput.trim())
                             onDismiss()
-                        }) { Text("使用此模型") }
+                        }) { Text(stringResource(R.string.chat_use_model)) }
                     }
                 }
             }
         },
         confirmButton = {},
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("关闭") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.chat_close)) }
         }
     )
 }

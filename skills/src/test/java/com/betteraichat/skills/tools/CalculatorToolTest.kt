@@ -60,6 +60,27 @@ class CalculatorToolTest {
         val r3 = calc("2 +")
         assertEquals(true, r3.startsWith("ERROR"))
     }
+    @Test
+    fun `right associative power`() {
+        assertEquals("512", calc("2^3^2"))
+        assertEquals("9", calc("3^2"))
+    }
+
+    @Test
+    fun `edge inputs`() {
+        assertEquals(true, calc("").contains("不能为空"))
+        assertEquals("0", calc("0 * 999"))
+        assertEquals("1", calc("1 + 0"))
+        assertEquals(true, calc("1/0").startsWith("ERROR"))
+        assertEquals(true, calc("abc").startsWith("ERROR"))
+    }
+
+    @Test
+    fun `unary minus inside parens`() {
+        assertEquals("-7", calc("3 + -10"))
+        assertEquals("6", calc("2 * -3 * -1"))
+    }
+
 
     @Test
     fun `very long expression rejected`() {

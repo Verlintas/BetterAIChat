@@ -36,6 +36,8 @@ class ScreenRecorder(
             ?: return@withContext "ERROR:录屏服务未就绪，请重新授权"
         val recorder = MediaRecorder()
         var virtualDisplay: VirtualDisplay? = null
+        var started = false
+        var saveUri: android.net.Uri? = null
         try {
             val wm = context.getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager
             val metrics = android.util.DisplayMetrics()
@@ -45,7 +47,10 @@ class ScreenRecorder(
             val density = metrics.densityDpi
 
             val fileName = "screen_${System.currentTimeMillis()}.mp4"
-            val saveUri = createDownloadUri(fileName)
+            if (Build.VERSION.SDK_INT < 29) {
+                return@withContext "ERROR:录屏需要 Android 10（API 29）及以上系统"
+            }
+            saveUri = createDownloadUri(fileName)
                 ?: return@withContext "ERROR:无法创建视频文件"
 
             recorder.setAudioSource(MediaRecorder.AudioSource.MIC)
@@ -74,13 +79,21 @@ class ScreenRecorder(
                 return@withContext "ERROR:无法创建录屏投影"
             }
             recorder.start()
+            started = true
             delay(seconds * 1000L)
             recorder.stop()
+            started = false
             return@withContext "录屏完成：下载/$fileName（${seconds} 秒，${width}x${height}）"
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             "ERROR:录屏失败：${e.message}"
         } finally {
             runCatching { virtualDisplay?.release() }
+            if (started) {
+                runCatching { recorder.stop() }
+                saveUri?.let { uri -> runCatching { context.contentResolver.delete(uri, null, null) } }
+            }
             runCatching { recorder.release() }
         }
     }
