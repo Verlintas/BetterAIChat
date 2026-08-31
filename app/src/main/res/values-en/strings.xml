@@ -231,4 +231,8 @@ Author: Verlintas</string>
     <string name="status_failed">Failed</string>
     <string name="status_rejected">Rejected</string>
     <string name="status_denied">Denied</string>
+    <string name="tasks_daily">Daily %1$s</string>
+    <string name="tasks_weekly">Weekly day %1$d %2$s</string>
+    <string name="tasks_hourly">Every %1$d hours</string>
+    <string name="chat_more">More</string>
 </resources>

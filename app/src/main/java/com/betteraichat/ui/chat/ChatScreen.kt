@@ -312,7 +312,7 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = "返回")
+                        Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(com.betteraichat.R.string.settings_back))
                     }
                 },
                 actions = {
@@ -329,7 +329,7 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                     Box {
                         var menuOpen by remember { mutableStateOf(false) }
                         IconButton(onClick = { menuOpen = true }) {
-                            Icon(Icons.Filled.MoreVert, contentDescription = "更多")
+                            Icon(Icons.Filled.MoreVert, contentDescription = stringResource(com.betteraichat.R.string.chat_more))
                         }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                             DropdownMenuItem(

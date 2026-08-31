@@ -271,7 +271,7 @@ fun MessageItem(
                     color = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
                 ) {
                     Text(
-                        "执行步骤：已完成 $done / ${msg.toolCalls.size}${if (running > 0) "，执行中…" else ""}",
+                        stringResource(com.betteraichat.R.string.tool_steps, done, msg.toolCalls.size, if (running > 0) stringResource(com.betteraichat.R.string.status_running) else ""),
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary
@@ -359,7 +359,7 @@ private fun MessageActionsDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("消息操作") },
+        title = { Text(stringResource(com.betteraichat.R.string.msg_actions)) },
         text = {
             Text(
                 content.take(120) + if (content.length > 120) "…" else "",
@@ -368,18 +368,18 @@ private fun MessageActionsDialog(
             )
         },
         confirmButton = {
-            TextButton(onClick = onCopy) { Text("复制") }
+            TextButton(onClick = onCopy) { Text(stringResource(com.betteraichat.R.string.chat_copy)) }
         },
         dismissButton = {
             Row {
-                TextButton(onClick = onSpeak) { Text("朗读") }
-                TextButton(onClick = onStar) { Text(if (starred) "取消收藏" else "收藏") }
+                TextButton(onClick = onSpeak) { Text(stringResource(com.betteraichat.R.string.chat_speak)) }
+                TextButton(onClick = onStar) { Text(stringResource(if (starred) com.betteraichat.R.string.chat_unstar else com.betteraichat.R.string.chat_star)) }
                 if (onEdit != null) {
-                    TextButton(onClick = onEdit) { Text("编辑") }
+                    TextButton(onClick = onEdit) { Text(stringResource(com.betteraichat.R.string.chat_edit)) }
                 }
-                TextButton(onClick = onDismiss) { Text("取消") }
+                TextButton(onClick = onDismiss) { Text(stringResource(com.betteraichat.R.string.cancel)) }
                 TextButton(onClick = onDelete) {
-                    Text("删除", color = MaterialTheme.colorScheme.error)
+                    Text(stringResource(com.betteraichat.R.string.chat_delete), color = MaterialTheme.colorScheme.error)
                 }
             }
         }
@@ -400,14 +400,14 @@ private fun ThinkingCard(thinking: String) {
         Column(modifier = Modifier.padding(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    "思考过程",
+                    stringResource(com.betteraichat.R.string.thinking_title),
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.weight(1f))
                 Text(
-                    if (expanded) "收起" else "展开",
+                    stringResource(if (expanded) com.betteraichat.R.string.chat_collapse else com.betteraichat.R.string.thinking_expand),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.primary
                 )
@@ -544,7 +544,7 @@ private fun ToolCallCard(call: ToolCall, stepNumber: Int = 0) {
                         color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
                     ) {
                         Text(
-                            "第 $stepNumber 步",
+                            stringResource(com.betteraichat.R.string.tool_step, stepNumber),
                             modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.primary
@@ -599,12 +599,12 @@ private fun ToolCallCard(call: ToolCall, stepNumber: Int = 0) {
 @Composable
 private fun StatusBadge(status: ToolCallStatus) {
     val (text, target) = when (status) {
-        ToolCallStatus.PENDING -> "等待" to MaterialTheme.colorScheme.onSurfaceVariant
-        ToolCallStatus.RUNNING -> "执行中…" to MaterialTheme.colorScheme.primary
-        ToolCallStatus.DONE -> "已完成" to Color(0xFF2E7D32)
-        ToolCallStatus.FAILED -> "失败" to MaterialTheme.colorScheme.error
-        ToolCallStatus.REJECTED -> "已拒绝" to MaterialTheme.colorScheme.error
-        ToolCallStatus.DENIED -> "已禁止" to MaterialTheme.colorScheme.error
+        ToolCallStatus.PENDING -> stringResource(com.betteraichat.R.string.status_waiting) to MaterialTheme.colorScheme.onSurfaceVariant
+        ToolCallStatus.RUNNING -> stringResource(com.betteraichat.R.string.status_running) to MaterialTheme.colorScheme.primary
+        ToolCallStatus.DONE -> stringResource(com.betteraichat.R.string.status_done) to Color(0xFF2E7D32)
+        ToolCallStatus.FAILED -> stringResource(com.betteraichat.R.string.status_failed) to MaterialTheme.colorScheme.error
+        ToolCallStatus.REJECTED -> stringResource(com.betteraichat.R.string.status_rejected) to MaterialTheme.colorScheme.error
+        ToolCallStatus.DENIED -> stringResource(com.betteraichat.R.string.status_denied) to MaterialTheme.colorScheme.error
     }
     val color by androidx.compose.animation.animateColorAsState(
         targetValue = target,
@@ -641,7 +641,7 @@ private fun HighlightedCodeCard(code: String, onCopy: () -> Unit) {
                 )
                 Spacer(Modifier.weight(1f))
                 TextButton(onClick = onCopy) {
-                    Text("复制", color = Color(0xFF9CDCFE))
+                    Text(stringResource(com.betteraichat.R.string.chat_copy), color = Color(0xFF9CDCFE))
                 }
             }
             Text(

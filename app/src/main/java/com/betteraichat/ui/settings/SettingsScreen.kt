@@ -1072,10 +1072,11 @@ private fun RepeatTasksSection(
     }
 }
 
+@Composable
 private fun intervalLabel(task: com.betteraichat.core.db.RepeatTaskEntity): String = when (task.interval) {
-    "daily" -> "每天 ${task.time}"
-    "weekly" -> "每周 周${task.weekday} ${task.time}"
-    else -> "每 ${task.everyHours} 小时"
+    "daily" -> stringResource(R.string.tasks_daily, task.time)
+    "weekly" -> stringResource(R.string.tasks_weekly, task.weekday, task.time)
+    else -> stringResource(R.string.tasks_hourly, task.everyHours)
 }
 
 private fun formatNext(ts: Long): String =
@@ -1174,7 +1175,9 @@ private fun PermissionRow(
                 Text(
                     status,
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (status == "已授权") MaterialTheme.colorScheme.primary
+                    color = if (status == stringResource(R.string.perm_granted) ||
+                        status == stringResource(R.string.shizuku_action_granted)
+                    ) MaterialTheme.colorScheme.primary
                     else MaterialTheme.colorScheme.error
                 )
             }

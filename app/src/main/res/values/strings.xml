@@ -231,4 +231,8 @@
     <string name="status_failed">失败</string>
     <string name="status_rejected">已拒绝</string>
     <string name="status_denied">已禁止</string>
+    <string name="tasks_daily">每天 %1$s</string>
+    <string name="tasks_weekly">每周 周%1$d %2$s</string>
+    <string name="tasks_hourly">每 %1$d 小时</string>
+    <string name="chat_more">更多</string>
 </resources>
