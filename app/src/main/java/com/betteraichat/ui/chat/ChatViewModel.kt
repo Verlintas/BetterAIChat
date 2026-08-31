@@ -568,7 +568,9 @@ class ChatViewModel(
             "当前模型不支持图片输入。请切换到支持视觉的模型，或点「重试」自动移除图片重发"
         raw.contains("401") -> "API Key 无效或已过期，请到设置页检查（HTTP 401）"
         raw.contains("403") -> "API Key 无权限访问该资源（HTTP 403）"
-        raw.contains("404") -> "模型不存在或 Base URL 不正确，请到设置页检测连接（HTTP 404）"
+        raw.contains("404") -> "模型不存在或 Base URL 不正确，请检查 Agent 配置（HTTP 404）"
+        raw.contains("400") && raw.contains("reasoning_effort", ignoreCase = true) ->
+            "该模型不支持 reasoning_effort 参数，请在 Agent 配置里关闭「深度推理」后重试（HTTP 400）"
         raw.contains("429") -> "请求过于频繁或额度不足，请稍后重试（HTTP 429）"
         raw.contains("timeout", ignoreCase = true) || raw.contains("timed out", ignoreCase = true) ->
             "网络超时，请检查网络连接后重试"

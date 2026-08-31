@@ -177,6 +177,33 @@ fun AgentOnboardingDialog(
                                 )
                             }
                         }
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            stringResource(R.string.agent_quick_providers),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        androidx.compose.foundation.layout.FlowRow(
+                            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp),
+                            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp)
+                        ) {
+                            listOf(
+                                "DeepSeek" to "https://api.deepseek.com/v1",
+                                "通义千问" to "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                                "Kimi" to "https://api.moonshot.cn/v1",
+                                "智谱 GLM" to "https://open.bigmodel.cn/api/paas/v4",
+                                "SiliconFlow" to "https://api.siliconflow.cn/v1"
+                            ).forEach { (label, url) ->
+                                FilterChip(
+                                    selected = baseUrl.trimEnd('/') == url.trimEnd('/'),
+                                    onClick = {
+                                        provider = ProviderId.OPENAI_COMPAT
+                                        baseUrl = url
+                                    },
+                                    label = { Text(label, maxLines = 1) }
+                                )
+                            }
+                        }
                         Spacer(Modifier.height(8.dp))
                         OutlinedTextField(
                             value = baseUrl,

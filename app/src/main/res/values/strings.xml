@@ -275,4 +275,5 @@
     <string name="agents_delete_body">删除「%1$s」后，使用它的对话将回退到默认 Agent。</string>
     <string name="agents_deleted">已删除「%1$s」</string>
     <string name="chat_select_agent">选择 Agent</string>
+    <string name="agent_quick_providers">常用 OpenAI 兼容服务商（点击自动填充 Base URL）：</string>
 </resources>
