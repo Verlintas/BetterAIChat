@@ -32,13 +32,20 @@ class ChatRepository(private val db: AppDatabase) {
 
     suspend fun setStarred(id: Long, starred: Boolean) = db.messageDao().updateStarred(id, starred)
 
-    suspend fun createConversation(provider: ProviderId, model: String, mode: AppMode, defaultTitle: String = "New Chat"): Long =
+    suspend fun createConversation(
+        provider: ProviderId,
+        model: String,
+        mode: AppMode,
+        defaultTitle: String = "New Chat",
+        agentId: Long? = null
+    ): Long =
         db.conversationDao().insert(
             ConversationEntity(
                 title = defaultTitle,
                 provider = provider.name,
                 model = model,
                 mode = mode.name,
+                agentId = agentId,
                 createdAt = System.currentTimeMillis(),
                 updatedAt = System.currentTimeMillis()
             )
@@ -57,9 +64,11 @@ class ChatRepository(private val db: AppDatabase) {
         db.conversationDao().update(c.copy(title = title, updatedAt = System.currentTimeMillis()))
     }
 
-    suspend fun updateMeta(id: Long, model: String, mode: AppMode) {
+    suspend fun updateMeta(id: Long, model: String, mode: AppMode, agentId: Long? = null) {
         val c = db.conversationDao().getById(id) ?: return
-        db.conversationDao().update(c.copy(model = model, mode = mode.name, updatedAt = System.currentTimeMillis()))
+        db.conversationDao().update(
+            c.copy(model = model, mode = mode.name, agentId = agentId ?: c.agentId, updatedAt = System.currentTimeMillis())
+        )
     }
 
     suspend fun setPinned(id: Long, pinned: Boolean) = db.conversationDao().updatePinned(id, pinned)

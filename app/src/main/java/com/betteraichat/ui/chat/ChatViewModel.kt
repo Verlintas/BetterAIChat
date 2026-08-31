@@ -58,6 +58,8 @@ data class ChatUiState(
     val title: String = "新对话",
     val provider: ProviderId = ProviderId.OPENAI_COMPAT,
     val model: String = "",
+    val agentId: Long? = null,
+    val agentName: String = "",
     val mode: AppMode = AppMode.CHAT,
     val messages: List<UiMessage> = emptyList(),
     val isRunning: Boolean = false,
@@ -75,6 +77,7 @@ class ChatViewModel(
     private val conversationId: Long,
     private val repository: ChatRepository,
     private val settings: SettingsRepository,
+    private val agentRepo: com.betteraichat.core.chat.AgentRepository,
     private val engine: ChatEngine,
     private val providerFactory: (ProviderId) -> com.betteraichat.core.provider.ChatProvider,
     private val appContext: android.content.Context
@@ -111,6 +114,16 @@ class ChatViewModel(
     private var toolCallRoundsThisRun = 0
     private var runToken = 0
 
+    private suspend fun resolveConfig(s: ChatUiState): com.betteraichat.core.model.ProviderConfig {
+        val agent = s.agentId?.let { runCatching { agentRepo.getById(it) }.getOrNull() }
+            ?: runCatching { agentRepo.getDefault() }.getOrNull()
+        return if (agent != null) {
+            agentRepo.toConfig(agent)
+        } else {
+            settings.configFor(s.provider)
+        }
+    }
+
     private fun appInForeground(): Boolean =
         (appContext.applicationContext as com.betteraichat.BetterAIChatApp).container.appInForeground
 
@@ -142,15 +155,20 @@ class ChatViewModel(
         if (conversationId > 0) {
             loadConversation(conversationId)
         } else {
-            val provider = settings.getDefaultProvider()
-            _state.update {
-                it.copy(
-                    provider = provider,
-                    model = settings.getModel(provider),
-                    mode = settings.getDefaultMode()
-                )
+            viewModelScope.launch {
+                val def = runCatching { agentRepo.getDefault() }.getOrNull()
+                val provider = settings.getDefaultProvider()
+                _state.update {
+                    it.copy(
+                        provider = def?.let { runCatching { ProviderId.valueOf(it.provider) }.getOrDefault(provider) } ?: provider,
+                        model = def?.model ?: settings.getModel(provider),
+                        agentId = def?.id,
+                        agentName = def?.name ?: "",
+                        mode = settings.getDefaultMode()
+                    )
+                }
+                consumePendingShare()
             }
-            consumePendingShare()
         }
     }
 
@@ -203,12 +221,21 @@ class ChatViewModel(
             }
             val provider = runCatching { ProviderId.valueOf(c.provider) }.getOrDefault(ProviderId.OPENAI_COMPAT)
             val mode = runCatching { AppMode.valueOf(c.mode) }.getOrDefault(AppMode.CHAT)
+            var agentId = c.agentId
+            var agentName = ""
+            if (agentId != null) {
+                val agent = runCatching { agentRepo.getById(agentId) }.getOrNull()
+                if (agent == null) agentId = null
+                else agentName = agent.name
+            }
             _state.update {
                 it.copy(
                     conversationId = id,
                     title = c.title,
                     provider = provider,
                     model = c.model,
+                    agentId = agentId,
+                    agentName = agentName,
                     mode = mode
                 )
             }
@@ -383,15 +410,15 @@ class ChatViewModel(
 
     private fun runGeneration(cid: Long) {
         if (runJob?.isActive == true) return
-        val s = _state.value
-        val config = settings.configFor(s.provider).copy(model = s.model)
         _state.update { it.copy(isRunning = true) }
-        streaming = newStreamingMessage(config, s)
         toolCallRoundsThisRun = 0
-        refresh()
         val myToken = ++runToken
         var currentJob: Job? = null
         currentJob = viewModelScope.launch {
+            val s = _state.value
+            val config = resolveConfig(s)
+            streaming = newStreamingMessage(config, s)
+            refresh()
             var myTicker: Job? = null
             try {
                 myTicker = viewModelScope.launch {
@@ -733,8 +760,7 @@ class ChatViewModel(
             if (history.isEmpty()) return@runCatching
             if (!silent) _state.update { it.copy(processing = true) }
             try {
-                val config = settings.configFor(_state.value.provider)
-                    .copy(model = _state.value.model)
+                val config = resolveConfig(_state.value)
                 val provider = providerFactory(config.provider)
                 val existing = runCatching { db.memoryDao().getMemories(cid) }
                     .getOrDefault(emptyList())
@@ -854,8 +880,7 @@ class ChatViewModel(
                         )
                     )
                 }
-                val config = settings.configFor(_state.value.provider)
-                    .copy(model = _state.value.model)
+                val config = resolveConfig(_state.value)
                 val summary = summarize(toSummarize, config)
                 if (summary.isBlank()) {
                     _state.update { it.copy(processing = false, error = "压缩失败：未获得摘要") }
@@ -990,8 +1015,7 @@ class ChatViewModel(
 
     private suspend fun generateTitle(cid: Long) {
         try {
-            val config = settings.configFor(_state.value.provider)
-                .copy(model = _state.value.model)
+            val config = resolveConfig(_state.value)
             val history = repository.getHistory(cid).takeLast(6)
             if (history.isEmpty()) return
             val provider = providerFactory(config.provider)
@@ -1090,7 +1114,8 @@ class ChatViewModel(
                 val s = _state.value
                 val cid = repository.createConversation(
                     s.provider, s.model, s.mode,
-                    defaultTitle = appContext.getString(com.betteraichat.R.string.chat_new_chat)
+                    defaultTitle = appContext.getString(com.betteraichat.R.string.chat_new_chat),
+                    agentId = s.agentId
                 )
                 currentConversationId = cid
                 repository.updateTitle(cid, text.take(30).ifBlank { appContext.getString(com.betteraichat.R.string.chat_new_chat) })
@@ -1169,6 +1194,22 @@ class ChatViewModel(
         _state.update { it.copy(confirmRequest = null) }
     }
 
+    fun updateAgent(agentId: Long) {
+        viewModelScope.launch {
+            val agent = runCatching { agentRepo.getById(agentId) }.getOrNull() ?: return@launch
+            val provider = runCatching { ProviderId.valueOf(agent.provider) }.getOrDefault(ProviderId.OPENAI_COMPAT)
+            _state.update {
+                it.copy(
+                    agentId = agent.id,
+                    agentName = agent.name,
+                    provider = provider,
+                    model = agent.model
+                )
+            }
+            persistMeta()
+        }
+    }
+
     fun updateModel(model: String) {
         _state.update { it.copy(model = model) }
         persistMeta()
@@ -1198,6 +1239,7 @@ class ChatViewModelFactory(
             conversationId,
             container.repository,
             container.settings,
+            container.agentRepository,
             container.engine,
             container.providerFactory,
             container.appContext

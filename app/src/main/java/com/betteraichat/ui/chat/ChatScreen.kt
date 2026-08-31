@@ -105,6 +105,7 @@ import com.betteraichat.R
 import com.betteraichat.core.catalog.ModelCatalog
 import com.betteraichat.core.model.ChatRole
 import com.betteraichat.core.mode.AppMode
+import com.betteraichat.ui.agents.AgentPickerDialog
 import com.betteraichat.ui.rememberContainer
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -124,7 +125,7 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
     var showMaxConfirm by remember { mutableStateOf(false) }
     var showClearContext by remember { mutableStateOf(false) }
     var showCompressConfirm by remember { mutableStateOf(false) }
-    var showModelPicker by remember { mutableStateOf(false) }
+    var showAgentPicker by remember { mutableStateOf(false) }
     var viewImageB64 by remember { mutableStateOf<String?>(null) }
     var editingMessage by remember { mutableStateOf<com.betteraichat.ui.chat.UiMessage?>(null) }
     var editText by remember { mutableStateOf("") }
@@ -301,9 +302,13 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                             overflow = TextOverflow.Ellipsis,
                             style = MaterialTheme.typography.titleMedium
                         )
-                        if (usageText.isNotBlank()) {
+                        val subtitle = buildString {
+                            if (state.agentName.isNotBlank()) append(state.agentName)
+                            if (usageText.isNotBlank()) append(" · ").append(usageText.trim())
+                        }
+                        if (subtitle.isNotBlank()) {
                             Text(
-                                usageText.trim(),
+                                subtitle,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -333,10 +338,10 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                         }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                             DropdownMenuItem(
-                                text = { Text(stringResource(com.betteraichat.R.string.chat_select_model) + "（${state.model}）") },
+                                text = { Text(stringResource(com.betteraichat.R.string.chat_select_agent) + "（${state.agentName.ifBlank { state.model }}）") },
                                 onClick = {
                                     menuOpen = false
-                                    showModelPicker = true
+                                    showAgentPicker = true
                                 }
                             )
                             DropdownMenuItem(
@@ -562,12 +567,11 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
         }
     }
 
-    if (showModelPicker) {
-        ModelPickerDialog(
-            provider = state.provider,
-            current = state.model,
-            onSelect = vm::updateModel,
-            onDismiss = { showModelPicker = false }
+    if (showAgentPicker) {
+        AgentPickerDialog(
+            currentAgentId = state.agentId,
+            onSelect = vm::updateAgent,
+            onDismiss = { showAgentPicker = false }
         )
     }
 
@@ -1065,122 +1069,6 @@ private fun ModeSelector(current: AppMode, onSelect: (AppMode) -> Unit) {
     }
 }
 
-@Composable
-private fun ModelListContent(
-    provider: com.betteraichat.core.model.ProviderId,
-    current: String,
-    onPick: (String) -> Unit,
-    onOpenCustom: () -> Unit
-) {
-    val container = rememberContainer()
-    val serverModels = remember(provider) { container.settings.getCustomModels(provider) }
-    val catalogIds = remember(provider) { ModelCatalog.modelsFor(provider).map { it.id } }
-    ModelCatalog.modelsFor(provider).forEach { entry ->
-        DropdownMenuItem(
-            text = {
-                Column {
-                    Text(entry.label)
-                    Text(entry.id, style = MaterialTheme.typography.bodySmall)
-                }
-            },
-            onClick = { onPick(entry.id) }
-        )
-    }
-    if (serverModels.isNotEmpty()) {
-        HorizontalDivider()
-        DropdownMenuItem(
-            text = {
-                Text(
-                    stringResource(R.string.chat_server_models, serverModels.size),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            },
-            onClick = { }
-        )
-        serverModels.forEach { id ->
-            DropdownMenuItem(
-                text = {
-                    Column {
-                        Text(id)
-                        Text(stringResource(R.string.chat_server_model_note), style = MaterialTheme.typography.bodySmall)
-                    }
-                },
-                onClick = { onPick(id) }
-            )
-        }
-    }
-    if (current !in catalogIds && current !in serverModels) {
-        DropdownMenuItem(
-            text = { Text(stringResource(R.string.chat_custom_badge, current)) },
-            onClick = { onPick(current) }
-        )
-    }
-    HorizontalDivider()
-    DropdownMenuItem(
-        text = { Text(stringResource(R.string.chat_custom_model_ellipsis)) },
-        onClick = onOpenCustom
-    )
-}
-
-@Composable
-private fun ModelPickerDialog(
-    provider: com.betteraichat.core.model.ProviderId,
-    current: String,
-    onSelect: (String) -> Unit,
-    onDismiss: () -> Unit
-) {
-    var customMode by remember { mutableStateOf(false) }
-    var customInput by remember { mutableStateOf("") }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text(
-                stringResource(R.string.chat_select_model),
-                style = MaterialTheme.typography.titleMedium
-            )
-        },
-        text = {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()).heightIn(max = 480.dp)
-            ) {
-                if (!customMode) {
-                    ModelListContent(
-                        provider = provider,
-                        current = current,
-                        onPick = {
-                            onSelect(it)
-                            onDismiss()
-                        },
-                        onOpenCustom = {
-                            customInput = current
-                            customMode = true
-                        }
-                    )
-                } else {
-                    OutlinedTextField(
-                        value = customInput,
-                        onValueChange = { customInput = it },
-                        placeholder = { Text(stringResource(R.string.chat_model_id_ph)) }
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
-                        TextButton(onClick = { customMode = false }) { Text(stringResource(R.string.chat_back_to_list)) }
-                        Spacer(Modifier.width(8.dp))
-                        Button(onClick = {
-                            onSelect(customInput.trim())
-                            onDismiss()
-                        }) { Text(stringResource(R.string.chat_use_model)) }
-                    }
-                }
-            }
-        },
-        confirmButton = {},
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.chat_close)) }
-        }
-    )
-}
 
 private val prettyJson = Json { prettyPrint = true; ignoreUnknownKeys = true }
 

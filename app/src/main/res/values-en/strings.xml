@@ -235,4 +235,44 @@ Author: Verlintas</string>
     <string name="tasks_weekly">Weekly day %1$d %2$s</string>
     <string name="tasks_hourly">Every %1$d hours</string>
     <string name="chat_more">More</string>
+    <string name="agent_onboarding_title">Create Agent</string>
+    <string name="agent_step">Step %1$d of %2$d</string>
+    <string name="agent_name">Agent name</string>
+    <string name="agent_untitled">Untitled Agent</string>
+    <string name="agent_step1_hint">Paste your API key — the provider is auto-detected from the prefix (sk-ant- = Claude, AIza = Gemini). Tap "Detect" to fetch available models.</string>
+    <string name="agent_api_key">API Key</string>
+    <string name="agent_base_url">Base URL</string>
+    <string name="agent_detect">Detect</string>
+    <string name="agent_detecting">Detecting…</string>
+    <string name="agent_probe_key_first">Paste your API key first</string>
+    <string name="agent_step2_hint">Pick a model: prefer detected server models, or choose from the built-in catalog / type manually.</string>
+    <string name="agent_detected_models">%1$d models detected on server</string>
+    <string name="agent_catalog_models">Built-in model catalog</string>
+    <string name="agent_model_id">Model ID</string>
+    <string name="agent_temperature">Temperature</string>
+    <string name="agent_temperature_hint">Higher = more creative, lower = more precise</string>
+    <string name="agent_max_tokens">Max Tokens</string>
+    <string name="agent_reasoning">Deep reasoning</string>
+    <string name="agent_reasoning_hint">Sends high reasoning effort in Max mode</string>
+    <string name="agent_prompt_default">Use the default system prompt</string>
+    <string name="agent_prompt_custom">Custom system prompt</string>
+    <string name="agent_prompt_hint">System prompt (optional)</string>
+    <string name="agent_prompt_note">Your custom prompt is prepended to the mode prompt. E.g.: You are a professional Japanese translator — output only the translation.</string>
+    <string name="agent_next">Next</string>
+    <string name="agent_back">Back</string>
+    <string name="agent_save">Save</string>
+    <string name="agent_saved">Agent saved</string>
+    <string name="settings_agents">Agents</string>
+    <string name="settings_agents_sub">Manage · Create · One-tap setup</string>
+    <string name="agents_intro">An Agent is a full AI setup (provider + API key + model + parameters + system prompt). Paste your API key when creating one to auto-detect the provider and models; pick an Agent per conversation.</string>
+    <string name="agents_empty">No agents yet. Tap below to create one — paste your API key and the provider and models are detected automatically.</string>
+    <string name="agents_default">Default</string>
+    <string name="agents_set_as_default">Set default</string>
+    <string name="agents_set_default">"%1$s" set as default</string>
+    <string name="agents_edit">Edit</string>
+    <string name="agents_new">New Agent</string>
+    <string name="agents_delete_title">Delete Agent?</string>
+    <string name="agents_delete_body">Conversations using "%1$s" will fall back to the default Agent.</string>
+    <string name="agents_deleted">Deleted "%1$s"</string>
+    <string name="chat_select_agent">Select Agent</string>
 </resources>

@@ -58,7 +58,8 @@ data class ProviderConfig(
     val model: String,
     val temperature: Double,
     val maxTokens: Int,
-    val reasoning: Boolean
+    val reasoning: Boolean,
+    val systemPrompt: String = ""
 )
 
 data class ToolSpec(

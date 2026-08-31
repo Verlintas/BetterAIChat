@@ -4,6 +4,7 @@ import android.app.Application
 import com.betteraichat.core.chat.ChatRepository
 import com.betteraichat.core.db.AppDatabase
 import com.betteraichat.core.engine.ChatEngine
+import kotlinx.coroutines.launch
 import com.betteraichat.core.provider.ChatProvider
 import com.betteraichat.core.model.ProviderId
 import com.betteraichat.core.storage.SettingsRepository
@@ -115,7 +116,38 @@ class AppContainer(context: Application) {
     val shareNavTick = kotlinx.coroutines.flow.MutableStateFlow(0)
     val db = AppDatabase.get(context)
     val settings = SettingsRepository(context)
+
+    private suspend fun ensureDefaultAgentFromLegacySettings() {
+        if (agentRepository.count() > 0) return
+        val p = settings.getDefaultProvider()
+        val apiKey = settings.getApiKey(p)
+        if (apiKey.isBlank()) return
+        val entry = com.betteraichat.core.catalog.ModelCatalog.entryFor(p, settings.getModel(p))
+        agentRepository.save(
+            com.betteraichat.core.db.AgentEntity(
+                name = "默认 Agent",
+                description = "从旧版配置自动迁移",
+                provider = p.name,
+                baseUrl = settings.getBaseUrl(p),
+                apiKey = apiKey,
+                model = settings.getModel(p),
+                temperature = settings.getTemperature(p),
+                maxTokens = settings.getMaxTokens(p),
+                reasoning = settings.getReasoning(p),
+                systemPrompt = "",
+                isDefault = true,
+                createdAt = System.currentTimeMillis(),
+                updatedAt = System.currentTimeMillis()
+            )
+        )
+    }
     val repository = ChatRepository(db)
+    val agentRepository = com.betteraichat.core.chat.AgentRepository(db, com.betteraichat.core.storage.KeyStoreCrypto(context.applicationContext))
+    init {
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            runCatching { ensureDefaultAgentFromLegacySettings() }
+        }
+    }
     val skillRepository = SkillRepository(context.applicationContext)
 
     private val screenshotManager = ScreenshotManager(context.applicationContext)

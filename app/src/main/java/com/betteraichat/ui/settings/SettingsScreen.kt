@@ -114,6 +114,7 @@ import com.betteraichat.core.model.ProviderId
 import com.betteraichat.core.storage.SettingsRepository
 import com.betteraichat.R
 import com.betteraichat.core.storage.ThemeMode
+import com.betteraichat.ui.agents.AgentOnboardingDialog
 import com.betteraichat.ui.rememberContainer
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -122,7 +123,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.coroutines.launch
 
 private enum class SettingsSection(@androidx.annotation.StringRes val titleRes: Int) {
-    PROVIDER(R.string.settings_provider),
+    PROVIDER(R.string.settings_agents),
     CONVERSATION(R.string.settings_conversation),
     SKILLS(R.string.settings_skills),
     PERMISSIONS(R.string.settings_permissions),
@@ -172,10 +173,9 @@ fun SettingsScreen(onBack: () -> Unit) {
                 modifier = Modifier.fillMaxSize().padding(padding),
                 onOpenSection = { section = it }
             )
-            SettingsSection.PROVIDER -> ProviderSection(
+            SettingsSection.PROVIDER -> AgentSection(
                 modifier = Modifier.fillMaxSize().padding(padding),
                 container = container,
-                settings = container.settings,
                 scope = scope,
                 snackbar = snackbar
             )
@@ -241,8 +241,8 @@ private fun SettingsMenu(
     ) {
         item {
             SettingsMenuItem(
-                title = stringResource(com.betteraichat.R.string.settings_provider),
-                subtitle = stringResource(com.betteraichat.R.string.settings_provider_sub),
+                title = stringResource(com.betteraichat.R.string.settings_agents),
+                subtitle = stringResource(com.betteraichat.R.string.settings_agents_sub),
                 icon = { Icon(Icons.Filled.Settings, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
                 onClick = { onOpenSection(SettingsSection.PROVIDER) }
             )
@@ -352,178 +352,152 @@ private fun SettingsMenuItem(
 }
 
 @Composable
-private fun ProviderSection(
+private fun AgentSection(
     modifier: Modifier,
     container: AppContainer,
-    settings: SettingsRepository,
     scope: kotlinx.coroutines.CoroutineScope,
     snackbar: SnackbarHostState
 ) {
-    var selectedProvider by remember { mutableStateOf(settings.getDefaultProvider()) }
-    var apiKey by remember { mutableStateOf("") }
-    var baseUrl by remember { mutableStateOf("") }
-    var model by remember { mutableStateOf("") }
-    var temperature by remember { mutableStateOf(0.7) }
-    var maxTokens by remember { mutableStateOf("4096") }
-    var reasoning by remember { mutableStateOf(true) }
-    var showKey by remember { mutableStateOf(false) }
-    var configLoaded by remember { mutableStateOf(false) }
-    var probing by remember { mutableStateOf(false) }
-
-    LaunchedEffect(selectedProvider) {
-        configLoaded = false
-        apiKey = settings.getApiKey(selectedProvider)
-        baseUrl = settings.getBaseUrl(selectedProvider)
-        model = settings.getModel(selectedProvider)
-        temperature = settings.getTemperature(selectedProvider)
-        maxTokens = settings.getMaxTokens(selectedProvider).toString()
-        reasoning = settings.getReasoning(selectedProvider)
-        configLoaded = true
-    }
+    val context = LocalContext.current
+    val agents by container.agentRepository.observeAll()
+        .collectAsStateWithLifecycle(initialValue = emptyList())
+    var showOnboarding by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf<com.betteraichat.core.db.AgentEntity?>(null) }
+    var deleting by remember { mutableStateOf<com.betteraichat.core.db.AgentEntity?>(null) }
 
     Column(
         modifier = modifier.verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Text(stringResource(R.string.settings_provider_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            ProviderId.entries.forEach { p ->
-                FilterChip(
-                    selected = selectedProvider == p,
-                    onClick = { selectedProvider = p },
-                    label = { Text(p.displayName) }
-                )
-            }
-        }
-
-        HorizontalDivider()
-
-        Text(stringResource(R.string.settings_provider_config, selectedProvider.displayName), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        OutlinedTextField(
-            value = apiKey,
-            onValueChange = { apiKey = it },
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text(stringResource(R.string.settings_api_key)) },
-            singleLine = true,
-            visualTransformation = if (showKey) VisualTransformation.None else PasswordVisualTransformation(),
-            trailingIcon = {
-                TextButton(onClick = { showKey = !showKey }) { Text(stringResource(if (showKey) R.string.settings_key_hide else R.string.settings_key_show)) }
-            }
+        Text(
+            stringResource(com.betteraichat.R.string.agents_intro),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        OutlinedTextField(
-            value = baseUrl,
-            onValueChange = { baseUrl = it },
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text(stringResource(R.string.settings_base_url, ModelCatalog.defaultBaseUrl(selectedProvider))) },
-            singleLine = true
-        )
-        OutlinedButton(
-            onClick = {
-                if (apiKey.isBlank()) {
-                    scope.launch { snackbar.showSnackbar(container.appContext.getString(R.string.settings_key_first)) }
-                } else {
-                    val providerAtClick = selectedProvider
-                    val baseUrlAtClick = baseUrl
-                    val apiKeyAtClick = apiKey
-                    scope.launch {
-                        probing = true
-                        val result = ModelProbe.probe(providerAtClick, baseUrlAtClick, apiKeyAtClick)
-                        probing = false
-                        if (selectedProvider != providerAtClick) return@launch
-                        if (result.ok) {
-                            if (result.models.isNotEmpty()) {
-                                settings.setCustomModels(providerAtClick, result.models)
-                                model = result.models.first()
+        if (agents.isEmpty()) {
+            Text(
+                stringResource(com.betteraichat.R.string.agents_empty),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else {
+            agents.forEach { agent ->
+                Surface(
+                    shape = MaterialTheme.shapes.medium,
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(agent.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                            if (agent.isDefault) {
+                                Spacer(Modifier.width(6.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                                ) {
+                                    Text(
+                                        stringResource(com.betteraichat.R.string.agents_default),
+                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.weight(1f))
+                            if (!agent.isDefault) {
+                                TextButton(onClick = {
+                                    scope.launch {
+                                        container.agentRepository.setDefault(agent.id)
+                                        snackbar.showSnackbar(context.getString(com.betteraichat.R.string.agents_set_default, agent.name))
+                                    }
+                                }) {
+                                    Text(stringResource(com.betteraichat.R.string.agents_set_as_default), style = MaterialTheme.typography.labelSmall)
+                                }
                             }
                         }
-                        scope.launch { snackbar.showSnackbar(result.message) }
+                        Text(
+                            "${agent.provider} · ${agent.model}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        if (agent.systemPrompt.isNotBlank()) {
+                            Text(
+                                agent.systemPrompt.take(120),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                maxLines = 2
+                            )
+                        }
+                        Row {
+                            TextButton(onClick = { editing = agent }) {
+                                Text(stringResource(com.betteraichat.R.string.agents_edit))
+                            }
+                            TextButton(onClick = { deleting = agent }) {
+                                Text(stringResource(com.betteraichat.R.string.memories_delete), color = MaterialTheme.colorScheme.error)
+                            }
+                        }
                     }
                 }
-            },
-            enabled = configLoaded && !probing,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            if (probing) {
-                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                Spacer(Modifier.width(8.dp))
-                Text(stringResource(R.string.settings_detecting))
-            } else {
-                Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(stringResource(R.string.settings_detect_models))
             }
         }
-
-        HorizontalDivider()
-
-        Text(stringResource(R.string.settings_model), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            items(ModelCatalog.modelsFor(selectedProvider).size) { i ->
-                val entry = ModelCatalog.modelsFor(selectedProvider)[i]
-                FilterChip(
-                    selected = model == entry.id,
-                    onClick = { model = entry.id },
-                    label = { Text(entry.label, maxLines = 1) }
-                )
-            }
-        }
-        OutlinedTextField(
-            value = model,
-            onValueChange = { model = it },
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text(stringResource(R.string.settings_model_id_hint)) },
-            singleLine = true
-        )
-
-        Text(stringResource(R.string.settings_temperature, "%.1f".format(temperature)), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        androidx.compose.material3.Slider(
-            value = temperature.toFloat(),
-            onValueChange = { temperature = it.toDouble() },
-            valueRange = 0f..2f
-        )
-
-        OutlinedTextField(
-            value = maxTokens,
-            onValueChange = { maxTokens = it.filter { c -> c.isDigit() } },
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("Max Tokens") },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-        )
-
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(stringResource(R.string.settings_reasoning), style = MaterialTheme.typography.bodyMedium)
-                Text(
-                    stringResource(R.string.settings_reasoning_sub),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Switch(checked = reasoning, onCheckedChange = { reasoning = it })
-        }
-
-        Spacer(Modifier.height(8.dp))
         Button(
-            enabled = configLoaded,
-            onClick = {
-                settings.setDefaultProvider(selectedProvider)
-                settings.setApiKey(selectedProvider, apiKey)
-                settings.setBaseUrl(selectedProvider, baseUrl)
-                settings.setModel(selectedProvider, model)
-                settings.setTemperature(selectedProvider, temperature)
-                settings.setMaxTokens(selectedProvider, maxTokens.toIntOrNull() ?: 4096)
-                settings.setReasoning(selectedProvider, reasoning)
-                scope.launch { snackbar.showSnackbar(container.appContext.getString(R.string.settings_save_success)) }
-            },
+            onClick = { showOnboarding = true },
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text(stringResource(R.string.settings_save))
+            Text(stringResource(com.betteraichat.R.string.agents_new))
         }
         Spacer(Modifier.height(24.dp))
     }
-}
 
+    if (showOnboarding) {
+        AgentOnboardingDialog(
+            onDismiss = { showOnboarding = false },
+            onSaved = {
+                showOnboarding = false
+                scope.launch { snackbar.showSnackbar(context.getString(com.betteraichat.R.string.agent_saved)) }
+            }
+        )
+    }
+    editing?.let { agent ->
+        AgentOnboardingDialog(
+            isEdit = true,
+            originalApiKey = agent.apiKey,
+            initialName = agent.name,
+            initialProvider = runCatching { ProviderId.valueOf(agent.provider) }.getOrDefault(ProviderId.OPENAI_COMPAT),
+            initialBaseUrl = agent.baseUrl,
+            initialModel = agent.model,
+            initialTemperature = agent.temperature,
+            initialMaxTokens = agent.maxTokens,
+            initialReasoning = agent.reasoning,
+            initialSystemPrompt = agent.systemPrompt,
+            onDismiss = { editing = null },
+            onSaved = {
+                editing = null
+                scope.launch { snackbar.showSnackbar(context.getString(com.betteraichat.R.string.agent_saved)) }
+            }
+        )
+    }
+    deleting?.let { agent ->
+        AlertDialog(
+            onDismissRequest = { deleting = null },
+            title = { Text(stringResource(com.betteraichat.R.string.agents_delete_title)) },
+            text = { Text(stringResource(com.betteraichat.R.string.agents_delete_body, agent.name)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    scope.launch {
+                        container.agentRepository.delete(agent.id)
+                        deleting = null
+                        snackbar.showSnackbar(context.getString(com.betteraichat.R.string.agents_deleted, agent.name))
+                    }
+                }) { Text(stringResource(com.betteraichat.R.string.confirm), color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleting = null }) { Text(stringResource(com.betteraichat.R.string.cancel)) }
+            }
+        )
+    }
+}
 @Composable
 private fun ConversationSection(
     modifier: Modifier,

@@ -19,6 +19,7 @@ data class ConversationEntity(
     val provider: String,
     val model: String,
     val mode: String,
+    val agentId: Long? = null,
     val pinned: Boolean = false,
     val archived: Boolean = false,
     val createdAt: Long,
@@ -245,14 +246,62 @@ interface AutomationDao {
     suspend fun delete(id: Long)
 }
 
+@Entity(tableName = "agents")
+data class AgentEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val description: String = "",
+    val provider: String,
+    val baseUrl: String,
+    val apiKey: String,
+    val model: String,
+    val temperature: Double = 0.7,
+    val maxTokens: Int = 4096,
+    val reasoning: Boolean = true,
+    val systemPrompt: String = "",
+    val isDefault: Boolean = false,
+    val createdAt: Long,
+    val updatedAt: Long
+)
+
+@Dao
+interface AgentDao {
+    @Query("SELECT * FROM agents ORDER BY isDefault DESC, createdAt ASC")
+    fun observeAll(): Flow<List<AgentEntity>>
+
+    @Query("SELECT * FROM agents WHERE id = :id")
+    suspend fun getById(id: Long): AgentEntity?
+
+    @Query("SELECT * FROM agents WHERE isDefault = 1 LIMIT 1")
+    suspend fun getDefault(): AgentEntity?
+
+    @Query("SELECT COUNT(*) FROM agents")
+    suspend fun count(): Long
+
+    @Insert
+    suspend fun insert(agent: AgentEntity): Long
+
+    @Update
+    suspend fun update(agent: AgentEntity)
+
+    @Query("UPDATE agents SET isDefault = 0")
+    suspend fun clearDefault()
+
+    @Query("UPDATE agents SET isDefault = 1 WHERE id = :id")
+    suspend fun setDefault(id: Long)
+
+    @Query("DELETE FROM agents WHERE id = :id")
+    suspend fun deleteById(id: Long)
+}
+
 data class TokenTotalsRow(
     val totalInput: Long = 0,
     val totalOutput: Long = 0
 )
 
 @Database(
-    entities = [ConversationEntity::class, MessageEntity::class, RepeatTaskEntity::class, AutomationEntity::class, MemoryEntity::class],
-    version = 9,
+    entities = [ConversationEntity::class, MessageEntity::class, RepeatTaskEntity::class, AutomationEntity::class, MemoryEntity::class, AgentEntity::class],
+    version = 10,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -261,6 +310,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun repeatTaskDao(): RepeatTaskDao
     abstract fun automationDao(): AutomationDao
     abstract fun memoryDao(): MemoryDao
+    abstract fun agentDao(): AgentDao
 
     companion object {
         @Volatile
@@ -322,6 +372,21 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_9_10 = object : androidx.room.migration.Migration(9, 10) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE conversations ADD COLUMN agentId INTEGER")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS agents (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "name TEXT NOT NULL, description TEXT NOT NULL, " +
+                        "provider TEXT NOT NULL, baseUrl TEXT NOT NULL, apiKey TEXT NOT NULL, " +
+                        "model TEXT NOT NULL, temperature REAL NOT NULL, maxTokens INTEGER NOT NULL, " +
+                        "reasoning INTEGER NOT NULL, systemPrompt TEXT NOT NULL, " +
+                        "isDefault INTEGER NOT NULL, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL)"
+                )
+            }
+        }
+
         val MIGRATION_7_8 = object : androidx.room.migration.Migration(7, 8) {
             override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
                 db.execSQL(
@@ -339,7 +404,7 @@ abstract class AppDatabase : RoomDatabase() {
                 instance ?: Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "betteraichat.db")
                     .addMigrations(
                         MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4,
-                        MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9
+                        MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10
                     )
                     .build()
                     .also { instance = it }

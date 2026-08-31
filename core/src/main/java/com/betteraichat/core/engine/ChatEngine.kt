@@ -88,7 +88,13 @@ class ChatEngine(
             var toolCalls = emptyList<ToolCall>()
             try {
                 val tools = toolCatalog.specsFor(mode)
-                val sys = ChatMessage(role = ChatRole.SYSTEM, content = systemPromptFor(mode))
+                val custom = config.systemPrompt.trim()
+                val sysContent = if (custom.isBlank()) {
+                    systemPromptFor(mode)
+                } else {
+                    "$custom\n\n${systemPromptFor(mode)}"
+                }
+                val sys = ChatMessage(role = ChatRole.SYSTEM, content = sysContent)
                 provider.chatStream(listOf(sys) + history, effectiveConfig, tools).collect { ev ->
                     when (ev) {
                         is StreamEvent.Delta -> {
