@@ -2,7 +2,7 @@
 
 This document explains the internals of **BetterAIChat** in exhaustive detail: module architecture, every layer of the request pipeline, the streaming protocol, the agent loop, the tool system, permission bridging, the automation engine, storage, UI rendering, security, and the engineering lessons learned from real bugs. It is written as a study guide for programmers who want to understand a real, working Android AI-agent application.
 
-> Scope: ~45 built-in device tools, opencode-style Skills, Shizuku + Accessibility + MediaProjection integration, and a background automation engine.
+> Scope: ~55 built-in device tools, opencode-style Skills, Agents (one-tap per-conversation configs), Shizuku + Accessibility + MediaProjection integration, and a background automation engine.
 
 ---
 
@@ -45,10 +45,11 @@ BetterAIChat/
 │   │   │   ├── navigation/AppNav.kt        # Navigation graph
 │   │   │   ├── conversations/             # Conversation list screen
 │   │   │   ├── chat/
-│   │   │   │   ├── ChatScreen.kt           # Chat UI, input bar, dialogs, scroll logic (1011 lines)
-│   │   │   │   ├── ChatViewModel.kt        # State machine + send/stop/compress/edit (950+ lines)
-│   │   │   │   └── MessageViews.kt         # Bubble/tool-card/code-card composables (508 lines)
-│   │   │   └── settings/SettingsScreen.kt  # All settings sections (1038+ lines)
+│   │   │   │   ├── ChatScreen.kt           # Chat UI, input bar, dialogs, scroll logic
+│   │   │   │   ├── ChatViewModel.kt        # State machine + send/stop/compress/edit
+│   │   │   │   └── MessageViews.kt         # Bubble/tool-card/code-card composables
+│   │   │   ├── settings/SettingsScreen.kt  # All settings sections
+│   │   │   └── agents/                        # Agent onboarding wizard + picker dialogs
 │   │   └── tools/
 │   │       ├── ScreenshotManager.kt        # MediaProjection capture service + bridge
 │   │       ├── BacAccessibilityService.kt  # AccessibilityService (ua_* gestures)
@@ -65,7 +66,7 @@ BetterAIChat/
 │   ├── src/main/java/com/betteraichat/core/
 │   │   ├── engine/ChatEngine.kt            # The agent loop
 │   │   ├── chat/ChatRepository.kt          # DB access layer
-│   │   ├── db/AppDatabase.kt               # Room entities + DAOs + migrations (v8)
+│   │   ├── db/AppDatabase.kt               # Room entities + DAOs + migrations (v10)
 │   │   ├── model/ChatModels.kt             # ChatMessage, ToolCall, ProviderConfig…
 │   │   ├── mode/AppMode.kt                 # Chat/Plan/Build/Max
 │   │   ├── catalog/ModelCatalog.kt         # Built-in model registry per provider
@@ -88,7 +89,7 @@ BetterAIChat/
         ├── ToolRegistry.kt                 # builtin + skill-defined tools
         ├── DeviceToolRunner.kt             # name+args → DeviceTool.execute
         ├── SkillActionExecutor.kt          # Runs skill-defined action types
-        └── tools/                          # 45+ tool implementations
+        └── tools/                          # 55 tool implementations
 ```
 
 Two build flavors exist: **full** (everything, ~55 MB) and **lite** (~10 MB, no on-device OCR). Flavor-specific code lives in `app/src/full/` and `app/src/lite/`.
@@ -165,7 +166,7 @@ class AppContainer(context: Application) {
     val automationScheduler = AutomationScheduler(context.applicationContext, db) { runner }
     private val automationBridge = object : AutomationBridge { … }
 
-    val tools: List<DeviceTool> = listOf( /* 45+ tools */ )
+    val tools: List<DeviceTool> = listOf( /* 55 tools, see BetterAIChatApp.kt */ )
     val registry = ToolRegistry(tools)
     val runner = DeviceToolRunner(registry, toolContext)
     val engine = ChatEngine(providerFactory, registry, runner)
@@ -268,7 +269,8 @@ data class ProviderConfig(
     val model: String,
     val temperature: Double,
     val maxTokens: Int,
-    val reasoning: Boolean       // "deep thinking" mode for reasoning models
+    val reasoning: Boolean,     // "deep thinking" mode for reasoning models
+    val systemPrompt: String = ""  // custom Agent prompt, prepended to the mode prompt in ChatEngine
 )
 ```
 
@@ -335,7 +337,7 @@ data class ModelEntry(
 )
 ```
 
-The catalog (~25 models across three providers) gives the UI sensible defaults (temperature, max tokens, context window for the usage meter, reasoning support) without hardcoding them in the screens. `contextWindow` also drives the token-usage indicator (`usageInput / contextWindow %`) shown in the chat top bar.
+The catalog (~50 models across three providers) gives the UI sensible defaults (temperature, max tokens, context window for the usage meter, reasoning support) without hardcoding them in the screens. `contextWindow` also drives the token-usage indicator (`usageInput / contextWindow %`) shown in the chat top bar.
 
 ### 4.3 Wire format translation
 
@@ -417,8 +419,9 @@ data class ChatUiState(
     val error: String?,                   // persistent error banner
     val pendingAttachments: List<PendingAttachment>,
     val processing: Boolean,
-    val usageInput: Long, val usageOutput: Long,
-    // …
+    val agentId: Long?, val agentName: String,  // Agent bound to this conversation
+    val attachmentError: String?,
+    // … (usage totals are derived from the last message with usage, not stored)
 )
 ```
 
@@ -1054,26 +1057,30 @@ suspend fun executeAutomation(id: Long) {
 
 ## 14. Storage & state management
 
-### 14.1 Room schema (v8)
+### 14.1 Room schema (v10)
 
 ```
-conversations (id, title, provider, model, mode, pinned, archived, createdAt, updatedAt)
+conversations (id, title, provider, model, mode, agentId, pinned, archived, createdAt, updatedAt)
 messages (id, conversationId FK, role, content, toolCallsJson, toolCallId, toolName,
           model, mode, status, usageInput, usageOutput, attachmentsJson,
           thinkingText, thinkingSignature, starred, createdAt)
 repeat_tasks (id, title, content, interval, time, weekday, everyHours, requestCode, nextTriggerAt, createdAt)
 automations  (id, name, triggerType, triggerValue, days, actionsJson, enabled, lastRunAt, createdAt)
+memories     (id, conversationId, type [memory|snapshot], content, createdAt, updatedAt)
+agents       (id, name, description, provider, baseUrl, apiKey[encrypted], model,
+              temperature, maxTokens, reasoning, systemPrompt, isDefault, createdAt, updatedAt)
 ```
 
 ### 14.2 Explicit migrations — never destructive
 
 ```kotlin
-val MIGRATION_7_8 = object : androidx.room.migration.Migration(7, 8) {
+val MIGRATION_9_10 = object : androidx.room.migration.Migration(9, 10) {
     override fun migrate(db: SupportSQLiteDatabase) {
-        db.execSQL("CREATE TABLE IF NOT EXISTS automations (…)")
+        db.execSQL("ALTER TABLE conversations ADD COLUMN agentId INTEGER")
+        db.execSQL("CREATE TABLE IF NOT EXISTS agents (…)")
     }
 }
-// …added to .addMigrations(MIGRATION_1_2 … MIGRATION_7_8)
+// …added to .addMigrations(MIGRATION_1_2 … MIGRATION_9_10)
 ```
 
 Every schema version adds a hand-written migration so existing users upgrade in place. `fallbackToDestructiveMigration()` is deliberately absent — data loss is unacceptable for a chat app.
@@ -1111,7 +1118,7 @@ val encrypted = encrypt(apiKey)      // random IV + ciphertext
 AppNav
  ├── ConversationListScreen        (search, pinned, list via Room Flow)
  └── ChatScreen
-      ├── TopAppBar (title, mode selector, model selector, usage %, more menu)
+      ├── TopAppBar (title, agent + usage subtitle, mode selector, more menu → Select Agent)
       ├── LazyColumn (messages)
       │     └── MessageItem
       │           ├── UserBubble      (right-aligned, primaryContainer)
@@ -1137,42 +1144,53 @@ AppNav
 
 ### 15.3 Terminal-style bottom-follow scrolling
 
-The naive implementation — `animateScrollToItem` on every delta — jitters because the streaming item's height changes on every frame, constantly toggling `shouldAutoScroll`. The working solution:
+The naive implementation — `animateScrollToItem` on every delta — jitters because the streaming item's height changes on every frame. The working solution (v0.25 rewrite) is **touch-aware**: any user gesture pauses the follow instantly, and following only resumes when the list is *fully* pinned to the bottom:
 
 ```kotlin
-val shouldAutoScroll by remember {
-    derivedStateOf {
-        val info = listState.layoutInfo
-        val lastVisible = info.visibleItemsInfo.lastOrNull()?.index ?: -1
-        lastVisible >= info.totalItemsCount - 3
-    }
+// "truly at bottom": the last item is FULLY visible (offset >= 0 and its
+// bottom inside the viewport) — a partially visible long message does NOT count
+var wasAtBottom by remember { mutableStateOf(true) }
+LaunchedEffect(listState) {
+    snapshotFlow { listState.isScrollInProgress }
+        .collect { scrolling ->
+            if (scrolling) {
+                wasAtBottom = false            // touch = pause following
+            } else {
+                val info = listState.layoutInfo
+                val last = info.visibleItemsInfo.lastOrNull { it.index == info.totalItemsCount - 1 }
+                val pinned = last != null && last.offset >= 0 &&
+                    last.offset + last.size <= info.viewportEndOffset + 1
+                if (pinned) wasAtBottom = true // user scrolled back to the bottom
+            }
+        }
 }
 
-var initialScrollDone by remember { mutableStateOf(false) }
-var forceFollow by remember { mutableStateOf(false) }
-
-LaunchedEffect(streaming, shouldAutoScroll, forceFollow, initialScrollDone) {
+// Pin loop: while streaming (or forceFollow) keep re-scrolling until the layout
+// confirms the last item is pinned; a touch (isScrollInProgress) breaks it instantly
+LaunchedEffect(streaming, forceFollow, wasAtBottom, initialScrollDone) {
     if (state.messages.isEmpty()) return@LaunchedEffect
-    if (initialScrollDone && !forceFollow && !shouldAutoScroll) return@LaunchedEffect
+    if (initialScrollDone && !forceFollow && !wasAtBottom) return@LaunchedEffect
     var attempts = 0
-    while (attempts++ < 60) {
+    while (attempts++ < 2400) {
+        if (listState.isScrollInProgress) { forceFollow = false; break }
         val info = listState.layoutInfo
         val total = info.totalItemsCount
         if (total > 0) {
             runCatching { listState.scrollToItem(total - 1, Int.MAX_VALUE) }
             val lastItem = info.visibleItemsInfo.lastOrNull { it.index == total - 1 }
             val bottom = lastItem?.let { it.offset + it.size } ?: -1
-            if (lastItem != null && bottom >= info.viewportEndOffset - 20) break  // truly pinned
+            val pinned = lastItem != null && bottom >= info.viewportEndOffset - 20
+            if (pinned && !streaming && !forceFollow) break
         }
-        delay(120)
+        delay(80)
     }
     initialScrollDone = true
 }
 ```
 
-The insight: `scrollToItem(index, Int.MAX_VALUE)` is only reliable **after the item's real height is measured**. Markdown renders asynchronously, so you re-scroll every 120 ms until the layout *confirms* the last item's bottom is at the viewport bottom. Polling until a layout invariant holds — rather than assuming one scroll suffices — is the pattern to copy.
+The insight: `scrollToItem(index, Int.MAX_VALUE)` is only reliable **after the item's real height is measured**. Markdown renders asynchronously, so you re-scroll every 80 ms until the layout *confirms* the last item's bottom is at the viewport bottom. Polling until a layout invariant holds — rather than assuming one scroll suffices — is the pattern to copy.
 
-`forceFollow` is set on send and while streaming, and cleared 400 ms after streaming ends; `shouldAutoScroll` handles the user-scrolled-up case (don't yank them back).
+`forceFollow` is set on send and while streaming, and cleared 400 ms after streaming ends; `wasAtBottom` (updated from real touch events, with a fully-visible-last-item check) handles the user-scrolled-up case — small scrolls on a tall streaming message no longer yank the list back down.
 
 ### 15.4 Streaming cursor
 
@@ -1267,7 +1285,7 @@ If you want to genuinely learn from this codebase:
 1. **Kotlin coroutines & Flow** — `ChatEngine.run(): Flow<EngineEvent>`, `snapshotFlow` in scroll logic, `withTimeout`, `goAsync()` in receivers.
 2. **Dependency inversion** — `ToolContext` bridges (`ScreenshotProvider`, `OcrProvider`, `AccessibilityBridge`, `AutomationBridge`) and the lambda-lazy `runner` injection that breaks the circular graph.
 3. **Reactive UI** — one immutable `StateFlow`, `collectAsStateWithLifecycle`, `derivedStateOf`, the 10 Hz ticker decoupling event rate from render rate.
-4. **Room** — entities, DAOs, Flow observation, explicit migrations v1→v8.
+4. **Room** — entities, DAOs, Flow observation, explicit migrations v1→v10.
 5. **Networking** — OkHttp + hand-rolled SSE parser, `call.clone()` retry, read-timeout discipline, per-vendor wire translation (OpenAI/Anthropic/Gemini).
 6. **Android system integration** — `AlarmManager.setExactAndAllowWhileIdle`, sticky battery broadcasts, `MediaProjection` + foreground service lifecycle, `AccessibilityService` gesture dispatch (main thread + timeout), `NotificationListenerService`, Shizuku binder IPC.
 7. **Agent design** — mode-based gate (Chat/Plan/Build/Max), prompt+enforcement defense in depth, the confirm loop via `SharedFlow` + `CompletableDeferred`, and the tool-transcript invariant (§7.4).
@@ -1278,4 +1296,4 @@ Each of these topics maps to a concrete, working file in the repo — start at `
 
 ---
 
-*Project: [BetterAIChat](https://github.com/Verlintas/BetterAIChat) — a native Android AI agent with 45+ built-in tools, opencode-style Skills, Shizuku/accessibility/MediaProjection capabilities, and a background automation engine. Built with Kotlin, Jetpack Compose, Room, OkHttp and kotlinx.serialization.*
+*Project: [BetterAIChat](https://github.com/Verlintas/BetterAIChat) — a native Android AI agent with 55 built-in tools, opencode-style Skills, per-conversation Agents, Shizuku/accessibility/MediaProjection capabilities, and a background automation engine. Built with Kotlin, Jetpack Compose, Room, OkHttp and kotlinx.serialization.*

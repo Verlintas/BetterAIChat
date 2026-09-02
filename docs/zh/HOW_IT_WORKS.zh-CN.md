@@ -13,10 +13,11 @@ BetterAIChat/
 │   │   │   ├── navigation/AppNav.kt        # 导航图
 │   │   │   ├── conversations/             # 会话列表页
 │   │   │   ├── chat/
-│   │   │   │   ├── ChatScreen.kt           # 聊天 UI、输入栏、对话框、滚动逻辑（1011 行）
-│   │   │   │   ├── ChatViewModel.kt        # 状态机 + 发送/停止/压缩/编辑（950+ 行）
-│   │   │   │   └── MessageViews.kt         # 气泡/工具卡片/代码卡片 composable（508 行）
-│   │   │   └── settings/SettingsScreen.kt  # 全部设置分区（1038+ 行）
+│   │   │   │   ├── ChatScreen.kt           # 聊天 UI、输入栏、对话框、滚动逻辑
+│   │   │   │   ├── ChatViewModel.kt        # 状态机 + 发送/停止/压缩/编辑
+│   │   │   │   └── MessageViews.kt         # 气泡/工具卡片/代码卡片 composable
+│   │   │   ├── settings/SettingsScreen.kt  # 全部设置分区
+│   │   │   └── agents/                        # Agent 引导向导 + 选择弹窗
 │   │   └── tools/
 │   │       ├── ScreenshotManager.kt        # MediaProjection 截屏服务 + 桥接
 │   │       ├── BacAccessibilityService.kt  # AccessibilityService（ua_* 手势）
@@ -33,7 +34,7 @@ BetterAIChat/
 │   ├── src/main/java/com/betteraichat/core/
 │   │   ├── engine/ChatEngine.kt            # Agent 循环
 │   │   ├── chat/ChatRepository.kt          # 数据库访问层
-│   │   ├── db/AppDatabase.kt               # Room 实体 + DAO + 迁移（v8）
+│   │   ├── db/AppDatabase.kt               # Room 实体 + DAO + 迁移（v10）
 │   │   ├── model/ChatModels.kt             # ChatMessage、ToolCall、ProviderConfig…
 │   │   ├── mode/AppMode.kt                 # Chat/Plan/Build/Max
 │   │   ├── catalog/ModelCatalog.kt         # 各 provider 的内置模型注册表
@@ -56,7 +57,7 @@ BetterAIChat/
         ├── ToolRegistry.kt                 # 内置 + 技能定义的工具
         ├── DeviceToolRunner.kt             # name+args → DeviceTool.execute
         ├── SkillActionExecutor.kt          # 执行技能定义的动作类型
-        └── tools/                          # 45+ 个工具实现
+        └── tools/                          # 55 个工具实现
 ```
 
 存在两个构建风味（flavor）：**full**（全功能，约 55 MB）和 **lite**（约 10 MB，不含端侧 OCR）。风味专属代码位于 `app/src/full/` 和 `app/src/lite/`。
@@ -133,7 +134,7 @@ class AppContainer(context: Application) {
     val automationScheduler = AutomationScheduler(context.applicationContext, db) { runner }
     private val automationBridge = object : AutomationBridge { … }
 
-    val tools: List<DeviceTool> = listOf( /* 45+ 个工具 */ )
+    val tools: List<DeviceTool> = listOf( /* 55 个工具，见 BetterAIChatApp.kt */ )
     val registry = ToolRegistry(tools)
     val runner = DeviceToolRunner(registry, toolContext)
     val engine = ChatEngine(providerFactory, registry, runner)
@@ -236,7 +237,8 @@ data class ProviderConfig(
     val model: String,
     val temperature: Double,
     val maxTokens: Int,
-    val reasoning: Boolean       // 推理模型的“深度思考”模式
+    val reasoning: Boolean,     // 推理模型的“深度思考”模式
+    val systemPrompt: String = ""  // Agent 自定义提示词，在 ChatEngine 中拼接到模式提示之前
 )
 ```
 
@@ -303,7 +305,7 @@ data class ModelEntry(
 )
 ```
 
-该目录（三个 provider 共约 25 个模型）为 UI 提供合理的默认值（temperature、max tokens、用于用量计量的上下文窗口、推理支持），而无需把这些硬编码在页面里。`contextWindow` 还驱动聊天顶部栏中的 token 用量指示器（`usageInput / contextWindow %`）。
+该目录（三个 provider 共约 50 个模型）为 UI 提供合理的默认值（temperature、max tokens、用于用量计量的上下文窗口、推理支持），而无需把这些硬编码在页面里。`contextWindow` 还驱动聊天顶部栏中的 token 用量指示器（`usageInput / contextWindow %`）。
 
 ### 4.3 线上格式转换
 
@@ -385,8 +387,9 @@ data class ChatUiState(
     val error: String?,                   // 常驻错误横幅
     val pendingAttachments: List<PendingAttachment>,
     val processing: Boolean,
-    val usageInput: Long, val usageOutput: Long,
-    // …
+    val agentId: Long?, val agentName: String,  // 会话绑定的 Agent
+    val attachmentError: String?,
+    // …（用量数据从最后一条带 usage 的消息推导，不单独存储）
 )
 ```
 
@@ -966,7 +969,7 @@ private fun scheduleTime(automation: AutomationEntity) {
 ```
 
 - `setExactAndAllowWhileIdle` 即使在 Doze（省电深度休眠）模式下也能触发 —— 只要声明了 `USE_EXACT_ALARM` 权限，无需用户额外授权即可工作。
-- 接收器（`AutomationAlarmReceiver`，在 manifest 中静态注册）**在执⾏完成后会重新调度第二天的闹钟** —— 因此即使进程被杀死，自动化任务也不会因此彻底失效。
+- 接收器（`AutomationAlarmReceiver`，在 manifest 中静态注册）**在执行完成后会重新调度第二天的闹钟** —— 因此即使进程被杀死，自动化任务也不会因此彻底失效。
 - 接收器在启动协程之前调用 `goAsync()`，确保进程不会在执行中途被系统回收。
 
 ### 13.3 电池触发器
@@ -1023,26 +1026,30 @@ suspend fun executeAutomation(id: Long) {
 
 ## 14. 存储与状态管理
 
-### 14.1 Room schema（v8）
+### 14.1 Room schema（v10）
 
 ```
-conversations (id, title, provider, model, mode, pinned, archived, createdAt, updatedAt)
+conversations (id, title, provider, model, mode, agentId, pinned, archived, createdAt, updatedAt)
 messages (id, conversationId FK, role, content, toolCallsJson, toolCallId, toolName,
           model, mode, status, usageInput, usageOutput, attachmentsJson,
           thinkingText, thinkingSignature, starred, createdAt)
 repeat_tasks (id, title, content, interval, time, weekday, everyHours, requestCode, nextTriggerAt, createdAt)
 automations  (id, name, triggerType, triggerValue, days, actionsJson, enabled, lastRunAt, createdAt)
+memories     (id, conversationId, type [memory|snapshot], content, createdAt, updatedAt)
+agents       (id, name, description, provider, baseUrl, apiKey[加密], model,
+              temperature, maxTokens, reasoning, systemPrompt, isDefault, createdAt, updatedAt)
 ```
 
 ### 14.2 显式迁移 —— 绝不使用破坏性迁移
 
 ```kotlin
-val MIGRATION_7_8 = object : androidx.room.migration.Migration(7, 8) {
+val MIGRATION_9_10 = object : androidx.room.migration.Migration(9, 10) {
     override fun migrate(db: SupportSQLiteDatabase) {
-        db.execSQL("CREATE TABLE IF NOT EXISTS automations (…)")
+        db.execSQL("ALTER TABLE conversations ADD COLUMN agentId INTEGER")
+        db.execSQL("CREATE TABLE IF NOT EXISTS agents (…)")
     }
 }
-// …添加到 .addMigrations(MIGRATION_1_2 … MIGRATION_7_8)
+// …添加到 .addMigrations(MIGRATION_1_2 … MIGRATION_9_10)
 ```
 
 每个 schema 版本都配有一个手写的迁移脚本，让现有用户原地升级。`fallbackToDestructiveMigration()` 被刻意排除在外 —— 对于一个聊天应用来说，数据丢失是不可接受的。
@@ -1080,7 +1087,7 @@ val encrypted = encrypt(apiKey)      // 随机 IV + 密文
 AppNav
  ├── ConversationListScreen        (search, pinned, list via Room Flow)
  └── ChatScreen
-      ├── TopAppBar (title, mode selector, model selector, usage %, more menu)
+      ├── TopAppBar (title, agent+usage subtitle, mode selector, more menu → Select Agent)
       ├── LazyColumn (messages)
       │     └── MessageItem
       │           ├── UserBubble      (right-aligned, primaryContainer)
@@ -1106,42 +1113,53 @@ AppNav
 
 ### 15.3 终端风格的底部跟随滚动
 
-朴素的实现 —— 每次增量变化都调用 `animateScrollToItem` —— 会产生抖动，因为流式输出的条目高度每一帧都在变化，导致 `shouldAutoScroll` 不停地在真/假之间切换。可行的方案如下：
+朴素的实现 —— 每次增量变化都调用 `animateScrollToItem` —— 会产生抖动，因为流式输出的条目高度每一帧都在变化。v0.25 重写后的方案是**触摸感知**：任何用户手势立即暂停跟随，只有列表**真正完全贴底**时才恢复：
 
 ```kotlin
-val shouldAutoScroll by remember {
-    derivedStateOf {
-        val info = listState.layoutInfo
-        val lastVisible = info.visibleItemsInfo.lastOrNull()?.index ?: -1
-        lastVisible >= info.totalItemsCount - 3
-    }
+// “真正贴底”：最后一条消息完整可见（offset >= 0 且其底部在视口内）——
+// 部分可见的超长消息不算贴底
+var wasAtBottom by remember { mutableStateOf(true) }
+LaunchedEffect(listState) {
+    snapshotFlow { listState.isScrollInProgress }
+        .collect { scrolling ->
+            if (scrolling) {
+                wasAtBottom = false            // 触摸 = 暂停跟随
+            } else {
+                val info = listState.layoutInfo
+                val last = info.visibleItemsInfo.lastOrNull { it.index == info.totalItemsCount - 1 }
+                val pinned = last != null && last.offset >= 0 &&
+                    last.offset + last.size <= info.viewportEndOffset + 1
+                if (pinned) wasAtBottom = true // 用户自己滚回底部 → 恢复跟随
+            }
+        }
 }
 
-var initialScrollDone by remember { mutableStateOf(false) }
-var forceFollow by remember { mutableStateOf(false) }
-
-LaunchedEffect(streaming, shouldAutoScroll, forceFollow, initialScrollDone) {
+// 贴底循环：流式期间（或 forceFollow）持续重新滚动，直到布局确认贴底；
+// 触摸（isScrollInProgress）立即中断
+LaunchedEffect(streaming, forceFollow, wasAtBottom, initialScrollDone) {
     if (state.messages.isEmpty()) return@LaunchedEffect
-    if (initialScrollDone && !forceFollow && !shouldAutoScroll) return@LaunchedEffect
+    if (initialScrollDone && !forceFollow && !wasAtBottom) return@LaunchedEffect
     var attempts = 0
-    while (attempts++ < 60) {
+    while (attempts++ < 2400) {
+        if (listState.isScrollInProgress) { forceFollow = false; break }
         val info = listState.layoutInfo
         val total = info.totalItemsCount
         if (total > 0) {
             runCatching { listState.scrollToItem(total - 1, Int.MAX_VALUE) }
             val lastItem = info.visibleItemsInfo.lastOrNull { it.index == total - 1 }
             val bottom = lastItem?.let { it.offset + it.size } ?: -1
-            if (lastItem != null && bottom >= info.viewportEndOffset - 20) break  // 真正钉在底部
+            val pinned = lastItem != null && bottom >= info.viewportEndOffset - 20
+            if (pinned && !streaming && !forceFollow) break
         }
-        delay(120)
+        delay(80)
     }
     initialScrollDone = true
 }
 ```
 
-关键洞见：`scrollToItem(index, Int.MAX_VALUE)` 只有在**条目的真实高度被测量之后**才可靠。Markdown 是异步渲染的，所以要每隔 120 毫秒重新滚动一次，直到布局*确认*最后一条的底部已到达视口底部。轮询直到布局不变量成立 —— 而不是假设一次滚动就足够 —— 这才是值得照搬的模式。
+关键洞见：`scrollToItem(index, Int.MAX_VALUE)` 只有在**条目的真实高度被测量之后**才可靠。Markdown 是异步渲染的，所以要每隔 80 毫秒重新滚动一次，直到布局*确认*最后一条的底部已到达视口底部。轮询直到布局不变量成立 —— 而不是假设一次滚动就足够 —— 这才是值得照搬的模式。
 
-`forceFollow` 在发送时和流式输出期间置为 true，流式输出结束后 400 毫秒清除；`shouldAutoScroll` 负责处理用户手动向上滚动的情况（不要把人强行拽回去）。
+`forceFollow` 在发送时和流式输出期间置为 true，流式输出结束后 400 毫秒清除；`wasAtBottom`（由真实触摸事件驱动、并校验最后一项完整可见）负责处理用户手动向上滚动的情况——在超长流式消息上小幅上滑不再把列表拽回底部。
 
 ### 15.4 流式光标
 
@@ -1236,7 +1254,7 @@ val blinkAlpha = rememberInfiniteTransition(label = "cursor").animateFloat(
 1. **Kotlin 协程与 Flow** —— `ChatEngine.run(): Flow<EngineEvent>`、滚动逻辑中的 `snapshotFlow`、`withTimeout`、接收器中的 `goAsync()`。
 2. **依赖倒置** —— `ToolContext` 桥接层（`ScreenshotProvider`、`OcrProvider`、`AccessibilityBridge`、`AutomationBridge`）以及打破循环依赖图的 lambda-lazy `runner` 注入。
 3. **响应式 UI** —— 一个不可变的 `StateFlow`、`collectAsStateWithLifecycle`、`derivedStateOf`、用 10 Hz 的 ticker 将事件频率与渲染频率解耦。
-4. **Room** —— 实体、DAO、Flow 观察、从 v1 到 v8 的显式迁移。
+4. **Room** —— 实体、DAO、Flow 观察、从 v1 到 v10 的显式迁移。
 5. **网络** —— OkHttp + 手写 SSE 解析器、`call.clone()` 重试、读超时纪律、按厂商转换线上格式（OpenAI/Anthropic/Gemini）。
 6. **Android 系统集成** —— `AlarmManager.setExactAndAllowWhileIdle`、sticky 电池广播、`MediaProjection` + 前台服务生命周期、`AccessibilityService` 手势分发（主线程 + 超时）、`NotificationListenerService`、Shizuku binder IPC。
 7. **Agent 设计** —— 基于模式的闸门（Chat/Plan/Build/Max）、prompt + 强制的纵深防御、通过 `SharedFlow` + `CompletableDeferred` 实现的确认循环，以及工具转录不变量（§7.4）。

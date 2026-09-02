@@ -5,16 +5,16 @@ Thanks for your interest! This project is a single-developer app built iterative
 ## Ways to contribute
 
 - **Bug reports & feature ideas**: open an [issue](https://github.com/Verlintas/BetterAIChat/issues) with your device model, Android version, and steps to reproduce
-- **Translations**: UI strings are currently hard-coded Chinese; extracting them to resources is a high-value task
+- **Translations**: the UI ships with `values/` (Chinese) and `values-en/` (English) string resources. Reviewing/improving the English translations or localizing into new languages is high-value work
 - **New device tools**: implement a `DeviceTool` in `:skills` and register it in `BetterAIChatApp.kt`
 - **New providers**: add an adapter in `:providers` implementing `ChatProvider`
-- **Code review**: the codebase is small (~40 files); comments and suggestions welcome
+- **Code review**: the codebase is compact (~150 source files); comments and suggestions welcome
 
 ## Development setup
 
 ```bash
 # JDK 17, Android SDK with compileSdk 36
-./gradlew assembleDebug
+./gradlew assembleFullDebug
 ```
 
 Run all four modules' debug build before opening a PR:
@@ -31,4 +31,4 @@ Run all four modules' debug build before opening a PR:
 
 ## Releases
 
-Versioned via GitHub Releases with signed APKs (`-full` and `-lite` variants). Release notes in English.
+Versioned via GitHub Releases with signed APKs (`-full` and `-lite` variants). Release notes are bilingual (Chinese + English).

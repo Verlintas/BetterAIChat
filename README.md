@@ -21,10 +21,16 @@ Unlike mainstream AI apps, BetterAIChat is a **local-first agent**: your API key
 ### Chat & models
 - **Multiple providers**: OpenAI-compatible (OpenAI, DeepSeek, Moonshot, Qwen, Ollama, any gateway), Anthropic Claude, Google Gemini
 - **Streaming replies** with Markdown rendering, thinking-process display (reasoning stream), blinking cursor
-- **Model picker**: built-in catalog per provider + custom model IDs + one-tap server model fetch (`/v1/models`)
+- **Agent picker**: per-conversation Agent selection; built-in model catalog + server model fetch (`/v1/models`)
 - **Context usage tracking** in the header (`117.3K (12%)`)
 - **Context compression**: summarize long conversations to free the window
 - **AI auto-titles** for conversations; prompt templates (translate / summarize / polish / write / explain code / brainstorm)
+
+### Agents — one-tap setup, one per conversation
+An **Agent** bundles a full configuration: provider + API key + model + temperature / max tokens / deep reasoning + optional custom system prompt.
+- **One-tap onboarding (4 steps)**: paste your API key → provider auto-detected from the prefix (`sk-ant-` = Claude, `AIza` = Gemini), with quick presets for DeepSeek / Qwen / Kimi / GLM / SiliconFlow → models fetched automatically → pick model → tune temperature / max tokens → default or custom system prompt
+- Pick a different Agent per conversation (⋮ → Select Agent); manage all Agents in Settings → Agents
+- API keys are encrypted with the Android Keystore; legacy settings auto-migrate to a default Agent
 
 ### Modes (opencode-style)
 | Mode | Behavior |
@@ -47,7 +53,7 @@ Unlike mainstream AI apps, BetterAIChat is a **local-first agent**: your API key
 | `set_alarm` | One-shot reminders |
 | `schedule_repeat` | Daily / weekly / hourly repeating reminders (manageable in Settings → Scheduled tasks) |
 | `speak_text` | TTS read-aloud |
-| `web_search` / `web_read` | Real-time web search (Bing + DuckDuckGo fallback) and page reading |
+| `web_search` / `web_read` | Real-time multi-engine web search (Bing / Baidu / Brave / DuckDuckGo / Mojeek) and page reading |
 | `open_settings` | Jump to system settings pages |
 | `run_shell` | **Root-level shell execution via Shizuku** (pm, am, dumpsys, files…) |
 | `get_time` | Current date / time / timezone |
@@ -97,12 +103,12 @@ The AI can create automations that run tool sequences automatically:
 ### Long-term memory
 - The AI automatically distills key user information (name, preferences, agreements) into **persistent local memory**
 - Memories are injected into every request, so the AI remembers you across sessions
-- Auto-distills every 10 messages; manual trigger via ⋮ menu → "提炼重要信息（长期记忆）"
-- Manage / delete memories in Settings → 记忆
+- Auto-distills every 10 messages; manual trigger via ⋮ menu → "Distill important info (提炼重要信息)"
+- Manage / delete memories in Settings → Memory (记忆)
 
 ### Seamless context continuation
 - When usage reaches **85%** of the context window, the app warns and **auto-compresses** after the current turn
-- Before compressing, the last 6 turns are saved as a snapshot — "导入最近对话" restores them as a message, so you continue without losing recent context
+- Before compressing, the last 6 turns are saved as a snapshot — "Import recent chat" (导入最近对话) restores them as a message, so you continue without losing recent context
 
 ### Full UI automation — the AI can *drive* your phone
 With two toggles in Settings (Accessibility + Usage access), the AI gains a complete automation loop:
@@ -138,7 +144,6 @@ web_search merges **Bing / Baidu / Brave / DuckDuckGo / Mojeek** with URL dedup 
 - Export conversations as Markdown (share sheet)
 - Long-press message actions: copy / speak / edit & resend / star / delete
 - Usage stats (conversations, messages, tokens, tool calls)
-- Themes: light / dark / system + 4 accent colors
 - Share-into-chat (`ACTION_SEND`) and deep link `betteraichat://ask?text=…`
 
 ---
@@ -146,19 +151,20 @@ web_search merges **Bing / Baidu / Brave / DuckDuckGo / Mojeek** with URL dedup 
 ## Getting Started
 
 ### Download
-Download the APK from [Releases](https://github.com/Verlintas/BetterAIChat/releases) — **in a browser**. The GitHub Android app corrupts large APK downloads; verify with the SHA-256 printed in each release, or use the smaller `-lite` build (8.8 MB, no OCR model).
+Download the APK from [Releases](https://github.com/Verlintas/BetterAIChat/releases) — **in a browser**. The GitHub Android app corrupts large APK downloads; verify with the SHA-256 printed in each release, or use the smaller `-lite` build (~10 MB, no on-device OCR).
 
 ### Configure
-1. Settings → Providers & Models → pick a provider, enter your API key (encrypted locally), optionally a custom Base URL
-2. Tap **Test connection & fetch models** — it verifies the connection and fetches the model list from your server
-3. Choose a model and default mode, save
-4. Start a conversation. In Build/Max modes, ask the AI to do things: *"open the calculator"*, *"remind me to drink water at 9am every day"*, *"search today's news and summarize"*…
+1. Settings → Agents → **New Agent** (or, right in a chat: ⋮ → Select Agent → New Agent)
+2. Step 1: paste your API key — provider + Base URL are detected automatically (`sk-ant-` → Claude, `AIza` → Gemini), or pick a preset (DeepSeek / Qwen / Kimi / GLM / SiliconFlow) and tap **Detect** to fetch your server's model list
+3. Step 2: pick a model · Step 3: temperature / max tokens / deep reasoning · Step 4: default or custom system prompt → save
+4. Start a conversation with that Agent. In Build/Max modes, ask the AI to do things: *"open the calculator"*, *"remind me to drink water at 9am every day"*, *"search today's news and summarize"*…
+5. Want another persona? Create more Agents and switch per conversation via ⋮ → Select Agent
 
 ### Build from source
 ```bash
 # JDK 17 + Android SDK (compileSdk 36)
-./gradlew assembleDebug
-# APK: app/build/outputs/apk/debug/app-debug.apk
+./gradlew assembleFullDebug
+# APK: app/build/outputs/apk/full/debug/app-full-debug.apk (lite variant: assembleLiteDebug)
 ```
 
 ---
@@ -199,7 +205,7 @@ New to Android agent development? Read **[docs/HOW_IT_WORKS.md](docs/HOW_IT_WORK
 
 - Multi-model comparison (one question, several models side by side)
 - Home screen widget
-- More device tools (Do-Not-Disturb, screen recording, notification reading)
+- Agent marketplace / shareable Agents
 
 ---
 

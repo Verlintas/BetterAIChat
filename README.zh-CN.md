@@ -20,6 +20,12 @@
 - 流式打字机输出、Markdown 渲染（自定义表格组件）、代码高亮、思考过程展示
 - Token 用量实时显示
 
+### Agent——一键配置，按会话选用
+**Agent** 是一套完整配置：服务商 + API Key + 模型 + 温度/Max Tokens/深度推理 + 可选自定义系统提示。
+- **4 步引导新建**：粘贴 API Key 自动识别服务商（sk-ant- → Claude、AIza → Gemini），内置 DeepSeek / 通义千问 / Kimi / 智谱 GLM / SiliconFlow 快捷预设 → 一键拉取模型列表 → 选模型 → 调参数 → 默认或自定义系统提示
+- 每个对话可独立选择 Agent（⋮ → 选择 Agent）；设置 → Agent 统一管理（新建/编辑/删除/设默认）
+- API Key 系统级加密；旧版配置首启自动迁移为默认 Agent
+
 ### 模式（opencode 风格）
 | 模式 | 行为 |
 |---|---|
@@ -28,7 +34,7 @@
 | `Build` | 每个工具执行前请求你确认 |
 | `Max` | 自主多步工具调用 + 深度思考 |
 
-### AI 可以操作你的设备（53 个工具）
+### AI 可以操作你的设备（55 个工具）
 | 工具 | 功能 |
 |---|---|
 | `open_app` | 打开任意已安装应用 |
@@ -52,8 +58,10 @@
 | `get_location` / `transcribe_audio` / `ocr_file` / `send_email` | 定位 / 录音转写 / 图片 OCR / 邮件 |
 | `set_dnd` / `manage_app` / `set_wifi` / `set_power_saver` | 勿扰 / 应用管理 / WiFi / 省电 |
 | `screen_record` / `list_installed_apps` | 录屏 / 应用列表 |
+| `screen_ocr` | **读取屏幕文字**（截屏 + 端侧中英文 OCR） |
 | `create_automation` / `list_automations` / `delete_automation` | 自动化管理 |
 | `ua_type` / `ua_tap` / `ua_swipe` / `ua_press` | **无障碍 UI 自动化**：输入 / 点击 / 滑动 / 按键 |
+| `load_skill` | 加载并执行已导入的 SKILL.md 技能 |
 | `read_notifications` / `get_screen_state` | 通知读取 / 屏幕状态 |
 
 ### 屏幕分析——AI 能"看见"屏幕
@@ -110,11 +118,12 @@
 - **full**：完整版（含屏幕 OCR）
 - **lite**：精简版（约 10MB，无 OCR）
 
-### 配置
-1. 设置 → 服务商与模型：选择服务商、填写 API Key（本地加密）、自定义 Base URL
-2. 点「测试连接并获取模型」验证连接
-3. 按需开启权限（Shizuku / 截屏 / 无障碍等）
+### 配置（Agent 引导）
+1. 设置 → Agent → **新建 Agent**（或在聊天页 ⋮ → 选择 Agent → 新建）
+2. 第 1 步：粘贴 API Key——自动识别服务商并填充 Base URL（sk-ant- → Claude、AIza → Gemini），也可点 DeepSeek / 通义千问 / Kimi / 智谱 GLM / SiliconFlow 预设，再点「自动识别」拉取服务端模型列表
+3. 第 2 步：选模型 · 第 3 步：温度 / Max Tokens / 深度推理 · 第 4 步：默认或自定义系统提示 → 保存
 4. 开始对话。Build/Max 模式下让 AI 做事：「打开计算器」「每天 9 点提醒我喝水」「搜索今天的新闻并总结」
+5. 想换角色？多建几个 Agent，每个对话在 ⋮ → 选择 Agent 切换
 
 ### 从源码构建
 需要 JDK 17 + Android SDK 36：
@@ -146,15 +155,12 @@ Kotlin · Jetpack Compose (Material 3) · OkHttp (SSE) · kotlinx.serialization 
 想学习 Android 智能体开发？阅读 **[docs/zh/HOW_IT_WORKS.zh-CN.md](docs/zh/HOW_IT_WORKS.zh-CN.md)**——深度技术原理文档（模块架构、消息管线、SSE 流式、工具调用 Agent 循环、权限桥接、自动化引擎、UI 渲染技巧、推荐学习顺序）。
 
 ## 路线图
-- 更多设备工具（勿扰、录屏、通知读取）
-- 自动化引擎（定时/电量触发工具序列）
-- 长期记忆系统
-- 屏幕 UI 自动化闭环
-- 多主题与国际化
-- 自定义表格渲染
+- 多模型对比（同一问题，多模型并排回答）
+- 桌面小组件
+- Agent 市场 / 可分享的 Agent
 
 ## 开源协议
 [MIT](LICENSE)
 
 ---
-*项目：[BetterAIChat](https://github.com/Verlintas/BetterAIChat) · 原生 Android AI 智能体，53 个内置工具。*
+*项目：[BetterAIChat](https://github.com/Verlintas/BetterAIChat) · 原生 Android AI 智能体，55 个内置工具。*
