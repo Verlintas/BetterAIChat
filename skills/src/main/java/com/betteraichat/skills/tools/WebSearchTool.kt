@@ -7,22 +7,26 @@ import com.betteraichat.skills.schemaOf
 import com.betteraichat.skills.stringProp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
-import org.jsoup.nodes.Element
 import java.net.URLDecoder
 
 class WebSearchTool : DeviceTool {
 
     override val name = "web_search"
-    override val description = "在互联网上搜索实时信息并返回结果列表（标题、链接、摘要）。多搜索引擎合并（Bing/百度/Brave/DuckDuckGo），尽力抓取最全结果。适合查询新闻、实时数据、未知知识。使用后如需详细内容可再调用 web_read 读取网页。"
+    override val description = "在互联网上搜索实时信息（Bing/百度/Brave/DDG/Mojeek 五引擎并发合并去重）。" +
+        "用法：query 写具体的关键词短语（如「2025 诺贝尔物理学奖 得主」，而不是「诺贝尔奖」这类宽泛词）；" +
+        "默认会自动抓取前 1 个结果的正文（read_top 控制 0-3），多数问题一次搜索即可回答，无需再调 web_read。" +
+        "如果结果为空或无关：不要盲目用近似词反复重试，而是换表述、加限定词（时间/地区/英文关键词），最多再试 1-2 次。"
     override val readOnly = true
     override val parameters = schemaOf(
-        "query" to stringProp("搜索关键词，尽量具体"),
-        "max_results" to intProp("返回结果数量，1-10，默认 6"),
+        "query" to stringProp("搜索关键词，尽量具体（可含时间、地点等限定）"),
+        "max_results" to intProp("返回结果条数 1-8，默认 5"),
+        "read_top" to intProp("自动抓取前 N 条结果的正文（0-3，默认 1）。0 = 只要链接列表；2-3 = 需要多角度信息时"),
         required = listOf("query")
     )
 
@@ -38,9 +42,12 @@ class WebSearchTool : DeviceTool {
 
     override suspend fun execute(context: ToolContext, arguments: JsonObject): String =
         withContext(Dispatchers.IO) {
-            val query = arguments["query"]?.jsonPrimitive?.content?.trim()
-                ?: return@withContext "缺少 query 参数"
-            val max = (arguments["max_results"]?.jsonPrimitive?.content?.toIntOrNull() ?: 6).coerceIn(1, 10)
+            val rawQuery = arguments["query"]?.jsonPrimitive?.content?.trim()
+                ?: return@withContext "缺少 query 参数：请提供要搜索的具体关键词"
+            val query = cleanQuery(rawQuery)
+            if (query.length < 2) return@withContext "query 无效：请提供至少 2 个字符的具体关键词"
+            val max = (arguments["max_results"]?.jsonPrimitive?.content?.toIntOrNull() ?: 5).coerceIn(1, 8)
+            val readTop = (arguments["read_top"]?.jsonPrimitive?.content?.toIntOrNull() ?: 1).coerceIn(0, 3)
             val now = System.currentTimeMillis()
             val cached = synchronized(cacheLock) {
                 cache[query]?.takeIf { now - it.second < 300_000 }?.first
@@ -55,19 +62,68 @@ class WebSearchTool : DeviceTool {
                 }
             }
             if (results.isEmpty()) {
-                "ERROR:搜索失败（所有搜索引擎均未返回结果，可能网络受限或被反爬），请稍后重试"
-            } else {
-                buildString {
-                    appendLine("「$query」的搜索结果（${results.size} 条，来自多引擎合并）：")
-                    results.take(max).forEachIndexed { i, r ->
-                        appendLine("${i + 1}. ${r.title.take(120)}")
-                        appendLine("   ${r.url}")
-                        if (r.snippet.isNotBlank()) appendLine("   ${r.snippet.take(220)}")
+                return@withContext "搜索没有返回任何结果。建议：换个说法重试（更具体的关键词、加时间或地点限定、尝试英文关键词），不要用相近词反复搜索。"
+            }
+            buildString {
+                appendLine("「$query」的搜索结果（${results.size} 条，五引擎合并）：")
+                val shown = results.take(max)
+                shown.forEachIndexed { i, r ->
+                    appendLine("${i + 1}. ${r.title.take(150)}")
+                    appendLine("   链接：${r.url}")
+                    if (r.snippet.isNotBlank()) appendLine("   摘要：${r.snippet.take(260)}")
+                }
+                if (readTop > 0) {
+                    var collected = 0
+                    val attempts = shown.take(6)
+                    val bodies = kotlinx.coroutines.coroutineScope {
+                        attempts.map { r ->
+                            async {
+                                try {
+                                    extractBody(r.url)
+                                } catch (e: Exception) {
+                                    ""
+                                }
+                            }
+                        }.map { it.await() }
                     }
-                    append("提示：可调用 web_read 读取某条结果的详细内容。")
+                    attempts.forEachIndexed { i, r ->
+                        if (collected >= readTop) return@forEachIndexed
+                        val body = bodies.getOrNull(i).orEmpty()
+                        if (body.isNotBlank()) {
+                            appendLine()
+                            appendLine("【第 ${i + 1} 条正文（${r.title.take(60)}）】")
+                            append(body)
+                            collected++
+                        }
+                    }
+                    if (collected == 0) {
+                        appendLine()
+                        append("（正文抓取失败：目标网站反爬或 JS 渲染。以上摘要通常已足够，必要时换关键词重新搜索）")
+                    }
                 }
             }
         }
+
+    private fun cleanQuery(raw: String): String {
+        var q = raw
+        if (q.length >= 2 && q.first() == '"' && q.last() == '"') q = q.drop(1).dropLast(1)
+        return q.trim().take(120)
+    }
+
+    private fun extractBody(url: String): String {
+        val doc = Jsoup.connect(url)
+            .userAgent(userAgent)
+            .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+            .followRedirects(true)
+            .timeout(15_000)
+            .maxBodySize(2 * 1024 * 1024)
+            .get()
+        doc.select("script, style, noscript, iframe, nav, footer, header, form, aside, .ad, .ads, .advertisement, .cookie, [aria-hidden=true]").remove()
+        val main = doc.selectFirst("article, main, [role=main]")
+        val text = (main ?: doc.body()).text().trim().replace(Regex("\\s{2,}"), " ")
+        if (text.isEmpty()) return ""
+        return text.take(550) + if (text.length > 550) "…" else ""
+    }
 
     private suspend fun searchAllEngines(query: String): List<SearchResult> {
         val engines = listOf(
@@ -181,7 +237,7 @@ class WebSearchTool : DeviceTool {
             .userAgent(userAgent)
             .timeout(8_000)
             .get()
-        return doc.select("ul.results-standard li, .result").mapNotNull { el: Element ->
+        return doc.select("ul.results-standard li, .result").mapNotNull { el: org.jsoup.nodes.Element ->
             val a = el.selectFirst("a.title, h2 a") ?: return@mapNotNull null
             val url = a.attr("href")
             if (!url.startsWith("http")) return@mapNotNull null

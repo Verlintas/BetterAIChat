@@ -76,10 +76,10 @@ class ChatEngine(
             } else m
         }
         var toolRounds = 0
-        val maxRounds = 8
+        val maxRounds = 12
         while (true) {
             if (toolRounds >= maxRounds) {
-                emit(EngineEvent.Failed("工具调用轮次超过 $maxRounds 次，已停止"))
+                emit(EngineEvent.Failed("工具调用已达 $maxRounds 次上限。请基于目前已获取的信息直接回答用户，不要再调用工具"))
                 return@flow
             }
             var text = StringBuilder()
@@ -216,8 +216,8 @@ class ChatEngine(
     }
 
     private fun truncateToolResult(text: String): String {
-        if (text.length <= 1500) return text
-        return text.take(1500) + "\n…（工具结果过长已截断，共 ${text.length} 字符）"
+        if (text.length <= 2600) return text
+        return text.take(2600) + "\n…（工具结果过长已截断，共 ${text.length} 字符）"
     }
 
     private fun gate(mode: AppMode, spec: ToolSpec?, call: ToolCall): GateResult {
