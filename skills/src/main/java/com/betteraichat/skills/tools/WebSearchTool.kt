@@ -74,12 +74,13 @@ class WebSearchTool : DeviceTool {
                 }
                 if (readTop > 0) {
                     var collected = 0
-                    val attempts = shown.take(6)
+                    val perBody = 5000 / readTop
+                    val attempts = shown.take(8)
                     val bodies = kotlinx.coroutines.coroutineScope {
                         attempts.map { r ->
                             async {
                                 try {
-                                    extractBody(r.url)
+                                    extractBody(r.url, perBody)
                                 } catch (e: Exception) {
                                     ""
                                 }
@@ -110,20 +111,44 @@ class WebSearchTool : DeviceTool {
         return q.trim().take(120)
     }
 
-    private fun extractBody(url: String): String {
+    private val NOISE_RE = Regex(
+        "^(阅读量|收藏|赞|评论|关注|码龄|发布于|更新于|扫码|下载APP|未经.*(转载|许可)|本文.*(转载|来源)|" +
+            "版权|Copyright|©|广告|红包|相关推荐|大家都在看|分享到|欢迎.*(关注|订阅)|更多.*(请|欢迎)|" +
+            "字数|阅读\\s*\\d+|\\d+\\s*(人|位).*(赞|收藏|在看)|\\d+分钟|\\d+ 分钟前|\\d+小时前|\\d+天前)" +
+            ".*"
+    )
+
+    private fun extractBody(url: String, budget: Int): String {
         val doc = Jsoup.connect(url)
             .userAgent(userAgent)
             .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
             .followRedirects(true)
             .timeout(15_000)
-            .maxBodySize(2 * 1024 * 1024)
+            .maxBodySize(3 * 1024 * 1024)
             .get()
         doc.select("script, style, noscript, iframe, nav, footer, header, form, aside, .ad, .ads, .advertisement, .cookie, [aria-hidden=true]").remove()
-        val main = doc.selectFirst("article, main, [role=main]")
-        val text = (main ?: doc.body()).text().trim().replace(Regex("\\s{2,}"), " ")
+        val main = doc.selectFirst("article, main, [role=main]") ?: doc.body()
+        val out = StringBuilder()
+        var len = 0
+        var last = ""
+        main.select("p, h1, h2, h3, h4, h5, li, pre, blockquote").forEach { el ->
+            if (len >= budget) return@forEach
+            val t = el.text().trim().replace(Regex("\\s+"), " ")
+            if (t.isEmpty() || t.length < 8) return@forEach
+            if (NOISE_RE.matches(t)) return@forEach
+            if (t == last || last.contains(t) || t.contains(last)) return@forEach
+            out.append(t).append('\n')
+            len += t.length + 1
+            last = t
+        }
+        var text = out.toString().trim()
+        if (text.length < 150) {
+            text = main.text().trim().replace(Regex("\\s{2,}"), " ")
+        }
         if (text.isEmpty()) return ""
-        return text.take(550) + if (text.length > 550) "…" else ""
+        return text.take(budget) + if (text.length > budget) "\n…（正文较长已截断，可单独 web_read 读全文）" else ""
     }
+
 
     private suspend fun searchAllEngines(query: String): List<SearchResult> {
         val engines = listOf(

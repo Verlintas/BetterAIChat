@@ -586,7 +586,7 @@ class ChatViewModel(
     }
 
     private suspend fun persistToolResult(call: ToolCall, cid: Long) {
-        val stored = call.copy(result = call.result?.take(2600))
+        val stored = call.copy(result = call.result?.take(6000))
         repository.insertMessage(
             repository.domainToMessage(
                 ChatMessage(

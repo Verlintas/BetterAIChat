@@ -216,8 +216,8 @@ class ChatEngine(
     }
 
     private fun truncateToolResult(text: String): String {
-        if (text.length <= 2600) return text
-        return text.take(2600) + "\n…（工具结果过长已截断，共 ${text.length} 字符）"
+        if (text.length <= 6000) return text
+        return text.take(6000) + "\n…（工具结果过长已截断，共 ${text.length} 字符）"
     }
 
     private fun gate(mode: AppMode, spec: ToolSpec?, call: ToolCall): GateResult {
