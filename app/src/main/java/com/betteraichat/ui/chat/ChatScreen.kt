@@ -236,7 +236,7 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
     var forceFollow by remember { mutableStateOf(false) }
     val streaming = state.messages.lastOrNull()?.streaming == true
 
-    LaunchedEffect(streaming, forceFollow, wasAtBottom, initialScrollDone) {
+    LaunchedEffect(streaming, forceFollow, wasAtBottom, initialScrollDone, state.messages.size) {
         if (state.messages.isEmpty()) return@LaunchedEffect
         if (initialScrollDone && !forceFollow && !wasAtBottom) return@LaunchedEffect
         var attempts = 0

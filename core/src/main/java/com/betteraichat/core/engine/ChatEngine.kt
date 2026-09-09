@@ -77,6 +77,7 @@ class ChatEngine(
         }
         var toolRounds = 0
         val maxRounds = 12
+        val toolFailures = HashMap<String, Int>()
         while (true) {
             if (toolRounds >= maxRounds) {
                 emit(EngineEvent.Failed("工具调用已达 $maxRounds 次上限。请基于目前已获取的信息直接回答用户，不要再调用工具"))
@@ -172,13 +173,13 @@ class ChatEngine(
                                 else -> "用户拒绝了该工具调用"
                             }
                         } else {
-                            val (s, r) = executeTool(call, spec) { emit(it) }
+                            val (s, r) = runWithCircuitBreaker(call, spec, toolFailures) { emit(it) }
                             status = s
                             resultText = r
                         }
                     }
                     is GateResult.Allow -> {
-                        val (s, r) = executeTool(call, spec) { emit(it) }
+                        val (s, r) = runWithCircuitBreaker(call, spec, toolFailures) { emit(it) }
                         status = s
                         resultText = r
                     }
@@ -196,6 +197,29 @@ class ChatEngine(
         }
         emit(EngineEvent.Completed)
     }.flowOn(Dispatchers.IO)
+
+    private suspend fun runWithCircuitBreaker(
+        call: ToolCall,
+        spec: ToolSpec?,
+        failures: MutableMap<String, Int>,
+        emitEvent: suspend (EngineEvent) -> Unit
+    ): Pair<ToolCallStatus, String> {
+        if ((failures[call.name] ?: 0) >= 3) {
+            return ToolCallStatus.DENIED to
+                "${call.name} 已连续失败 3 次，请勿再重试：请重新阅读该工具的参数说明后最多修正重试一次；" +
+                "若仍失败，请改用其他工具或直接基于已有信息回答用户。"
+        }
+        val (status, result) = executeTool(call, spec, emitEvent)
+        val runnerReportedFailure = result.startsWith("ERROR") ||
+            result.startsWith("工具参数") || result.startsWith("工具执行")
+        when {
+            status == ToolCallStatus.DONE && !runnerReportedFailure -> failures[call.name] = 0
+            status == ToolCallStatus.FAILED || runnerReportedFailure ->
+                failures[call.name] = (failures[call.name] ?: 0) + 1
+            else -> Unit
+        }
+        return status to result
+    }
 
     private suspend fun executeTool(
         call: ToolCall,
