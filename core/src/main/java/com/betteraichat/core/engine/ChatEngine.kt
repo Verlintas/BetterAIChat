@@ -17,6 +17,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withTimeout
 import java.util.concurrent.ConcurrentHashMap
@@ -77,7 +79,7 @@ class ChatEngine(
         }
         var toolRounds = 0
         val maxRounds = 12
-        val toolFailures = HashMap<String, Int>()
+        val toolFailures = java.util.concurrent.ConcurrentHashMap<String, Int>()
         while (true) {
             if (toolRounds >= maxRounds) {
                 emit(EngineEvent.Failed("工具调用已达 $maxRounds 次上限。请基于目前已获取的信息直接回答用户，不要再调用工具"))
@@ -134,6 +136,38 @@ class ChatEngine(
             history = history + assistantMsg.copy(
                 toolCalls = toolCalls.map { it.copy(status = ToolCallStatus.PENDING) }
             )
+            if (mode == AppMode.MAX && toolCalls.size > 1) {
+                val decided = toolCalls.map { call ->
+                    val spec = toolCatalog.find(call.name)
+                    Triple(call, spec, gate(mode, spec, call))
+                }
+                val executed = coroutineScope {
+                    decided.map { (call, spec, decision) ->
+                        async {
+                            when (decision) {
+                                is GateResult.Denied ->
+                                    Triple(call, ToolCallStatus.DENIED, "工具被拒绝执行：${decision.reason}")
+                                is GateResult.NeedsConfirm ->
+                                    Triple(call, ToolCallStatus.REJECTED, "并行执行时无法逐项确认，已跳过（请重新单独发起）")
+                                is GateResult.Allow -> {
+                                    val (status, result) = runWithCircuitBreaker(call, spec, toolFailures) { }
+                                    Triple(call, status, result)
+                                }
+                            }
+                        }
+                    }.map { it.await() }
+                }
+                executed.forEach { (call, status, resultText) ->
+                    val finished = call.copy(result = resultText, status = status)
+                    emit(EngineEvent.ToolCallFinished(finished))
+                    history = history + ChatMessage(
+                        role = ChatRole.TOOL,
+                        content = truncateToolResult(resultText),
+                        toolCallId = call.id,
+                        toolName = call.name
+                    )
+                }
+            } else {
             for (call in toolCalls) {
                 val spec = toolCatalog.find(call.name)
                 val decision = gate(mode, spec, call)
@@ -193,6 +227,7 @@ class ChatEngine(
                     toolCallId = call.id,
                     toolName = call.name
                 )
+            }
             }
         }
         emit(EngineEvent.Completed)
