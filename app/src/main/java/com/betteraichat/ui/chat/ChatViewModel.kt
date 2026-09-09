@@ -259,6 +259,7 @@ class ChatViewModel(
                         streaming = false,
                         usageInput = e.usageInput,
                         usageOutput = e.usageOutput,
+                        thinking = e.thinkingText ?: "",
                         attachments = e.attachmentsJson?.let {
                             runCatching { json.decodeFromString<List<com.betteraichat.core.model.Attachment>>(it) }
                                 .getOrDefault(emptyList())

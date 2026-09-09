@@ -153,6 +153,10 @@ fun MessageItem(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+            if (msg.thinking.isNotBlank()) {
+                Spacer(Modifier.size(6.dp))
+                ThinkingCard(msg.thinking)
+            }
             Spacer(Modifier.size(4.dp))
             if (msg.content.isNotEmpty() || msg.toolCalls.isEmpty()) {
                 Surface(
@@ -310,10 +314,6 @@ fun MessageItem(
                         )
                     }
                 }
-            }
-            if (msg.thinking.isNotBlank()) {
-                Spacer(Modifier.size(6.dp))
-                ThinkingCard(msg.thinking)
             }
         }
     }
