@@ -2,6 +2,7 @@ package com.betteraichat.skills.tools
 
 import com.betteraichat.skills.DeviceTool
 import com.betteraichat.skills.ToolContext
+import com.betteraichat.skills.boolProp
 import com.betteraichat.skills.intProp
 import com.betteraichat.skills.schemaOf
 import com.betteraichat.skills.stringProp
@@ -18,15 +19,17 @@ import java.net.URLDecoder
 class WebSearchTool : DeviceTool {
 
     override val name = "web_search"
-    override val description = "在互联网上搜索实时信息（Bing/百度/Brave/DDG/Mojeek 五引擎并发合并去重）。" +
+    override val description = "在互联网上搜索实时信息（Bing/百度/Brave/DDG/Mojeek/360 六引擎并发合并去重，同域名只保留最优结果）。" +
         "用法：query 写具体的关键词短语（如「2025 诺贝尔物理学奖 得主」，而不是「诺贝尔奖」这类宽泛词）；" +
-        "默认会自动抓取前 1 个结果的正文（read_top 控制 0-3），多数问题一次搜索即可回答，无需再调 web_read。" +
-        "如果结果为空或无关：不要盲目用近似词反复重试，而是换表述、加限定词（时间/地区/英文关键词），最多再试 1-2 次。"
+        "默认自动抓取前 1 个结果的正文（read_top 控制 0-3），多数问题一次搜索即可回答。查询结果有 5 分钟缓存；" +
+        "如果确实需要绕过缓存重新搜索（如追问时效性内容），传 refresh=true。" +
+        "结果为空或无关时：不要盲目用近似词反复重试，而是换表述、加限定词（时间/地区/英文关键词），最多再试 1-2 次。"
     override val readOnly = true
     override val parameters = schemaOf(
         "query" to stringProp("搜索关键词，尽量具体（可含时间、地点等限定）"),
         "max_results" to intProp("返回结果条数 1-8，默认 5"),
-        "read_top" to intProp("自动抓取前 N 条结果的正文（0-3，默认 1）。0 = 只要链接列表；2-3 = 需要多角度信息时"),
+        "read_top" to intProp("自动抓取前 N 条可成功抓取的正文（0-3，默认 1）。0 = 只要链接列表"),
+        "refresh" to boolProp("是否强制绕过缓存重新搜索（默认 false）。时效性追问时用 true"),
         required = listOf("query")
     )
 
@@ -36,6 +39,7 @@ class WebSearchTool : DeviceTool {
     private data class SearchResult(val title: String, val url: String, val snippet: String)
 
     companion object {
+        private const val CACHE_TTL_MS = 300_000L
         private val cache = LinkedHashMap<String, Pair<List<SearchResult>, Long>>(32)
         private val cacheLock = Any()
     }
@@ -48,30 +52,40 @@ class WebSearchTool : DeviceTool {
             if (query.length < 2) return@withContext "query 无效：请提供至少 2 个字符的具体关键词"
             val max = (arguments["max_results"]?.jsonPrimitive?.content?.toIntOrNull() ?: 5).coerceIn(1, 8)
             val readTop = (arguments["read_top"]?.jsonPrimitive?.content?.toIntOrNull() ?: 1).coerceIn(0, 3)
+            val refresh = arguments["refresh"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() == true
+            val cacheKey = "$query|$max|$readTop"
             val now = System.currentTimeMillis()
-            val cached = synchronized(cacheLock) {
-                cache[query]?.takeIf { now - it.second < 300_000 }?.first
+            val cached = if (refresh) null else synchronized(cacheLock) {
+                cache[cacheKey]?.takeIf { now - it.second < CACHE_TTL_MS }?.first
             }
-            val results = cached ?: searchAllEngines(query)
-            if (cached == null && results.isNotEmpty()) {
-                synchronized(cacheLock) {
-                    cache[query] = results to now
-                    if (cache.size > 30) {
-                        cache.entries.removeAll { now - it.value.second > 300_000 }
+            val (results, engineNote) = if (cached != null) {
+                cached to null
+            } else {
+                val (list, note) = searchAllEngines(query)
+                if (list.isNotEmpty()) {
+                    synchronized(cacheLock) {
+                        cache[cacheKey] = list to now
+                        if (cache.size > 40) {
+                            cache.entries.removeAll { now - it.value.second > CACHE_TTL_MS }
+                        }
                     }
                 }
+                list to note
             }
             if (results.isEmpty()) {
-                return@withContext "搜索没有返回任何结果。建议：换个说法重试（更具体的关键词、加时间或地点限定、尝试英文关键词），不要用相近词反复搜索。"
+                return@withContext "搜索没有返回任何结果。${engineNote ?: ""}" +
+                    "建议：换个说法重试（更具体的关键词、加时间或地点限定、尝试英文关键词），不要用相近词反复搜索。"
             }
             buildString {
-                appendLine("「$query」的搜索结果（${results.size} 条，五引擎合并）：")
+                appendLine("「$query」的搜索结果（${results.size} 条，多引擎合并）${if (refresh) "（已绕过缓存重新搜索）" else ""}：")
                 val shown = results.take(max)
                 shown.forEachIndexed { i, r ->
                     appendLine("${i + 1}. ${r.title.take(150)}")
                     appendLine("   链接：${r.url}")
                     if (r.snippet.isNotBlank()) appendLine("   摘要：${r.snippet.take(260)}")
                 }
+                engineNote?.let { appendLine()
+                    append(it) }
                 if (readTop > 0) {
                     var collected = 0
                     val perBody = 5000 / readTop
@@ -118,6 +132,22 @@ class WebSearchTool : DeviceTool {
             ".*"
     )
 
+    private val TRACKING_PARAM_RE = Regex(
+        "utm_source|utm_medium|utm_campaign|utm_term|utm_content|spm|from|ref|refer|referrer|source|" +
+            "from_source|from_column|fr=|ncid|icid|gclid|fbclid|share_token|share_medium|share_source"
+    )
+
+    private fun cleanUrl(raw: String): String {
+        var url = raw.trim()
+        if (!url.startsWith("http")) return url
+        val qIdx = url.indexOf('?')
+        if (qIdx < 0) return url
+        val base = url.substring(0, qIdx)
+        val kept = url.substring(qIdx + 1).split("&")
+            .filter { p -> !TRACKING_PARAM_RE.containsMatchIn(p) }
+        return if (kept.isEmpty()) base else "$base?${kept.joinToString("&")}"
+    }
+
     private fun extractBody(url: String, budget: Int): String {
         val doc = Jsoup.connect(url)
             .userAgent(userAgent)
@@ -149,36 +179,50 @@ class WebSearchTool : DeviceTool {
         return text.take(budget) + if (text.length > budget) "\n…（正文较长已截断，可单独 web_read 读全文）" else ""
     }
 
+    private data class EngineOutcome(val results: List<SearchResult>, val ok: Boolean)
 
-    private suspend fun searchAllEngines(query: String): List<SearchResult> {
+    private suspend fun searchAllEngines(query: String): Pair<List<SearchResult>, String?> {
         val engines = listOf(
             ::searchBing,
             ::searchBaidu,
             ::searchBrave,
             ::searchDuckDuckGo,
-            ::searchMojeek
+            ::searchMojeek,
+            ::search360
         )
-        val engineResults = kotlinx.coroutines.coroutineScope {
+        val outcomes = kotlinx.coroutines.coroutineScope {
             engines.map { engine ->
                 async {
                     try {
-                        engine(query)
+                        EngineOutcome(engine(query), true)
                     } catch (e: Exception) {
-                        emptyList()
+                        EngineOutcome(emptyList(), false)
                     }
                 }
             }.map { it.await() }
         }
         val merged = LinkedHashMap<String, SearchResult>()
-        engineResults.forEach { list ->
-            if (merged.size >= 6) return@forEach
-            list.forEach { r ->
+        val domainCount = HashMap<String, Int>()
+        outcomes.forEach { o ->
+            if (merged.size >= 10) return@forEach
+            o.results.forEach { r ->
                 if (r.url.startsWith("http") && r.title.isNotBlank()) {
-                    merged.putIfAbsent(r.url, r)
+                    val clean = cleanUrl(r.url)
+                    val domain = runCatching { java.net.URI(clean).host.orEmpty() }.getOrDefault("")
+                    if (domainCount[domain] ?: 0 >= 2) return@forEach
+                    if (merged.putIfAbsent(clean, r.copy(url = clean)) == null) {
+                        domainCount[domain] = (domainCount[domain] ?: 0) + 1
+                    }
                 }
             }
         }
-        return merged.values.toList()
+        val okCount = outcomes.count { it.ok }
+        val note = if (okCount == 0) {
+            "（六个搜索引擎全部不可用：网络受限或被限流，请检查网络后稍等再试）"
+        } else if (okCount < 3) {
+            "（提示：本次仅 $okCount/6 个搜索引擎可用，结果可能不完整，可稍后 refresh=true 重试）"
+        } else null
+        return merged.values.toList() to note
     }
 
     private fun fetch(url: String, query: String): Document =
@@ -267,6 +311,25 @@ class WebSearchTool : DeviceTool {
             val url = a.attr("href")
             if (!url.startsWith("http")) return@mapNotNull null
             val snippet = el.selectFirst("p.s, .s")?.text()?.trim().orEmpty()
+            SearchResult(a.text().trim(), url, snippet)
+        }
+    }
+
+    private fun search360(query: String): List<SearchResult> {
+        val doc = Jsoup.connect("https://www.so.com/s")
+            .data("q", query)
+            .header("Accept-Language", "zh-CN,zh;q=0.9")
+            .userAgent(userAgent)
+            .timeout(8_000)
+            .get()
+        return doc.select("li.res-list, li.result").mapNotNull { el: org.jsoup.nodes.Element ->
+            val a = el.selectFirst("h3 a[href]") ?: return@mapNotNull null
+            var url = a.attr("href")
+            if (!url.startsWith("http")) {
+                url = runCatching { URLDecoder.decode(url, "UTF-8") }.getOrDefault(url)
+            }
+            if (!url.startsWith("http")) return@mapNotNull null
+            val snippet = el.selectFirst(".res-desc, .res-rich, [class*=desc]")?.text()?.trim().orEmpty()
             SearchResult(a.text().trim(), url, snippet)
         }
     }
