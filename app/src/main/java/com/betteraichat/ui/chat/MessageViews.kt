@@ -85,6 +85,7 @@ fun MessageItem(
 ) {
     if (msg.role == ChatRole.TOOL) return
     val clipboard = LocalClipboardManager.current
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     var showActions by remember { mutableStateOf(false) }
     val copyAction = {
         if (msg.content.isNotBlank()) {
@@ -93,7 +94,12 @@ fun MessageItem(
         }
         showActions = false
     }
-    val onLongPress = { if (msg.id > 0 && !msg.streaming) showActions = true }
+    val onLongPress = {
+        if (msg.id > 0 && !msg.streaming) {
+            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+            showActions = true
+        }
+    }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     if (msg.role == ChatRole.USER) {
         Column(modifier = modifier.fillMaxWidth(), horizontalAlignment = Alignment.End) {

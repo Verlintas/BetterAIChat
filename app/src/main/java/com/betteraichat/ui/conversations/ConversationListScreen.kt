@@ -56,7 +56,27 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-private val CONV_TIME_FORMAT = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
+private val CONV_TIME_FORMAT = SimpleDateFormat("MM-dd", Locale.getDefault())
+private val CONV_TIME_FULL = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+private val CONV_TIME_HM = SimpleDateFormat("HH:mm", Locale.getDefault())
+
+private fun formatConversationTime(ts: Long): String {
+    if (ts <= 0) return ""
+    val now = java.util.Calendar.getInstance()
+    val then = java.util.Calendar.getInstance().apply { timeInMillis = ts }
+    val sameYear = now.get(java.util.Calendar.YEAR) == then.get(java.util.Calendar.YEAR)
+    val sameDay = sameYear && now.get(java.util.Calendar.DAY_OF_YEAR) == then.get(java.util.Calendar.DAY_OF_YEAR)
+    if (sameDay) return CONV_TIME_HM.format(Date(ts))
+    val yesterday = now.clone() as java.util.Calendar
+    yesterday.add(java.util.Calendar.DAY_OF_YEAR, -1)
+    val isYesterday = sameYear &&
+        yesterday.get(java.util.Calendar.DAY_OF_YEAR) == then.get(java.util.Calendar.DAY_OF_YEAR)
+    return when {
+        isYesterday -> "昨天"
+        sameYear -> CONV_TIME_FORMAT.format(Date(ts))
+        else -> CONV_TIME_FULL.format(Date(ts))
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -71,6 +91,11 @@ fun ConversationListScreen(
         .collectAsStateWithLifecycle(initialValue = emptyList())
     val archivedConversations by container.repository.observeArchivedConversations()
         .collectAsStateWithLifecycle(initialValue = emptyList())
+    val lastMessages by container.repository.observeLastMessages()
+        .collectAsStateWithLifecycle(initialValue = emptyList())
+    val lastMessageMap = remember(lastMessages) {
+        lastMessages.associate { it.conversationId to it.content }
+    }
     var renameTarget by remember { mutableStateOf<ConversationEntity?>(null) }
     var renameText by remember { mutableStateOf("") }
     var searchQuery by remember { mutableStateOf("") }
@@ -148,6 +173,7 @@ fun ConversationListScreen(
                     items(filteredActive, key = { "a${it.id}" }) { c ->
                         SwipeableConversationCard(
                             conversation = c,
+                            preview = lastMessageMap[c.id]?.replace('\n', ' ')?.trim().orEmpty(),
                             onClick = { onOpenChat(c.id) },
                             onRename = {
                                 renameTarget = c
@@ -178,6 +204,7 @@ fun ConversationListScreen(
                             items(filteredArchived, key = { "r${it.id}" }) { c ->
                                 SwipeableConversationCard(
                                     conversation = c,
+                                    preview = lastMessageMap[c.id]?.replace('\n', ' ')?.trim().orEmpty(),
                                     onClick = { onOpenChat(c.id) },
                                     onRename = {
                                         renameTarget = c
@@ -249,6 +276,7 @@ private fun EmptyHint(modifier: Modifier = Modifier) {
 @Composable
 private fun SwipeableConversationCard(
     conversation: ConversationEntity,
+    preview: String,
     onClick: () -> Unit,
     onRename: () -> Unit,
     onTogglePin: () -> Unit,
@@ -257,6 +285,7 @@ private fun SwipeableConversationCard(
     onDelete: () -> Unit
 ) {
     var menuOpen by remember { mutableStateOf(false) }
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     val dismissState = rememberSwipeToDismissBoxState(
         confirmValueChange = { value ->
             if (value == SwipeToDismissBoxValue.EndToStart) {
@@ -292,33 +321,37 @@ private fun SwipeableConversationCard(
                         .fillMaxWidth()
                         .combinedClickable(
                             onClick = onClick,
-                            onLongClick = { menuOpen = true }
+                            onLongClick = {
+                                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                menuOpen = true
+                            }
                         )
                         .padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(conversation.title, style = MaterialTheme.typography.titleMedium, maxLines = 1)
-                        Text(
-                            buildString {
-                                val provider = runCatching { ProviderId.valueOf(conversation.provider) }
-                                    .getOrDefault(ProviderId.OPENAI_COMPAT)
-                                append(provider.displayName)
-                                append(" · ")
-                                append(conversation.model)
-                                runCatching { AppMode.valueOf(conversation.mode) }.getOrNull()?.let {
-                                    append(" · ")
-                                    append(it.displayName)
-                                }
-                                append(" · ")
-                                append(
-                                    CONV_TIME_FORMAT.format(Date(conversation.updatedAt))
-                                )
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                conversation.title,
+                                style = MaterialTheme.typography.titleMedium,
+                                maxLines = 1,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text(
+                                formatConversationTime(conversation.updatedAt),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        if (preview.isNotBlank()) {
+                            Text(
+                                preview,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                            )
+                        }
                     }
                 }
             }

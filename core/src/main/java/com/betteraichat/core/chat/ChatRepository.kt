@@ -30,6 +30,9 @@ class ChatRepository(private val db: AppDatabase) {
 
     fun observeStarred(): Flow<List<MessageEntity>> = db.messageDao().observeStarred()
 
+    fun observeLastMessages(): Flow<List<com.betteraichat.core.db.LastMessageRow>> =
+        db.messageDao().observeLastMessages()
+
     suspend fun setStarred(id: Long, starred: Boolean) = db.messageDao().updateStarred(id, starred)
 
     suspend fun createConversation(

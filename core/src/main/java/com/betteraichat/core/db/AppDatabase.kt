@@ -112,6 +112,9 @@ interface MessageDao {
     @Query("SELECT * FROM messages WHERE starred = 1 ORDER BY id DESC")
     fun observeStarred(): Flow<List<MessageEntity>>
 
+    @Query("SELECT conversationId, content FROM messages WHERE id IN (SELECT MAX(id) FROM messages GROUP BY conversationId)")
+    fun observeLastMessages(): Flow<List<LastMessageRow>>
+
     @Query("SELECT COUNT(*) FROM messages WHERE role = 'USER'")
     suspend fun countUserMessages(): Long
 
@@ -293,6 +296,11 @@ interface AgentDao {
     @Query("DELETE FROM agents WHERE id = :id")
     suspend fun deleteById(id: Long)
 }
+
+data class LastMessageRow(
+    val conversationId: Long,
+    val content: String
+)
 
 data class TokenTotalsRow(
     val totalInput: Long = 0,

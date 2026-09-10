@@ -90,6 +90,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -530,7 +531,17 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer
                 ) {
-                    Icon(Icons.Filled.KeyboardArrowDown, contentDescription = stringResource(com.betteraichat.R.string.chat_back_to_bottom))
+                    androidx.compose.material3.BadgedBox(
+                        badge = {
+                            if (streaming) {
+                                androidx.compose.material3.Badge(
+                                    containerColor = MaterialTheme.colorScheme.error
+                                )
+                            }
+                        }
+                    ) {
+                        Icon(Icons.Filled.KeyboardArrowDown, contentDescription = stringResource(com.betteraichat.R.string.chat_back_to_bottom))
+                    }
                 }
             }
         }
@@ -861,6 +872,7 @@ private fun InputBar(
     onStop: () -> Unit
 ) {
     val context = LocalContext.current
+    val inputFocus = remember { androidx.compose.ui.focus.FocusRequester() }
     var attachMenu by remember { mutableStateOf(false) }
     Column(modifier = Modifier.fillMaxWidth()) {
         if (pendingAttachments.isNotEmpty()) {
@@ -996,7 +1008,8 @@ private fun InputBar(
             OutlinedTextField(
                 value = input,
                 onValueChange = onInputChange,
-                modifier = Modifier.weight(1f).animateContentSize(),
+                modifier = Modifier.weight(1f).animateContentSize()
+                    .focusRequester(inputFocus),
                 placeholder = {
                     Text(stringResource(com.betteraichat.R.string.input_hint))
                 },
@@ -1018,7 +1031,12 @@ private fun InputBar(
             FilledIconButton(
                 onClick = {
                     haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    if (isRunning) onStop() else onSend()
+                    if (isRunning) {
+                        onStop()
+                    } else {
+                        onSend()
+                        runCatching { inputFocus.requestFocus() }
+                    }
                 },
                 enabled = !processing && (isRunning || input.isNotBlank() || pendingAttachments.isNotEmpty()),
                 interactionSource = interactionSource,
