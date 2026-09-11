@@ -276,4 +276,5 @@ Author: Verlintas</string>
     <string name="agents_deleted">Deleted "%1$s"</string>
     <string name="chat_select_agent">Select Agent</string>
     <string name="agent_quick_providers">Popular OpenAI-compatible providers (tap to fill Base URL):</string>
+    <string name="chat_details">Details</string>
 </resources>

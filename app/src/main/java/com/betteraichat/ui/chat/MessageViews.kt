@@ -530,73 +530,89 @@ private fun AiAvatar() {
 
 @Composable
 private fun ToolCallCard(call: ToolCall, stepNumber: Int = 0) {
+    var detail by remember(call.id) { mutableStateOf(false) }
+    var resultExpanded by remember(call.id) { mutableStateOf(false) }
     Surface(
-        shape = RoundedCornerShape(10.dp),
+        shape = RoundedCornerShape(8.dp),
         color = MaterialTheme.colorScheme.surfaceVariant,
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(modifier = Modifier.padding(10.dp)) {
+        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     Icons.Filled.Build,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(16.dp)
+                    modifier = Modifier.size(14.dp)
                 )
                 Spacer(Modifier.width(6.dp))
                 if (stepNumber > 0) {
-                    Surface(
-                        shape = RoundedCornerShape(4.dp),
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-                    ) {
-                        Text(
-                            stringResource(com.betteraichat.R.string.tool_step, stepNumber),
-                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
+                    Text(
+                        "$stepNumber.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                     Spacer(Modifier.width(4.dp))
                 }
-                Text(call.name, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.weight(1f))
+                Text(
+                    call.name,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f)
+                )
                 StatusBadge(call.status)
+                TextButton(
+                    onClick = { detail = !detail },
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                    modifier = Modifier.height(28.dp)
+                ) {
+                    Text(
+                        stringResource(
+                            if (detail) com.betteraichat.R.string.chat_collapse
+                            else com.betteraichat.R.string.chat_details
+                        ),
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                }
             }
-            if (call.arguments.isNotBlank() && call.arguments != "{}") {
-                Text(
-                    call.arguments,
-                    style = MaterialTheme.typography.bodySmall,
-                    fontFamily = FontFamily.Monospace,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            val result = call.result
-            if (!result.isNullOrBlank()) {
-                var expanded by remember { mutableStateOf(false) }
+            if (detail) {
+                if (call.arguments.isNotBlank() && call.arguments != "{}") {
+                    Text(
+                        call.arguments,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                }
+                val result = call.result
+                if (!result.isNullOrBlank()) {
+                    Spacer(Modifier.size(4.dp))
+                    Text(
+                        result,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = if (resultExpanded) Int.MAX_VALUE else 8,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (result.length > 180 && !resultExpanded) {
+                        TextButton(
+                            onClick = { resultExpanded = true },
+                            modifier = Modifier.padding(top = 2.dp)
+                        ) {
+                            Text(stringResource(com.betteraichat.R.string.chat_expand_all, result.length), style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                    if (resultExpanded) {
+                        TextButton(
+                            onClick = { resultExpanded = false },
+                            modifier = Modifier.padding(top = 2.dp)
+                        ) {
+                            Text(stringResource(com.betteraichat.R.string.chat_collapse), style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                }
                 Spacer(Modifier.size(4.dp))
-                Text(
-                    result,
-                    style = MaterialTheme.typography.bodySmall,
-                    maxLines = if (expanded) Int.MAX_VALUE else 6,
-                    overflow = TextOverflow.Ellipsis
-                )
-                if (result.length > 180 && !expanded) {
-                    TextButton(
-                        onClick = { expanded = true },
-                        modifier = Modifier.padding(top = 2.dp)
-                    ) {
-                        Text(stringResource(com.betteraichat.R.string.chat_expand_all, result.length), style = MaterialTheme.typography.labelSmall)
-                    }
-                }
-                if (expanded) {
-                    TextButton(
-                        onClick = { expanded = false },
-                        modifier = Modifier.padding(top = 2.dp)
-                    ) {
-                        Text(stringResource(com.betteraichat.R.string.chat_collapse), style = MaterialTheme.typography.labelSmall)
-                    }
-                }
             }
         }
     }

@@ -276,4 +276,5 @@
     <string name="agents_deleted">已删除「%1$s」</string>
     <string name="chat_select_agent">选择 Agent</string>
     <string name="agent_quick_providers">常用 OpenAI 兼容服务商（点击自动填充 Base URL）：</string>
+    <string name="chat_details">详细</string>
 </resources>
