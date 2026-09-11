@@ -11,18 +11,39 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
+internal val toolArgsJson = Json { ignoreUnknownKeys = true }
+
+internal fun parseToolArguments(raw: String): JsonObject? {
+    val text = raw.trim()
+    if (text.isEmpty()) return null
+    parseJsonObject(text)?.let { return it }
+    val element = runCatching { toolArgsJson.parseToJsonElement(text) }.getOrNull()
+    if (element is JsonPrimitive && element.isString) {
+        parseJsonObject(element.content)?.let { return it }
+    }
+    val start = text.indexOf('{')
+    val end = text.lastIndexOf('}')
+    if (start in 0 until end) {
+        parseJsonObject(text.substring(start, end + 1))?.let { return it }
+    }
+    return null
+}
+
+private fun parseJsonObject(text: String): JsonObject? =
+    runCatching { toolArgsJson.parseToJsonElement(text).jsonObject }.getOrNull()
+
 class DeviceToolRunner(
     private val registry: ToolRegistry,
     private val context: ToolContext
 ) : ToolRunner {
 
-    private val json = Json { ignoreUnknownKeys = true }
-
     override suspend fun run(name: String, arguments: String): String {
         val tool = registry.findTool(name)
             ?: throw IllegalArgumentException("未知工具：$name")
-        val args: JsonObject = runCatching { json.parseToJsonElement(arguments).jsonObject }
-            .getOrElse { return "工具参数解析失败：$name 收到的参数不是有效 JSON（${it.message}）。请按工具说明重新构造参数。" }
+        val args: JsonObject = parseToolArguments(arguments)
+            ?: return "工具参数解析失败：$name 收到的参数无法解析为 JSON 对象（原文：${
+                arguments.take(120)
+            }）。请重新构造参数，确保是形如 {\"参数名\":\"值\"} 的 JSON 对象。"
         val (healed, fixes) = healArgs(tool.parameters, args)
         return try {
             val result = tool.execute(context, healed)

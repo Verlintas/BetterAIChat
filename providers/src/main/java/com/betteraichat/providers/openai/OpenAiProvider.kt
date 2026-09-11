@@ -122,6 +122,23 @@ data class OpenAiToolFunction(
     val parameters: JsonObject
 )
 
+internal fun mergeToolArgs(delta: String, existing: String): String {
+    if (delta.isEmpty() || delta == existing) return existing
+    if (existing.isEmpty()) return delta
+    if (delta.startsWith(existing)) return delta
+    if (existing.startsWith(delta)) return existing
+    val combined = existing + delta
+    return when {
+        isJsonObjectText(combined) -> combined
+        isJsonObjectText(delta) -> delta
+        isJsonObjectText(existing) -> existing
+        else -> combined
+    }
+}
+
+private fun isJsonObjectText(text: String): Boolean =
+    runCatching { Json.parseToJsonElement(text).jsonObject }.isSuccess
+
 class OpenAiProvider : ChatProvider {
 
     private val json = Json {
@@ -214,12 +231,7 @@ class OpenAiProvider : ChatProvider {
                         tc.id?.let { acc.id = it }
                         tc.function?.name?.let { acc.name = it }
                         tc.function?.arguments?.let { arg ->
-                            when {
-                                arg == acc.args -> Unit
-                                arg.length > acc.args.length && arg.startsWith(acc.args) -> acc.args = arg
-                                acc.args.length > arg.length && acc.args.startsWith(arg) -> Unit
-                                arg.length > acc.args.length -> acc.args = arg
-                            }
+                            acc.args = mergeToolArgs(arg, acc.args)
                         }
                     }
                     if (choice.finishReason == "tool_calls" && !callsEmitted) {
