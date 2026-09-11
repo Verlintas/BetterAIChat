@@ -68,3 +68,52 @@ class MarkdownNormalizerTest {
         assertEquals("中", MarkdownNormalizer.stripCodeBlocks(input).trim())
     }
 }
+
+class IntrawordBoldTest {
+    @Test
+    fun `cjk intraword bold gets fixed with hair spaces`() {
+        val out = com.betteraichat.core.chat.MarkdownNormalizer.normalize("中文**加粗**中文")
+        assertTrue(out.contains("\u200A**加粗**\u200A"))
+    }
+
+    @Test
+    fun `standalone bold untouched`() {
+        val input = "**加粗** 正常"
+        val out = com.betteraichat.core.chat.MarkdownNormalizer.normalize(input)
+        assertEquals(input, out)
+    }
+
+    @Test
+    fun `multiple adjacent intraword bolds all fixed`() {
+        val out = com.betteraichat.core.chat.MarkdownNormalizer.normalize("中**a**文**b**字")
+        assertTrue(out.contains("\u200A**a**\u200A"))
+        assertTrue(out.contains("\u200A**b**\u200A"))
+    }
+
+    @Test
+    fun `triple star then intraword`() {
+        val out = com.betteraichat.core.chat.MarkdownNormalizer.normalize("前***粗斜***后")
+        assertTrue(out.contains("\u200A**粗斜**\u200A"))
+        assertFalse(out.contains("***"))
+    }
+
+    @Test
+    fun `table parsing with alignment and padding`() {
+        val md = "| 名称 | 数量 | 备注 |\n|:---|:---:|---:|\n| 苹果 | 3 | 甜 |\n| 梨 | 5 |"
+        val data = com.betteraichat.core.chat.MarkdownNormalizer.parseTable(md)
+        assertEquals(3, data!!.headers.size)
+        assertEquals(2, data.rows.size)
+        assertEquals(3, data.rows[1].size)
+        assertEquals(com.betteraichat.core.chat.MarkdownNormalizer.TableAlign.START, data.alignments[0])
+        assertEquals(com.betteraichat.core.chat.MarkdownNormalizer.TableAlign.CENTER, data.alignments[1])
+        assertEquals(com.betteraichat.core.chat.MarkdownNormalizer.TableAlign.END, data.alignments[2])
+        assertEquals("", data.rows[1][2])
+    }
+
+    @Test
+    fun `escaped pipe stays in cell`() {
+        val md = "| a | b |\n|---|---|\n| x \\| y | z |"
+        val data = com.betteraichat.core.chat.MarkdownNormalizer.parseTable(md)
+        assertEquals("x | y", data!!.rows[0][0])
+    }
+}

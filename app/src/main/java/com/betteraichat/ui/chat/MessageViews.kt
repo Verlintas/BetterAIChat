@@ -51,6 +51,9 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.betteraichat.core.model.ChatRole
@@ -677,65 +680,114 @@ private fun HighlightedCodeCard(code: String, onCopy: () -> Unit) {
     }
 }
 
-private val TABLE_SEPARATOR_REGEX = Regex("^\\s*:?-{2,}:?\\s*(\\|\\s*:?-{2,}:?\\s*)*$")
-
-private fun parseMarkdownTable(md: String): List<List<String>> {
-    val rows = mutableListOf<List<String>>()
-    md.lines().forEach { line ->
-        val trimmed = line.trim()
-        if (!trimmed.startsWith("|")) return@forEach
-        val cells = trimmed.trim('|').split("|").map { it.trim() }
-        if (cells.isEmpty()) return@forEach
-        if (cells.all { TABLE_SEPARATOR_REGEX.matches(it) }) return@forEach
-        rows.add(cells)
+private fun cellText(
+    raw: String,
+    bold: Boolean,
+    color: androidx.compose.ui.graphics.Color
+): androidx.compose.ui.text.AnnotatedString {
+    return androidx.compose.ui.text.buildAnnotatedString {
+        var i = 0
+        val text = raw
+        while (i < text.length) {
+            when {
+                text.startsWith("**", i) -> {
+                    val close = text.indexOf("**", i + 2)
+                    if (close > i + 2) {
+                        withStyle(androidx.compose.ui.text.SpanStyle(fontWeight = FontWeight.Bold)) {
+                            append(text.substring(i + 2, close))
+                        }
+                        i = close + 2
+                    } else {
+                        append("**")
+                        i += 2
+                    }
+                }
+                text[i] == '`' -> {
+                    val close = text.indexOf('`', i + 1)
+                    if (close > i + 1) {
+                        withStyle(
+                            androidx.compose.ui.text.SpanStyle(
+                                fontFamily = FontFamily.Monospace,
+                                background = color.copy(alpha = 0.12f)
+                            )
+                        ) {
+                            append(text.substring(i + 1, close))
+                        }
+                        i = close + 1
+                    } else {
+                        append('`')
+                        i += 1
+                    }
+                }
+                else -> {
+                    append(text[i])
+                    i += 1
+                }
+            }
+        }
     }
-    return rows
 }
 
 @Composable
 private fun MarkdownTable(md: String, modifier: Modifier = Modifier) {
-    val rows = remember(md) { parseMarkdownTable(md) }
-    if (rows.isEmpty()) return
+    val data = remember(md) {
+        com.betteraichat.core.chat.MarkdownNormalizer.parseTable(md)
+    } ?: return
+    val columnCount = data.headers.size
+    if (columnCount == 0) return
     val shape = RoundedCornerShape(10.dp)
     val borderColor = MaterialTheme.colorScheme.outlineVariant
+    val wide = columnCount > 3
+    val cellColor = MaterialTheme.colorScheme.onSurface
+
+    fun textAlign(a: com.betteraichat.core.chat.MarkdownNormalizer.TableAlign) = when (a) {
+        com.betteraichat.core.chat.MarkdownNormalizer.TableAlign.CENTER -> androidx.compose.ui.text.style.TextAlign.Center
+        com.betteraichat.core.chat.MarkdownNormalizer.TableAlign.END -> androidx.compose.ui.text.style.TextAlign.End
+        else -> androidx.compose.ui.text.style.TextAlign.Start
+    }
+
     Column(
         modifier = modifier
-            .fillMaxWidth()
             .clip(shape)
             .border(1.dp, borderColor, shape)
             .background(MaterialTheme.colorScheme.surface)
+            .then(if (wide) Modifier.horizontalScroll(rememberScrollState()) else Modifier.fillMaxWidth())
     ) {
-        rows.forEachIndexed { ri, row ->
-            if (ri > 0) {
-                HorizontalDivider(color = borderColor.copy(alpha = 0.6f))
-            }
+        @Composable
+        fun tableRow(cells: List<String>, isHeader: Boolean, isEven: Boolean) {
             Row(
                 modifier = Modifier
-                    .fillMaxWidth()
+                    .then(if (wide) Modifier.width((columnCount * 116).dp) else Modifier.fillMaxWidth())
                     .background(
-                        if (ri == 0) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
-                        else Color.Transparent
+                        when {
+                            isHeader -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+                            isEven -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.22f)
+                            else -> Color.Transparent
+                        }
                     )
             ) {
-                row.forEachIndexed { ci, cell ->
+                cells.forEachIndexed { ci, cell ->
                     if (ci > 0) {
                         VerticalDivider(color = borderColor.copy(alpha = 0.6f))
                     }
                     Text(
-                        cell,
+                        cellText(cell, isHeader, cellColor),
                         modifier = Modifier
-                            .weight(1f)
+                            .then(if (wide) Modifier.width(116.dp) else Modifier.weight(1f))
                             .padding(horizontal = 10.dp, vertical = 7.dp),
-                        style = if (ri == 0) {
-                            MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold)
-                        } else {
-                            MaterialTheme.typography.bodySmall
-                        },
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 20
+                        style = MaterialTheme.typography.bodySmall,
+                        textAlign = textAlign(data.alignments.getOrNull(ci) ?: com.betteraichat.core.chat.MarkdownNormalizer.TableAlign.START),
+                        color = cellColor,
+                        maxLines = 20,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
+        }
+        tableRow(data.headers, isHeader = true, isEven = false)
+        data.rows.forEachIndexed { ri, row ->
+            HorizontalDivider(color = borderColor.copy(alpha = 0.6f))
+            tableRow(row, isHeader = false, isEven = ri % 2 == 1)
         }
     }
 }
