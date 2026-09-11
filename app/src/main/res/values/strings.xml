@@ -277,4 +277,8 @@
     <string name="chat_select_agent">选择 Agent</string>
     <string name="agent_quick_providers">常用 OpenAI 兼容服务商（点击自动填充 Base URL）：</string>
     <string name="chat_details">详细</string>
+    <string name="conv_delete_title">删除会话？</string>
+    <string name="conv_delete_body">将永久删除「%1$s」及其全部消息，不可恢复。</string>
+    <string name="conv_clear_title">清除聊天记录？</string>
+    <string name="conv_clear_body">将删除「%1$s」的全部消息（收藏消息除外），AI 将不再记得对话内容。</string>
 </resources>

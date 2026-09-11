@@ -45,6 +45,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.betteraichat.core.db.ConversationEntity
@@ -98,6 +99,8 @@ fun ConversationListScreen(
     }
     var renameTarget by remember { mutableStateOf<ConversationEntity?>(null) }
     var renameText by remember { mutableStateOf("") }
+    var deleteTarget by remember { mutableStateOf<ConversationEntity?>(null) }
+    var clearTarget by remember { mutableStateOf<ConversationEntity?>(null) }
     var searchQuery by remember { mutableStateOf("") }
     var showArchived by remember { mutableStateOf(false) }
 
@@ -185,10 +188,8 @@ fun ConversationListScreen(
                             onToggleArchive = {
                                 scope.launch { container.repository.setArchived(c.id, !c.archived) }
                             },
-                            onClearMessages = {
-                                scope.launch { container.repository.clearMessages(c.id) }
-                            },
-                            onDelete = { scope.launch { container.repository.deleteConversation(c.id) } }
+                            onClearMessages = { clearTarget = c },
+                            onDelete = { deleteTarget = c }
                         )
                     }
                     if (archivedConversations.isNotEmpty() && query.isEmpty()) {
@@ -216,10 +217,8 @@ fun ConversationListScreen(
                                     onToggleArchive = {
                                         scope.launch { container.repository.setArchived(c.id, !c.archived) }
                                     },
-                                    onClearMessages = {
-                                        scope.launch { container.repository.clearMessages(c.id) }
-                                    },
-                                    onDelete = { scope.launch { container.repository.deleteConversation(c.id) } }
+                                    onClearMessages = { clearTarget = c },
+                                    onDelete = { deleteTarget = c }
                                 )
                             }
                         }
@@ -227,6 +226,44 @@ fun ConversationListScreen(
                 }
             }
         }
+    }
+
+    deleteTarget?.let { c ->
+        AlertDialog(
+            onDismissRequest = { deleteTarget = null },
+            title = { Text(stringResource(com.betteraichat.R.string.conv_delete_title)) },
+            text = { Text(stringResource(com.betteraichat.R.string.conv_delete_body, c.title)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    scope.launch { container.repository.deleteConversation(c.id) }
+                    deleteTarget = null
+                }) {
+                    Text(stringResource(com.betteraichat.R.string.chat_delete), color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteTarget = null }) { Text(stringResource(com.betteraichat.R.string.cancel)) }
+            }
+        )
+    }
+
+    clearTarget?.let { c ->
+        AlertDialog(
+            onDismissRequest = { clearTarget = null },
+            title = { Text(stringResource(com.betteraichat.R.string.conv_clear_title)) },
+            text = { Text(stringResource(com.betteraichat.R.string.conv_clear_body, c.title)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    scope.launch { container.repository.clearMessages(c.id) }
+                    clearTarget = null
+                }) {
+                    Text(stringResource(com.betteraichat.R.string.confirm), color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { clearTarget = null }) { Text(stringResource(com.betteraichat.R.string.cancel)) }
+            }
+        )
     }
 
     renameTarget?.let { c ->
@@ -290,8 +327,8 @@ private fun SwipeableConversationCard(
         confirmValueChange = { value ->
             if (value == SwipeToDismissBoxValue.EndToStart) {
                 onDelete()
-                true
-            } else false
+            }
+            false
         }
     )
     Box {

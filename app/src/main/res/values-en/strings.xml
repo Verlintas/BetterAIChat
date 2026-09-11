@@ -277,4 +277,8 @@ Author: Verlintas</string>
     <string name="chat_select_agent">Select Agent</string>
     <string name="agent_quick_providers">Popular OpenAI-compatible providers (tap to fill Base URL):</string>
     <string name="chat_details">Details</string>
+    <string name="conv_delete_title">Delete conversation?</string>
+    <string name="conv_delete_body">"%1$s" and all its messages will be permanently deleted. This cannot be undone.</string>
+    <string name="conv_clear_title">Clear chat history?</string>
+    <string name="conv_clear_body">All messages in "%1$s" will be deleted (starred messages are kept). The AI will no longer remember the conversation.</string>
 </resources>
