@@ -86,8 +86,11 @@ class DeviceToolRunner(
                         fixes += "参数 '$key' 已转为字符串"
                         put(key, JsonPrimitive(v.content))
                     }
+                    propType == "string" && v is kotlinx.serialization.json.JsonArray -> {
+                        put(key, v)
+                    }
                     propType == "string" && v !is JsonPrimitive -> {
-                        fixes += "参数 '$key' 已从对象/数组转为字符串"
+                        fixes += "参数 '$key' 已从对象转为字符串"
                         put(key, JsonPrimitive(v.toString()))
                     }
                     propType == "integer" && v is JsonPrimitive && v.isString -> {

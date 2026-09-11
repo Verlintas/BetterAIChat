@@ -19,14 +19,15 @@ import java.net.URLDecoder
 class WebSearchTool : DeviceTool {
 
     override val name = "web_search"
-    override val description = "在互联网上搜索实时信息（Bing/百度/Brave/DDG/Mojeek/360 六引擎并发合并去重，同域名只保留最优结果）。" +
+    override val description = "在互联网上搜索实时信息（Bing/百度/Brave/DDG/Mojeek/360 六引擎并发合并去重，同域名限 2 条，按关键词相关性排序）。" +
         "用法：query 写具体的关键词短语（如「2025 诺贝尔物理学奖 得主」，而不是「诺贝尔奖」这类宽泛词）；" +
+        "需要多角度信息（对比、多主体、多子问题）时，query 可以直接传字符串数组（最多 3 个），一次搜索完成，不要分多次调用。" +
         "默认自动抓取前 1 个结果的正文（read_top 控制 0-3），多数问题一次搜索即可回答。查询结果有 5 分钟缓存；" +
-        "如果确实需要绕过缓存重新搜索（如追问时效性内容），传 refresh=true。" +
+        "追问时效性内容可传 refresh=true 绕过缓存。" +
         "结果为空或无关时：不要盲目用近似词反复重试，而是换表述、加限定词（时间/地区/英文关键词），最多再试 1-2 次。"
     override val readOnly = true
     override val parameters = schemaOf(
-        "query" to stringProp("搜索关键词，尽量具体（可含时间、地点等限定）"),
+        "query" to stringProp("搜索关键词，尽量具体；也可传字符串数组一次多角度搜索（最多 3 个）"),
         "max_results" to intProp("返回结果条数 1-8，默认 5"),
         "read_top" to intProp("自动抓取前 N 条可成功抓取的正文（0-3，默认 1）。0 = 只要链接列表"),
         "refresh" to boolProp("是否强制绕过缓存重新搜索（默认 false）。时效性追问时用 true"),
@@ -46,14 +47,18 @@ class WebSearchTool : DeviceTool {
 
     override suspend fun execute(context: ToolContext, arguments: JsonObject): String =
         withContext(Dispatchers.IO) {
-            val rawQuery = arguments["query"]?.jsonPrimitive?.content?.trim()
-                ?: return@withContext "缺少 query 参数：请提供要搜索的具体关键词"
-            val query = cleanQuery(rawQuery)
-            if (query.length < 2) return@withContext "query 无效：请提供至少 2 个字符的具体关键词"
+            val queries: List<String> = when (val el = arguments["query"]) {
+                is kotlinx.serialization.json.JsonArray ->
+                    el.mapNotNull { runCatching { it.jsonPrimitive.content }.getOrNull() }
+                is kotlinx.serialization.json.JsonPrimitive -> listOfNotNull(el.content)
+                else -> emptyList()
+            }.map { cleanQuery(it) }.filter { it.length >= 2 }.take(3)
+            if (queries.isEmpty()) return@withContext "query 无效：请提供至少 2 个字符的具体关键词（或关键词数组）"
+            val query = queries.first()
             val max = (arguments["max_results"]?.jsonPrimitive?.content?.toIntOrNull() ?: 5).coerceIn(1, 8)
             val readTop = (arguments["read_top"]?.jsonPrimitive?.content?.toIntOrNull() ?: 1).coerceIn(0, 3)
             val refresh = arguments["refresh"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() == true
-            val cacheKey = "$query|$max|$readTop"
+            val cacheKey = "${queries.joinToString("|")}|$max|$readTop"
             val now = System.currentTimeMillis()
             val cached = if (refresh) null else synchronized(cacheLock) {
                 cache[cacheKey]?.takeIf { now - it.second < CACHE_TTL_MS }?.first
@@ -61,23 +66,26 @@ class WebSearchTool : DeviceTool {
             val (results, engineNote) = if (cached != null) {
                 cached to null
             } else {
-                val (list, note) = searchAllEngines(query)
-                if (list.isNotEmpty()) {
+                val perQuery = queries.map { q -> searchAllEngines(q) }
+                val note = perQuery.mapNotNull { it.second }.firstOrNull()
+                val merged = mergeAcrossQueries(queries, perQuery.map { it.first })
+                if (merged.isNotEmpty()) {
                     synchronized(cacheLock) {
-                        cache[cacheKey] = list to now
+                        cache[cacheKey] = merged to now
                         if (cache.size > 40) {
                             cache.entries.removeAll { now - it.value.second > CACHE_TTL_MS }
                         }
                     }
                 }
-                list to note
+                merged to note
             }
             if (results.isEmpty()) {
                 return@withContext "搜索没有返回任何结果。${engineNote ?: ""}" +
                     "建议：换个说法重试（更具体的关键词、加时间或地点限定、尝试英文关键词），不要用相近词反复搜索。"
             }
             buildString {
-                appendLine("「$query」的搜索结果（${results.size} 条，多引擎合并）${if (refresh) "（已绕过缓存重新搜索）" else ""}：")
+                val label = if (queries.size > 1) queries.joinToString("」「") else query
+                appendLine("「$label」的搜索结果（${results.size} 条，多引擎合并）${if (refresh) "（已绕过缓存重新搜索）" else ""}：")
                 val shown = results.take(max)
                 shown.forEachIndexed { i, r ->
                     appendLine("${i + 1}. ${r.title.take(150)}")
@@ -180,6 +188,32 @@ class WebSearchTool : DeviceTool {
     }
 
     private data class EngineOutcome(val results: List<SearchResult>, val ok: Boolean)
+
+    private fun mergeAcrossQueries(queries: List<String>, perQuery: List<List<SearchResult>>): List<SearchResult> {
+        val merged = LinkedHashMap<String, SearchResult>()
+        val domainCount = HashMap<String, Int>()
+        val seenTitles = HashSet<String>()
+        perQuery.forEach { list ->
+            list.forEach { r ->
+                val clean = cleanUrl(r.url)
+                val domain = runCatching { java.net.URI(clean).host.orEmpty() }.getOrDefault("")
+                val titleKey = r.title.lowercase().replace(Regex("[\\s\\p{Punct}]+"), "")
+                if (domainCount[domain] ?: 0 >= 2) return@forEach
+                if (titleKey.isNotBlank() && !seenTitles.add(titleKey)) return@forEach
+                if (merged.putIfAbsent(clean, r.copy(url = clean)) == null) {
+                    domainCount[domain] = (domainCount[domain] ?: 0) + 1
+                }
+            }
+        }
+        val terms = queries.flatMap { q ->
+            q.lowercase().split(Regex("[\\s,，。、+]+")).filter { it.length >= 2 }
+        }.distinct().ifEmpty { queries.map { it.lowercase() } }
+        return merged.values.sortedByDescending { r ->
+            val title = r.title.lowercase()
+            val snippet = r.snippet.lowercase()
+            terms.sumOf { t -> (if (title.contains(t)) 3 else 0) + (if (snippet.contains(t)) 1 else 0) }
+        }
+    }
 
     private suspend fun searchAllEngines(query: String): Pair<List<SearchResult>, String?> {
         val engines = listOf(
