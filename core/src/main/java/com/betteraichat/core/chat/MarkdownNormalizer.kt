@@ -86,7 +86,12 @@ object MarkdownNormalizer {
         body.forEach { ch ->
             when {
                 escaped -> {
-                    current.append(ch)
+                    if (ch == '|' || ch == '\\') {
+                        current.append(ch)
+                    } else {
+                        current.append('\\')
+                        current.append(ch)
+                    }
                     escaped = false
                 }
                 ch == '\\' -> escaped = true

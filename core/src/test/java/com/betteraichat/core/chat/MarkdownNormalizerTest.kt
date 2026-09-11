@@ -116,4 +116,25 @@ class IntrawordBoldTest {
         val data = com.betteraichat.core.chat.MarkdownNormalizer.parseTable(md)
         assertEquals("x | y", data!!.rows[0][0])
     }
+
+    @Test
+    fun `windows paths keep backslashes in cells`() {
+        val md = "| 路径 | 大小 |\n|---|---|\n| C:\\Users\\test\\file.txt | 1KB |"
+        val data = com.betteraichat.core.chat.MarkdownNormalizer.parseTable(md)
+        assertEquals("C:\\Users\\test\\file.txt", data!!.rows[0][0])
+    }
+
+    @Test
+    fun `double backslash escapes to single`() {
+        val md = "| a |\n|---|\n| C:\\\\dir |"
+        val data = com.betteraichat.core.chat.MarkdownNormalizer.parseTable(md)
+        assertEquals("C:\\dir", data!!.rows[0][0])
+    }
+
+    @Test
+    fun `trailing backslash preserved`() {
+        val md = "| a |\n|---|\n| dir\\ |"
+        val data = com.betteraichat.core.chat.MarkdownNormalizer.parseTable(md)
+        assertEquals("dir\\", data!!.rows[0][0])
+    }
 }
