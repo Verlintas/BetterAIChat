@@ -54,6 +54,39 @@ class ScreenOcr(private val screenshotManager: ScreenshotManager) : OcrProvider 
         }
     }
 
+    override suspend fun ocrScreenshotWithBoxes(): String {
+        val shot = screenshotManager.capture()
+        if (shot.startsWith("ERROR")) return shot
+        val path = Regex("截屏成功：(.*?)[（(]").find(shot)?.groupValues?.getOrNull(1)
+            ?: return "ERROR:无法定位截图文件"
+        val bitmap = BitmapFactory.decodeFile(path)
+            ?: return "ERROR:截图文件读取失败"
+        val recognizer = TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build())
+        return try {
+            val result = recognizer.process(InputImage.fromBitmap(bitmap, 0)).awaitTask()
+            val lines = result.textBlocks.flatMap { it.lines }.filter { it.text.isNotBlank() }
+            if (lines.isEmpty()) {
+                "屏幕文字识别完成：屏幕上没有识别到文字"
+            } else {
+                buildString {
+                    appendLine("屏幕文字识别结果（${lines.size} 行，格式：文字 @(中心x,中心y)）：")
+                    lines.take(80).forEach { line ->
+                        val box = line.boundingBox
+                        val cx = box?.centerX() ?: 0
+                        val cy = box?.centerY() ?: 0
+                        appendLine("${line.text.replace('\n', ' ').take(60)} @($cx,$cy)")
+                    }
+                    append("可用 ua_tap 按坐标点击对应文字，或用 ua_find_text 查找控件。")
+                }
+            }
+        } catch (e: Exception) {
+            "ERROR:文字识别失败：${e.message}"
+        } finally {
+            bitmap.recycle()
+            recognizer.close()
+        }
+    }
+
     private suspend fun <T> com.google.android.gms.tasks.Task<T>.awaitTask(): T =
         suspendCancellableCoroutine { cont ->
             addOnSuccessListener { cont.resume(it) }

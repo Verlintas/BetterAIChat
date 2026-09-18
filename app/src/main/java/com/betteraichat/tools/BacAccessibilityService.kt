@@ -97,6 +97,90 @@ class BacAccessibilityService : AccessibilityService(), AccessibilityBridge {
         } else "ERROR:手势分发失败"
     }
 
+    override suspend fun tapByText(text: String): String = withContext(Dispatchers.Main) {
+        val query = text.trim()
+        if (query.isEmpty()) return@withContext "ERROR:text 参数不能为空"
+        val root = rootInActiveWindow ?: return@withContext "ERROR:没有可操作的活动窗口"
+        val matches = collectTextNodes(root, query)
+        if (matches.isEmpty()) {
+            return@withContext "ERROR:屏幕上没有找到包含「$query」的元素。可先用 ua_find_text 查看屏幕上的文字与位置，或改用坐标点击。"
+        }
+        val node = matches.first()
+        val rect = android.graphics.Rect()
+        node.getBoundsInScreen(rect)
+        val cx = rect.centerX()
+        val cy = rect.centerY()
+        val label = node.text?.toString() ?: node.contentDescription?.toString() ?: query
+        val ok = tap(cx, cy).startsWith("已点击")
+        if (ok) "已点击「${label.take(30)}」（位置 $cx,$cy）" else "ERROR:点击手势分发失败"
+    }
+
+    override suspend fun findTextPositions(text: String): String = withContext(Dispatchers.Main) {
+        val root = rootInActiveWindow ?: return@withContext "ERROR:没有可操作的活动窗口"
+        val query = text.trim()
+        val nodes = if (query.isEmpty()) collectAllTextNodes(root) else collectTextNodes(root, query)
+        if (nodes.isEmpty()) {
+            return@withContext if (query.isEmpty()) {
+                "屏幕上没有找到带文字的界面元素（可能是纯图形界面，可尝试 screen_ocr）"
+            } else {
+                "屏幕上没有找到包含「$query」的元素"
+            }
+        }
+        buildString {
+            appendLine("找到 ${nodes.size} 个匹配${if (query.isEmpty()) "（全部可点击文字）" else "「$query」"}：")
+            nodes.take(30).forEach { n ->
+                val rect = android.graphics.Rect()
+                n.getBoundsInScreen(rect)
+                val label = (n.text?.toString() ?: n.contentDescription?.toString() ?: "").replace('\n', ' ').take(40)
+                val clickable = if (n.isClickable || n.parent?.isClickable == true) "可点击" else "不可点击"
+                appendLine("「$label」@(${rect.centerX()},${rect.centerY()}) $clickable")
+            }
+            append("可用 ua_tap_text 按文字点击，或用 ua_tap 按坐标点击。")
+        }
+    }
+
+    private fun collectTextNodes(root: AccessibilityNodeInfo, query: String): List<AccessibilityNodeInfo> {
+        val out = mutableListOf<AccessibilityNodeInfo>()
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        var visited = 0
+        while (queue.isNotEmpty() && visited < 600 && out.size < 30) {
+            val node = queue.removeFirst()
+            visited++
+            val t = node.text?.toString().orEmpty()
+            val d = node.contentDescription?.toString().orEmpty()
+            if ((t.isNotBlank() || d.isNotBlank()) &&
+                (t.contains(query, ignoreCase = true) || d.contains(query, ignoreCase = true))
+            ) {
+                out.add(node)
+            }
+            for (i in 0 until node.childCount) {
+                node.getChild(i)?.let { queue.add(it) }
+            }
+        }
+        return out
+    }
+
+    private fun collectAllTextNodes(root: AccessibilityNodeInfo): List<AccessibilityNodeInfo> {
+        val out = mutableListOf<AccessibilityNodeInfo>()
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        var visited = 0
+        while (queue.isNotEmpty() && visited < 600 && out.size < 30) {
+            val node = queue.removeFirst()
+            visited++
+            val t = node.text?.toString().orEmpty().trim()
+            val d = node.contentDescription?.toString().orEmpty().trim()
+            if ((t.isNotBlank() || d.isNotBlank()) && (node.isClickable || node.parent?.isClickable == true)) {
+                out.add(node)
+            }
+            for (i in 0 until node.childCount) {
+                node.getChild(i)?.let { queue.add(it) }
+            }
+        }
+        return out
+    }
+
     private suspend fun dispatchGestureInternal(gesture: GestureDescription): Boolean =
         withTimeoutOrNull(5_000) {
             suspendCancellableCoroutine { cont ->

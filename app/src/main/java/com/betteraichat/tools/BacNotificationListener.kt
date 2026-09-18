@@ -40,13 +40,23 @@ object NotificationCache {
         }.getOrNull() ?: pkg
     }
 
-    fun snapshot(limit: Int): String {
-        val snapshot: List<CachedNotification>
+    fun snapshot(limit: Int, hours: Int = 0, appFilter: String? = null): String {
+        val all: List<CachedNotification>
         synchronized(lock) {
-            snapshot = items.toList()
+            all = items.toList()
         }
-        if (snapshot.isEmpty()) return "暂无通知记录（需先在系统设置中开启 BetterAIChat 的「通知使用权」）"
-        val fmt = SimpleDateFormat("HH:mm", Locale.getDefault())
+        if (all.isEmpty()) return "暂无通知记录（需先在系统设置中开启 BetterAIChat 的「通知使用权」）"
+        val since = if (hours > 0) System.currentTimeMillis() - hours * 3600_000L else 0L
+        val snapshot = all.filter { n ->
+            (since == 0L || n.time >= since) &&
+                (appFilter.isNullOrBlank() ||
+                    n.appName.contains(appFilter, ignoreCase = true) ||
+                    n.packageName.contains(appFilter, ignoreCase = true))
+        }
+        if (snapshot.isEmpty()) {
+            return "最近${if (hours > 0) " $hours 小时" else ""}${if (!appFilter.isNullOrBlank()) "来自「$appFilter」的" else ""}通知为空"
+        }
+        val fmt = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
         val sb = StringBuilder()
         snapshot.take(limit).forEach { n ->
             sb.appendLine("【${n.appName}】${fmt.format(Date(n.time))}")

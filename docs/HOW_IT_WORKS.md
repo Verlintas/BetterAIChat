@@ -2,7 +2,7 @@
 
 This document explains the internals of **BetterAIChat** in exhaustive detail: module architecture, every layer of the request pipeline, the streaming protocol, the agent loop, the tool system, permission bridging, the automation engine, storage, UI rendering, security, and the engineering lessons learned from real bugs. It is written as a study guide for programmers who want to understand a real, working Android AI-agent application.
 
-> Scope: ~61 built-in device tools, opencode-style Skills, Agents (one-tap per-conversation configs), Shizuku + Accessibility + MediaProjection integration, and a background automation engine.
+> Scope: ~63 built-in device tools, opencode-style Skills, Agents (one-tap per-conversation configs), Shizuku + Accessibility + MediaProjection integration, and a background automation engine.
 
 ---
 
@@ -89,7 +89,7 @@ BetterAIChat/
         ├── ToolRegistry.kt                 # builtin + skill-defined tools
         ├── DeviceToolRunner.kt             # name+args → DeviceTool.execute
         ├── SkillActionExecutor.kt          # Runs skill-defined action types
-        └── tools/                          # 61 tool implementations
+        └── tools/                          # 63 tool implementations
 ```
 
 Two build flavors exist: **full** (everything, ~55 MB) and **lite** (~10 MB, no on-device OCR). Flavor-specific code lives in `app/src/full/` and `app/src/lite/`.
@@ -166,7 +166,7 @@ class AppContainer(context: Application) {
     val automationScheduler = AutomationScheduler(context.applicationContext, db) { runner }
     private val automationBridge = object : AutomationBridge { … }
 
-    val tools: List<DeviceTool> = listOf( /* 61 tools, see BetterAIChatApp.kt */ )
+    val tools: List<DeviceTool> = listOf( /* 63 tools, see BetterAIChatApp.kt */ )
     val registry = ToolRegistry(tools)
     val runner = DeviceToolRunner(registry, toolContext)
     val engine = ChatEngine(providerFactory, registry, runner)
@@ -1296,4 +1296,4 @@ Each of these topics maps to a concrete, working file in the repo — start at `
 
 ---
 
-*Project: [BetterAIChat](https://github.com/Verlintas/BetterAIChat) — a native Android AI agent with 61 built-in tools, opencode-style Skills, per-conversation Agents, Shizuku/accessibility/MediaProjection capabilities, and a background automation engine. Built with Kotlin, Jetpack Compose, Room, OkHttp and kotlinx.serialization.*
+*Project: [BetterAIChat](https://github.com/Verlintas/BetterAIChat) — a native Android AI agent with 63 built-in tools, opencode-style Skills, per-conversation Agents, Shizuku/accessibility/MediaProjection capabilities, and a background automation engine. Built with Kotlin, Jetpack Compose, Room, OkHttp and kotlinx.serialization.*

@@ -66,9 +66,10 @@ An **Agent** bundles a full configuration: provider + API key + model + temperat
 | `vibrate` | Haptic vibration feedback |
 | `network_status` | Connectivity, network type, WiFi name |
 | `get_foreground_app` | Detect the currently active app |
-| `screen_ocr` | **Read on-screen text** (screenshot + on-device Chinese/English OCR) |
+| `screen_ocr` | **Read on-screen text with per-line coordinates** (screenshot + on-device Chinese/English OCR) |
 | `download_file` | Download any file from a URL into the Downloads folder |
 | `ua_type` / `ua_tap` / `ua_swipe` / `ua_press` | **UI automation via Accessibility**: type text, tap coordinates, swipe, press Home/Back/Recents/notification keys |
+| `ua_tap_text` / `ua_find_text` | **Find and tap UI elements by their text** (more reliable than coordinates) |
 | `set_dnd` | Toggle Do Not Disturb mode |
 | `manage_app` | **App management via Shizuku**: force-stop / disable / enable / clear data / uninstall |
 | `write_document` | Save AI-generated content as .md/.txt/.html to Downloads/Documents |

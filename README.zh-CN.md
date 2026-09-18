@@ -36,7 +36,7 @@
 | `Build` | 每个工具执行前请求你确认 |
 | `Max` | 自主多步工具调用 + 深度思考 |
 
-### AI 可以操作你的设备（61 个工具）
+### AI 可以操作你的设备（63 个工具）
 | 工具 | 功能 |
 |---|---|
 | `open_app` | 打开任意已安装应用 |
@@ -63,6 +63,7 @@
 | `screen_ocr` | **读取屏幕文字**（截屏 + 端侧中英文 OCR） |
 | `create_automation` / `list_automations` / `delete_automation` | 自动化管理 |
 | `ua_type` / `ua_tap` / `ua_swipe` / `ua_press` | **无障碍 UI 自动化**：输入 / 点击 / 滑动 / 按键 |
+| `ua_tap_text` / `ua_find_text` | **按文字查找/点击界面元素**（比坐标点击可靠） |
 | `load_skill` | 加载并执行已导入的 SKILL.md 技能 |
 | `read_notifications` / `get_screen_state` | 通知读取 / 屏幕状态 |
 | `create_calendar_event` | 创建日历日程（打开日历预填，用户确认保存） |
@@ -170,4 +171,4 @@ Kotlin · Jetpack Compose (Material 3) · OkHttp (SSE) · kotlinx.serialization 
 [MIT](LICENSE)
 
 ---
-*项目：[BetterAIChat](https://github.com/Verlintas/BetterAIChat) · 原生 Android AI 智能体，61 个内置工具。*
+*项目：[BetterAIChat](https://github.com/Verlintas/BetterAIChat) · 原生 Android AI 智能体，63 个内置工具。*

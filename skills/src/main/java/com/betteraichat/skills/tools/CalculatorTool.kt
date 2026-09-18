@@ -10,10 +10,10 @@ import kotlinx.serialization.json.jsonPrimitive
 class CalculatorTool : DeviceTool {
 
     override val name = "calculator"
-    override val description = "计算数学表达式（安全求值，不执行任意代码）。支持 + - * / % ^ ( ) 和小数，如 (15 + 7) * 3.5 / 2。用于精确计算或单位换算。"
+    override val description = "计算数学表达式（安全求值，不执行任意代码）。支持 + - * / % ^ ( ) 和小数，以及函数 sin/cos/tan/asin/acos/atan（角度制）、sqrt/abs/log/ln/floor/ceil/round、常量 pi/e，和百分比（如 200*15% = 30）。示例：(15+7)*3.5/2、sqrt(2)、sin(30)。"
     override val readOnly = true
     override val parameters = schemaOf(
-        "expression" to stringProp("数学表达式，如 (12 + 5) * 3"),
+        "expression" to stringProp("数学表达式，如 (12 + 5) * 3、sqrt(2)、sin(30)、200*15%"),
         required = listOf("expression")
     )
 
@@ -89,7 +89,7 @@ private class Parser(private val input: String) {
 
     private fun parseFactor(): Double {
         skipSpaces()
-        return when {
+        val base = when {
             peek() == '-' -> { pos++; -parseFactor() }
             peek() == '+' -> { pos++; parseFactor() }
             peek() == '(' -> {
@@ -100,7 +100,65 @@ private class Parser(private val input: String) {
                 pos++
                 v
             }
+            peek().isLetter() -> parseIdentifier()
             else -> parseNumber()
+        }
+        skipSpaces()
+        if (peek() == '%' && isPercentContext(pos + 1)) {
+            pos++
+            return base / 100.0
+        }
+        return base
+    }
+
+    private fun isPercentContext(afterPos: Int): Boolean {
+        var i = afterPos
+        while (i < input.length && input[i].isWhitespace()) i++
+        if (i >= input.length) return true
+        return input[i] in listOf(')', '+', '-', '*', '/', '^', '%', ',')
+    }
+
+    private fun parseIdentifier(): Double {
+        val start = pos
+        while (pos < input.length && (input[pos].isLetterOrDigit())) pos++
+        val name = input.substring(start, pos).lowercase()
+        skipSpaces()
+        if (peek() == '(') {
+            pos++
+            val arg = parseExpression()
+            skipSpaces()
+            if (peek() != ')') throw IllegalArgumentException("函数 $name 缺少右括号")
+            pos++
+            return when (name) {
+                "sin" -> kotlin.math.sin(Math.toRadians(arg))
+                "cos" -> kotlin.math.cos(Math.toRadians(arg))
+                "tan" -> kotlin.math.tan(Math.toRadians(arg))
+                "asin" -> Math.toDegrees(kotlin.math.asin(arg))
+                "acos" -> Math.toDegrees(kotlin.math.acos(arg))
+                "atan" -> Math.toDegrees(kotlin.math.atan(arg))
+                "sqrt" -> {
+                    if (arg < 0) throw IllegalArgumentException("sqrt 参数不能为负数")
+                    kotlin.math.sqrt(arg)
+                }
+                "abs" -> kotlin.math.abs(arg)
+                "log" -> {
+                    if (arg <= 0) throw IllegalArgumentException("log 参数必须为正数")
+                    kotlin.math.log10(arg)
+                }
+                "ln" -> {
+                    if (arg <= 0) throw IllegalArgumentException("ln 参数必须为正数")
+                    kotlin.math.ln(arg)
+                }
+                "floor" -> kotlin.math.floor(arg)
+                "ceil" -> kotlin.math.ceil(arg)
+                "round" -> kotlin.math.round(arg).toDouble()
+                else -> throw IllegalArgumentException("未知函数：$name（可用 sin/cos/tan/sqrt/abs/log/ln/floor/ceil/round）")
+            }
+        }
+        return when (name) {
+            "pi" -> Math.PI
+            "e" -> Math.E
+            else -> throw IllegalArgumentException("未知标识符：$name（常量可用 pi/e，函数需带括号）")
         }
     }
 

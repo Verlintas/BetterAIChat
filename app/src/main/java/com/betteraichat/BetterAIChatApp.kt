@@ -64,6 +64,8 @@ import com.betteraichat.skills.tools.TakeScreenshotTool
 import com.betteraichat.skills.tools.UaPressTool
 import com.betteraichat.skills.tools.UaSwipeTool
 import com.betteraichat.skills.tools.UaTapTool
+import com.betteraichat.skills.tools.UaTapTextTool
+import com.betteraichat.skills.tools.UaFindTextTool
 import com.betteraichat.skills.tools.UaTypeTool
 import com.betteraichat.skills.tools.VibrateTool
 import com.betteraichat.skills.tools.WebReadTool
@@ -174,6 +176,12 @@ class AppContainer(context: Application) {
         override suspend fun swipe(x1: Int, y1: Int, x2: Int, y2: Int, durationMs: Int): String =
             com.betteraichat.tools.BacAccessibilityService.instance?.swipe(x1, y1, x2, y2, durationMs)
                 ?: "ERROR:无障碍服务未连接"
+        override suspend fun tapByText(text: String): String =
+            com.betteraichat.tools.BacAccessibilityService.instance?.tapByText(text)
+                ?: "ERROR:无障碍服务未连接"
+        override suspend fun findTextPositions(text: String): String =
+            com.betteraichat.tools.BacAccessibilityService.instance?.findTextPositions(text)
+                ?: "ERROR:无障碍服务未连接"
     }
     private val toolContext = ToolContext(
         context.applicationContext,
@@ -254,6 +262,8 @@ class AppContainer(context: Application) {
             SearchContactsTool(),
             ListFilesTool(),
             ReadTextFileTool(),
+            UaTapTextTool(),
+            UaFindTextTool(),
         LoadSkillTool({ skillRepository.loadAll() }, { registry }, actionExecutor),
         GetTimeTool(),
         MediaControlTool(),
@@ -282,7 +292,7 @@ class AppContainer(context: Application) {
         CreateAutomationTool(automationBridge),
         ListAutomationsTool(automationBridge),
         DeleteAutomationTool(automationBridge),
-        ReadNotificationsTool { limit -> com.betteraichat.tools.NotificationCache.snapshot(limit) },
+        ReadNotificationsTool { limit, hours, app -> com.betteraichat.tools.NotificationCache.snapshot(limit, hours, app) },
         GetScreenStateTool(),
         ListInstalledAppsTool(),
         TranscribeAudioTool(),

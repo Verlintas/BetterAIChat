@@ -27,6 +27,7 @@ class WriteDocumentTool : DeviceTool {
         "content" to stringProp("文档正文内容"),
         "filename" to stringProp("文件名（含扩展名），不填则按时间自动生成"),
         "folder" to stringProp("保存位置：downloads 下载（默认） / documents 文档"),
+        "append" to com.betteraichat.skills.boolProp("是否追加到已有文件末尾（默认 false 覆盖）"),
         required = listOf("content")
     )
 
@@ -37,6 +38,7 @@ class WriteDocumentTool : DeviceTool {
             ?.takeIf { it.isNotBlank() } ?: "文档_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())}.md"
         val folder = arguments["folder"]?.jsonPrimitive?.content ?: "downloads"
         val safeName = ext.replace(Regex("[\\\\/:*?\"<>|]"), "_").take(120)
+        val append = arguments["append"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() == true
         val appContext = context.appContext
         return withContext(Dispatchers.IO) {
             runCatching {
@@ -50,23 +52,56 @@ class WriteDocumentTool : DeviceTool {
                             if (folder == "documents") Environment.DIRECTORY_DOCUMENTS else Environment.DIRECTORY_DOWNLOADS
                         )
                     }
-                    val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
-                        ?: return@runCatching "ERROR:无法创建文档"
-                    resolver.openOutputStream(uri)?.use { it.write(content.toByteArray()) }
-                        ?: return@runCatching "ERROR:无法写入文档"
-                    "文档已保存：${if (folder == "documents") "文档" else "下载"}/$safeName（${content.length} 字）"
+                    val existing = if (append) findExistingUri(resolver, safeName) else null
+                    if (existing != null) {
+                        resolver.openOutputStream(existing, "wa")?.use { it.write(content.toByteArray()) }
+                            ?: return@runCatching "ERROR:无法追加写入文档"
+                        "已追加到文档：$safeName（+${content.length} 字）"
+                    } else {
+                        val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                            ?: return@runCatching "ERROR:无法创建文档"
+                        resolver.openOutputStream(uri)?.use { it.write(content.toByteArray()) }
+                            ?: return@runCatching "ERROR:无法写入文档"
+                        "文档已保存：${if (folder == "documents") "文档" else "下载"}/$safeName（${content.length} 字）"
+                    }
                 } else {
                     val dir = Environment.getExternalStoragePublicDirectory(
                         if (folder == "documents") Environment.DIRECTORY_DOCUMENTS else Environment.DIRECTORY_DOWNLOADS
                     )
                     dir.mkdirs()
                     val file = File(dir, safeName)
-                    file.writeText(content)
-                    "文档已保存：${file.absolutePath}（${content.length} 字）"
+                    if (append && file.exists()) {
+                        file.appendText(content)
+                        "已追加到文档：${file.absolutePath}（+${content.length} 字）"
+                    } else {
+                        file.writeText(content)
+                        "文档已保存：${file.absolutePath}（${content.length} 字）"
+                    }
                 }
             }.getOrElse { e -> "ERROR:保存失败：${e.message}" }
         }
     }
+
+    private fun findExistingUri(
+        resolver: android.content.ContentResolver,
+        name: String
+    ): android.net.Uri? = runCatching {
+        val projection = arrayOf(MediaStore.MediaColumns._ID)
+        resolver.query(
+            MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+            projection,
+            "${MediaStore.MediaColumns.DISPLAY_NAME} = ?",
+            arrayOf(name),
+            "${MediaStore.MediaColumns._ID} DESC"
+        )?.use { c ->
+            if (c.moveToFirst()) {
+                android.content.ContentUris.withAppendedId(
+                    MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                    c.getLong(0)
+                )
+            } else null
+        }
+    }.getOrNull()
 
     private fun guessMime(name: String): String = when (name.substringAfterLast('.', "").lowercase()) {
         "md" -> "text/markdown"

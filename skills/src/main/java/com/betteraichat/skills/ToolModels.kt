@@ -13,6 +13,7 @@ fun interface ScreenshotProvider {
 
 interface OcrProvider {
     suspend fun ocrScreenshot(): String
+    suspend fun ocrScreenshotWithBoxes(): String = ocrScreenshot()
     suspend fun ocrImageFile(path: String): String = "ERROR:当前版本不支持图片 OCR"
 }
 
@@ -23,6 +24,8 @@ interface AccessibilityBridge {
     suspend fun pressKey(key: String): String
     suspend fun tap(x: Int, y: Int): String
     suspend fun swipe(x1: Int, y1: Int, x2: Int, y2: Int, durationMs: Int): String
+    suspend fun tapByText(text: String): String = "ERROR:当前版本不支持按文字点击"
+    suspend fun findTextPositions(text: String): String = "ERROR:当前版本不支持文字位置查找"
 }
 
 interface AutomationBridge {

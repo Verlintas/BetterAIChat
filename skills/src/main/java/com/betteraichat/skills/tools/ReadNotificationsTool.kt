@@ -8,7 +8,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 class ReadNotificationsTool(
-    private val reader: (limit: Int) -> String
+    private val reader: (limit: Int, hours: Int, app: String?) -> String
 ) : DeviceTool {
 
     override val name = "read_notifications"
@@ -16,11 +16,15 @@ class ReadNotificationsTool(
     override val readOnly = true
     override val parameters = schemaOf(
         "limit" to intProp("返回条数，默认 10，最多 20"),
+        "hours" to intProp("只看最近多少小时内的通知（可选，如 24）"),
+        "app" to com.betteraichat.skills.stringProp("按应用名过滤（可选，如「微信」）"),
         required = emptyList()
     )
 
     override suspend fun execute(context: ToolContext, arguments: JsonObject): String {
         val limit = (arguments["limit"]?.jsonPrimitive?.content?.toIntOrNull() ?: 10).coerceIn(1, 20)
-        return reader(limit)
+        val hours = (arguments["hours"]?.jsonPrimitive?.content?.toIntOrNull() ?: 0).coerceIn(0, 168)
+        val app = arguments["app"]?.jsonPrimitive?.content?.trim()
+        return reader(limit, hours, app)
     }
 }

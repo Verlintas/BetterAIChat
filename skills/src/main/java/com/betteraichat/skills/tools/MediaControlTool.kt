@@ -19,6 +19,11 @@ class MediaControlTool : DeviceTool {
         required = listOf("action")
     )
 
+    private fun formatMs(ms: Long): String {
+        val totalSec = ms / 1000
+        return "%d:%02d".format(totalSec / 60, totalSec % 60)
+    }
+
     override suspend fun execute(context: ToolContext, arguments: JsonObject): String {
         val action = arguments["action"]?.jsonPrimitive?.content ?: return "action 参数无效"
         val manager = context.appContext.getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
@@ -49,7 +54,35 @@ class MediaControlTool : DeviceTool {
             "pause" -> controls.pause()
             "next" -> controls.skipToNext()
             "previous" -> controls.skipToPrevious()
-            else -> return "action 无效，可选：play / pause / next / previous"
+            "status" -> {
+                val meta = controller.metadata
+                val state = controller.playbackState?.state
+                val stateText = when (state) {
+                    android.media.session.PlaybackState.STATE_PLAYING -> "正在播放"
+                    android.media.session.PlaybackState.STATE_PAUSED -> "已暂停"
+                    android.media.session.PlaybackState.STATE_STOPPED -> "已停止"
+                    android.media.session.PlaybackState.STATE_BUFFERING -> "缓冲中"
+                    else -> "空闲"
+                }
+                val title = meta?.getString(android.media.MediaMetadata.METADATA_KEY_TITLE)
+                val artist = meta?.getString(android.media.MediaMetadata.METADATA_KEY_ARTIST)
+                val album = meta?.getString(android.media.MediaMetadata.METADATA_KEY_ALBUM)
+                val duration = meta?.getLong(android.media.MediaMetadata.METADATA_KEY_DURATION) ?: 0L
+                val position = controller.playbackState?.position ?: 0L
+                if (title.isNullOrBlank() && artist.isNullOrBlank()) {
+                    return "当前媒体会话：$stateText（未提供曲目信息）"
+                }
+                return buildString {
+                    append("当前：$stateText")
+                    if (!title.isNullOrBlank()) append("｜曲目：$title")
+                    if (!artist.isNullOrBlank()) append("｜艺术家：$artist")
+                    if (!album.isNullOrBlank()) append("｜专辑：$album")
+                    if (duration > 0) {
+                        append("｜进度：${formatMs(position)} / ${formatMs(duration)}")
+                    }
+                }
+            }
+            else -> return "action 无效，可选：play / pause / next / previous / status"
         }
         return "已发送媒体控制：$action"
     }

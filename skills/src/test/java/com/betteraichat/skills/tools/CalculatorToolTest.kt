@@ -3,6 +3,7 @@ package com.betteraichat.skills.tools
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlinx.coroutines.runBlocking
 
@@ -80,6 +81,31 @@ class CalculatorToolTest {
         assertEquals("-7", calc("3 + -10"))
         assertEquals("6", calc("2 * -3 * -1"))
     }
+    @Test
+    fun `scientific functions`() {
+        assertEquals("1.4142135624", calc("sqrt(2)"))
+        assertEquals("0.5", calc("sin(30)"))
+        assertEquals("0.5", calc("cos(60)"))
+        assertEquals("2", calc("log(100)"))
+        assertEquals("3", calc("abs(-3)"))
+        assertEquals("3.1415926536", calc("pi"))
+    }
+
+    @Test
+    fun `percent support`() {
+        assertEquals("30", calc("200*15%"))
+        assertEquals("1", calc("10%3"))
+        assertEquals("0.5", calc("50%"))
+        assertEquals("100.15", calc("100 + 15%"))
+    }
+
+    @Test
+    fun `function errors`() {
+        assertTrue(calc("sqrt(-1)").startsWith("ERROR"))
+        assertTrue(calc("foo(1)").startsWith("ERROR"))
+        assertTrue(calc("bar").startsWith("ERROR"))
+    }
+
 
 
     @Test
