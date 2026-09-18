@@ -104,7 +104,7 @@ class SkillActionExecutor(private val context: Context) {
         val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val pi = PendingIntent.getBroadcast(
             context,
-            (System.currentTimeMillis() % Int.MAX_VALUE).toInt(),
+            RequestCodes.next(),
             Intent(context, AlarmReceiver::class.java)
                 .putExtra("title", title)
                 .putExtra("content", content),
@@ -281,7 +281,7 @@ class AlarmReceiver : BroadcastReceiver() {
             .setContentText(content)
             .setAutoCancel(true)
             .build()
-        nm.notify((System.currentTimeMillis() % Int.MAX_VALUE).toInt(), notification)
+        nm.notify(RequestCodes.next(), notification)
     }
 
     private fun ensureChannel(context: Context) {

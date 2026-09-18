@@ -55,7 +55,7 @@ data class ConfirmRequest(val call: ToolCall, val mode: AppMode)
 
 data class ChatUiState(
     val conversationId: Long = -1,
-    val title: String = "新对话",
+    val title: String = "",
     val provider: ProviderId = ProviderId.OPENAI_COMPAT,
     val model: String = "",
     val agentId: Long? = null,
@@ -132,13 +132,13 @@ class ChatViewModel(
         val nm = appContext.getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
         nm.createNotificationChannel(
             android.app.NotificationChannel(
-                "betteraichat_task", "AI 任务", android.app.NotificationManager.IMPORTANCE_DEFAULT
+                "betteraichat_task", appContext.getString(com.betteraichat.R.string.vm_task_channel), android.app.NotificationManager.IMPORTANCE_DEFAULT
             )
         )
         val notification = android.app.Notification.Builder(appContext, "betteraichat_task")
             .setSmallIcon(android.R.drawable.ic_popup_sync)
             .setContentTitle("BetterAIChat")
-            .setContentText("AI 任务已完成：${_state.value.title}")
+            .setContentText(appContext.getString(com.betteraichat.R.string.vm_task_done, _state.value.title))
             .setAutoCancel(true)
             .build()
         nm.notify((System.currentTimeMillis() % Int.MAX_VALUE).toInt(), notification)
@@ -205,7 +205,7 @@ class ChatViewModel(
                 _state.update {
                     it.copy(
                         conversationId = -1,
-                        title = "新对话",
+                        title = appContext.getString(com.betteraichat.R.string.chat_new_chat),
                         provider = settings.getDefaultProvider()
                     )
                 }
@@ -322,7 +322,7 @@ class ChatViewModel(
         val helper = voiceInputHelper ?: com.betteraichat.tools.SpeechInputHelper(appContext).also {
             voiceInputHelper = it
         }
-        _state.update { it.copy(notification = "正在聆听…") }
+        _state.update { it.copy(notification = appContext.getString(com.betteraichat.R.string.input_listening)) }
         helper.start(
             onPartial = { _state.update { st -> st.copy(input = it) } },
             onFinal = { text ->
@@ -334,7 +334,7 @@ class ChatViewModel(
             },
             onError = {
                 voiceListening = false
-                _state.update { it.copy(notification = "语音识别失败：$it") }
+                _state.update { it.copy(notification = appContext.getString(com.betteraichat.R.string.vm_speech_failed, it)) }
             }
         )
     }
@@ -477,7 +477,7 @@ class ChatViewModel(
                             if (ctx > 0 && ev.promptTokens * 100 / ctx >= 85) {
                                 needAutoCompress = true
                                 _state.update {
-                                    it.copy(notification = "上下文使用量已达 ${ev.promptTokens * 100 / ctx}%，完成后将自动压缩")
+                                    it.copy(notification = appContext.getString(com.betteraichat.R.string.vm_ctx_usage, (ev.promptTokens * 100 / ctx).toInt()))
                                 }
                             }
                         }
@@ -540,7 +540,7 @@ class ChatViewModel(
                 throw e
             } catch (e: Exception) {
                 streaming = null
-                _state.update { it.copy(error = smartError(e.message ?: "生成失败")) }
+                _state.update { it.copy(error = smartError(e.message ?: appContext.getString(com.betteraichat.R.string.vm_gen_failed))) }
                 refresh()
             } finally {
                 if (streamTickerJob === myTicker) {
@@ -560,25 +560,28 @@ class ChatViewModel(
         runJob = currentJob
     }
 
-    private fun smartError(raw: String): String = when {
-        raw.contains("image", ignoreCase = true) &&
-            (raw.contains("not support", ignoreCase = true) ||
-                raw.contains("unsupported", ignoreCase = true) ||
-                raw.contains("does not", ignoreCase = true) ||
-                raw.contains("cannot process", ignoreCase = true)) ->
-            "当前模型不支持图片输入。请切换到支持视觉的模型，或点「重试」自动移除图片重发"
-        raw.contains("401") -> "API Key 无效或已过期，请到设置页检查（HTTP 401）"
-        raw.contains("403") -> "API Key 无权限访问该资源（HTTP 403）"
-        raw.contains("404") -> "模型不存在或 Base URL 不正确，请检查 Agent 配置（HTTP 404）"
-        raw.contains("400") && raw.contains("reasoning_effort", ignoreCase = true) ->
-            "该模型不支持 reasoning_effort 参数，请在 Agent 配置里关闭「深度推理」后重试（HTTP 400）"
-        raw.contains("429") -> "请求过于频繁或额度不足，请稍后重试（HTTP 429）"
-        raw.contains("timeout", ignoreCase = true) || raw.contains("timed out", ignoreCase = true) ->
-            "网络超时，请检查网络连接后重试"
-        raw.contains("failed to connect", ignoreCase = true) || raw.contains("connect timed out", ignoreCase = true) ->
-            "无法连接到服务，请检查 Base URL 与网络"
-        raw.contains("cancelled", ignoreCase = true) -> "已取消"
-        else -> raw
+    private fun smartError(raw: String): String {
+        val str = { id: Int -> appContext.getString(id) }
+        return when {
+            raw.contains("image", ignoreCase = true) &&
+                (raw.contains("not support", ignoreCase = true) ||
+                    raw.contains("unsupported", ignoreCase = true) ||
+                    raw.contains("does not", ignoreCase = true) ||
+                    raw.contains("cannot process", ignoreCase = true)) ->
+                str(com.betteraichat.R.string.err_image_unsupported)
+            raw.contains("401") -> str(com.betteraichat.R.string.err_401)
+            raw.contains("403") -> str(com.betteraichat.R.string.err_403)
+            raw.contains("404") -> str(com.betteraichat.R.string.err_404)
+            raw.contains("400") && raw.contains("reasoning_effort", ignoreCase = true) ->
+                str(com.betteraichat.R.string.err_400_reasoning)
+            raw.contains("429") -> str(com.betteraichat.R.string.err_429)
+            raw.contains("timeout", ignoreCase = true) || raw.contains("timed out", ignoreCase = true) ->
+                str(com.betteraichat.R.string.err_timeout)
+            raw.contains("failed to connect", ignoreCase = true) || raw.contains("connect timed out", ignoreCase = true) ->
+                str(com.betteraichat.R.string.err_connect)
+            raw.contains("cancelled", ignoreCase = true) -> str(com.betteraichat.R.string.err_cancelled)
+            else -> raw
+        }
     }
 
     private fun upsertCall(calls: List<ToolCall>, updated: ToolCall): List<ToolCall> {
@@ -801,17 +804,17 @@ class ChatViewModel(
                         )
                     }
                     if (!silent) {
-                        _state.update { it.copy(notification = "已提炼 ${lines.size} 条重要信息，将长期保存") }
+                        _state.update { it.copy(notification = appContext.getString(com.betteraichat.R.string.vm_memory_distilled, lines.size)) }
                     }
                 } else if (!silent) {
-                    _state.update { it.copy(notification = "没有提炼到新的重要信息") }
+                    _state.update { it.copy(notification = appContext.getString(com.betteraichat.R.string.vm_memory_none)) }
                 }
             } finally {
                 if (!silent) _state.update { it.copy(processing = false) }
             }
         }.onFailure { e ->
             if (!silent) {
-                _state.update { it.copy(notification = "记忆提炼失败：${e.message ?: "未知错误"}") }
+                _state.update { it.copy(notification = appContext.getString(com.betteraichat.R.string.vm_memory_failed, e.message ?: appContext.getString(com.betteraichat.R.string.unknown))) }
             }
         }
     }
@@ -822,7 +825,7 @@ class ChatViewModel(
             val cid = currentConversationId
             val snap = runCatching { db.memoryDao().getLatestSnapshot(cid) }.getOrNull()
                 ?: run {
-                    _state.update { it.copy(notification = "没有可导入的最近对话快照") }
+                    _state.update { it.copy(notification = appContext.getString(com.betteraichat.R.string.vm_no_snapshot)) }
                     return@launch
                 }
             val s = _state.value
@@ -839,7 +842,7 @@ class ChatViewModel(
             )
             db.memoryDao().delete(snap.id)
             refresh()
-            _state.update { it.copy(notification = "已导入最近对话记录，可继续对话") }
+            _state.update { it.copy(notification = appContext.getString(com.betteraichat.R.string.vm_snapshot_imported)) }
         }
     }
 
@@ -850,7 +853,7 @@ class ChatViewModel(
             val history = repository.getHistory(cid)
             val minKeep = if (level == 1) 6 else 0
             if (history.size < minKeep + 2) {
-                _state.update { it.copy(error = "消息太少，暂不需要压缩") }
+                _state.update { it.copy(error = appContext.getString(com.betteraichat.R.string.vm_compress_too_few)) }
                 return@launch
             }
             _state.update { it.copy(processing = true) }
@@ -862,7 +865,7 @@ class ChatViewModel(
                 }
                 val toSummarize = history.dropLast(keepCount)
                 if (toSummarize.isEmpty()) {
-                    _state.update { it.copy(processing = false, error = "消息太少，暂不需要压缩") }
+                    _state.update { it.copy(processing = false, error = appContext.getString(com.betteraichat.R.string.vm_compress_too_few)) }
                     return@launch
                 }
                 val snapshotText = history.takeLast(6)
@@ -886,7 +889,7 @@ class ChatViewModel(
                 val config = resolveConfig(_state.value)
                 val summary = summarize(toSummarize, config)
                 if (summary.isBlank()) {
-                    _state.update { it.copy(processing = false, error = "压缩失败：未获得摘要") }
+                    _state.update { it.copy(processing = false, error = appContext.getString(com.betteraichat.R.string.vm_compress_no_summary)) }
                     return@launch
                 }
                 repository.deleteMessagesRange(
@@ -907,12 +910,12 @@ class ChatViewModel(
                     it.copy(
                         processing = false,
                         error = null,
-                        notification = "已自动压缩上下文。如需恢复最近对话，请使用「导入最近对话」"
+                        notification = appContext.getString(com.betteraichat.R.string.vm_compress_done)
                     )
                 }
                 refresh()
             } catch (e: Exception) {
-                _state.update { it.copy(processing = false, error = "压缩失败：${e.message}") }
+                _state.update { it.copy(processing = false, error = appContext.getString(com.betteraichat.R.string.vm_compress_failed, e.message ?: "")) }
             }
         }
     }
@@ -1053,7 +1056,7 @@ class ChatViewModel(
         viewModelScope.launch {
             val last = repository.getHistory(currentConversationId).lastOrNull { it.role == "USER" }
                 ?: run {
-                    _state.update { it.copy(notification = "没有可重试的消息") }
+                    _state.update { it.copy(notification = appContext.getString(com.betteraichat.R.string.vm_no_retry)) }
                     return@launch
                 }
             _state.update { it.copy(error = null) }
@@ -1062,7 +1065,7 @@ class ChatViewModel(
             }.getOrDefault(false)
             sendWithContent(last.content, emptyList())
             if (hadAttachments) {
-                _state.update { it.copy(notification = "已重发消息（图片已移除，当前模型可能不支持图片）") }
+                _state.update { it.copy(notification = appContext.getString(com.betteraichat.R.string.vm_retry_no_image)) }
             }
         }
     }
@@ -1086,7 +1089,7 @@ class ChatViewModel(
                 _state.update { it.copy(processing = false) }
                 val message = result.removePrefix("ERROR:")
                 if (message.contains("授权")) {
-                    _state.update { it.copy(error = "$message，正在为你打开授权…") }
+                    _state.update { it.copy(error = appContext.getString(com.betteraichat.R.string.vm_screenshot_auth, message)) }
                     onNeedAuth()
                 } else {
                     _state.update { it.copy(error = message) }
@@ -1096,12 +1099,12 @@ class ChatViewModel(
             val path = SCREENSHOT_PATH_REGEX.find(result)?.groupValues?.get(1)
             _state.update { it.copy(processing = false) }
             if (path == null) {
-                _state.update { it.copy(error = "截屏结果解析失败") }
+                _state.update { it.copy(error = appContext.getString(com.betteraichat.R.string.vm_screenshot_parse_failed)) }
                 return@launch
             }
             val attachment = AttachmentProcessor.imageFromFile(path, "屏幕截图.png").getOrNull()
             if (attachment == null) {
-                _state.update { it.copy(error = "屏幕截图处理失败") }
+                _state.update { it.copy(error = appContext.getString(com.betteraichat.R.string.vm_screenshot_failed)) }
                 return@launch
             }
             sendWithContent(
@@ -1162,7 +1165,7 @@ class ChatViewModel(
                 }
             }.flatten()
             if (toolUses.isEmpty()) {
-                _state.update { it.copy(notification = "当前对话没有工具调用，无法生成技能") }
+                _state.update { it.copy(notification = appContext.getString(com.betteraichat.R.string.vm_skill_no_tools)) }
                 return@launch
             }
             val names = toolUses.map { it.name }.distinct()
@@ -1184,9 +1187,9 @@ class ChatViewModel(
             }
             val result = container.skillRepository.import("$skillName.md", md)
             result.onSuccess {
-                _state.update { it.copy(notification = "已保存为技能「$skillName」，可在设置页查看，AI 可通过 load_skill 复用") }
+                _state.update { it.copy(notification = appContext.getString(com.betteraichat.R.string.vm_skill_saved, skillName)) }
             }.onFailure { e ->
-                _state.update { it.copy(notification = "技能保存失败：${e.message}") }
+                _state.update { it.copy(notification = appContext.getString(com.betteraichat.R.string.vm_skill_failed, e.message ?: "")) }
             }
         }
     }

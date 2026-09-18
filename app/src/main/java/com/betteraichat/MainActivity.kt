@@ -78,7 +78,7 @@ class MainActivity : ComponentActivity() {
         if (intent == null) return
         val container = (application as BetterAIChatApp).container
         if (intent.action == Intent.ACTION_VIEW && intent.data?.scheme == "betteraichat") {
-            val text = intent.data?.getQueryParameter("text")?.trim()
+            val text = intent.data?.getQueryParameter("text")?.trim()?.take(8000)
             if (!text.isNullOrBlank()) {
                 container.pendingShareText = text
                 container.shareNavTick.value = container.shareNavTick.value + 1

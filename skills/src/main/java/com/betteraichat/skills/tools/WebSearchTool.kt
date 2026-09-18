@@ -157,6 +157,7 @@ class WebSearchTool : DeviceTool {
     }
 
     private fun extractBody(url: String, budget: Int): String {
+        if (!com.betteraichat.skills.isPublicHttpUrl(url)) return ""
         val doc = Jsoup.connect(url)
             .userAgent(userAgent)
             .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")

@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import com.betteraichat.skills.AlarmReceiver
 import com.betteraichat.skills.DeviceTool
+import com.betteraichat.skills.RequestCodes
 import com.betteraichat.skills.ToolContext
 import com.betteraichat.skills.intProp
 import com.betteraichat.skills.schemaOf
@@ -37,7 +38,7 @@ class SetAlarmTool : DeviceTool {
         val am = context.appContext.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val pi = PendingIntent.getBroadcast(
             context.appContext,
-            (System.currentTimeMillis() % Int.MAX_VALUE).toInt(),
+            RequestCodes.next(),
             Intent(context.appContext, AlarmReceiver::class.java)
                 .putExtra("title", title)
                 .putExtra("content", content),

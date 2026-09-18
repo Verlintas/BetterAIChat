@@ -39,7 +39,7 @@ class WebReadTool : DeviceTool {
                 else -> emptyList()
             }.plus(
                 arguments["url"]?.jsonPrimitive?.content?.let { listOf(it) } ?: emptyList()
-            ).map { it.trim() }.filter { it.startsWith("http://") || it.startsWith("https://") }.distinct().take(3)
+            ).map { it.trim() }.filter { com.betteraichat.skills.isPublicHttpUrl(it) }.distinct().take(3)
             if (urls.isEmpty()) {
                 return@withContext "缺少 url 参数：请提供 web_search 返回的完整链接（可传 urls 数组一次读多个）"
             }
