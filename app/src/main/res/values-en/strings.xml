@@ -312,4 +312,5 @@ Author: Verlintas</string>
     <string name="vm_skill_no_tools">No tool calls in this conversation to build a skill from</string>
     <string name="vm_skill_saved">Saved as skill "%1$s" — see Settings; the AI can reuse it via load_skill</string>
     <string name="vm_skill_failed">Failed to save skill: %1$s</string>
+    <string name="perm_contacts">Contacts (search contacts)</string>
 </resources>

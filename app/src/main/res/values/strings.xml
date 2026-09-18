@@ -312,4 +312,5 @@
     <string name="vm_skill_no_tools">当前对话没有工具调用，无法生成技能</string>
     <string name="vm_skill_saved">已保存为技能「%1$s」，可在设置页查看，AI 可通过 load_skill 复用</string>
     <string name="vm_skill_failed">技能保存失败：%1$s</string>
+    <string name="perm_contacts">通讯录（搜索联系人）</string>
 </resources>

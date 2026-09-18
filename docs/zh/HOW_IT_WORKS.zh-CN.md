@@ -57,7 +57,7 @@ BetterAIChat/
         ├── ToolRegistry.kt                 # 内置 + 技能定义的工具
         ├── DeviceToolRunner.kt             # name+args → DeviceTool.execute
         ├── SkillActionExecutor.kt          # 执行技能定义的动作类型
-        └── tools/                          # 55 个工具实现
+        └── tools/                          # 61 个工具实现
 ```
 
 存在两个构建风味（flavor）：**full**（全功能，约 55 MB）和 **lite**（约 10 MB，不含端侧 OCR）。风味专属代码位于 `app/src/full/` 和 `app/src/lite/`。
@@ -134,7 +134,7 @@ class AppContainer(context: Application) {
     val automationScheduler = AutomationScheduler(context.applicationContext, db) { runner }
     private val automationBridge = object : AutomationBridge { … }
 
-    val tools: List<DeviceTool> = listOf( /* 55 个工具，见 BetterAIChatApp.kt */ )
+    val tools: List<DeviceTool> = listOf( /* 61 个工具，见 BetterAIChatApp.kt */ )
     val registry = ToolRegistry(tools)
     val runner = DeviceToolRunner(registry, toolContext)
     val engine = ChatEngine(providerFactory, registry, runner)

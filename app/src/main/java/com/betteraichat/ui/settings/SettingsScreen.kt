@@ -755,6 +755,13 @@ private fun PermissionsSection(
             ) == android.content.pm.PackageManager.PERMISSION_GRANTED
         )
     }
+    var hasContacts by remember {
+        mutableStateOf(
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                context, Manifest.permission.READ_CONTACTS
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        )
+    }
 
     fun refresh() {
         notificationEnabled = NotificationManagerCompat.from(context).areNotificationsEnabled()
@@ -763,12 +770,18 @@ private fun PermissionsSection(
         hasCamera = androidx.core.content.ContextCompat.checkSelfPermission(
             context, Manifest.permission.CAMERA
         ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        hasContacts = androidx.core.content.ContextCompat.checkSelfPermission(
+            context, Manifest.permission.READ_CONTACTS
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
     }
 
     val notifPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { refresh() }
     val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { refresh() }
+    val contactsPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { refresh() }
     val writeSettingsLauncher = rememberLauncherForActivityResult(
@@ -842,6 +855,12 @@ private fun PermissionsSection(
             status = if (hasCamera) context.getString(R.string.perm_granted) else context.getString(R.string.perm_denied),
             buttonText = context.getString(R.string.perm_action_grant),
             onAction = { cameraPermissionLauncher.launch(Manifest.permission.CAMERA) }
+        )
+        PermissionRow(
+            title = context.getString(R.string.perm_contacts),
+            status = if (hasContacts) context.getString(R.string.perm_granted) else context.getString(R.string.perm_denied),
+            buttonText = context.getString(R.string.perm_action_grant),
+            onAction = { contactsPermissionLauncher.launch(Manifest.permission.READ_CONTACTS) }
         )
         PermissionRow(
             title = context.getString(R.string.perm_write_settings),

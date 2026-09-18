@@ -74,6 +74,12 @@ import com.betteraichat.tools.AutomationScheduler
 import com.betteraichat.tools.ShizukuManager
 import com.betteraichat.skills.tools.RunShellTool
 import com.betteraichat.skills.tools.ScheduleRepeatTool
+import com.betteraichat.skills.tools.CreateCalendarEventTool
+import com.betteraichat.skills.tools.GetAppUsageTool
+import com.betteraichat.skills.tools.UnitConvertTool
+import com.betteraichat.skills.tools.SearchContactsTool
+import com.betteraichat.skills.tools.ListFilesTool
+import com.betteraichat.skills.tools.ReadTextFileTool
 
 class BetterAIChatApp : Application() {
 
@@ -242,6 +248,12 @@ class AppContainer(context: Application) {
         RunShellTool { shizukuManager.granted.value },
         SpeakTextTool(),
         ScheduleRepeatTool(),
+            CreateCalendarEventTool(),
+            GetAppUsageTool(),
+            UnitConvertTool(),
+            SearchContactsTool(),
+            ListFilesTool(),
+            ReadTextFileTool(),
         LoadSkillTool({ skillRepository.loadAll() }, { registry }, actionExecutor),
         GetTimeTool(),
         MediaControlTool(),

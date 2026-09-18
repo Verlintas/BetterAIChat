@@ -57,7 +57,11 @@ class GetWeatherTool : DeviceTool {
                 val sb = StringBuilder()
                 sb.appendLine("城市：$city")
                 sb.appendLine("当前：$desc，${temp}°C（体感 ${feels}°C）")
+                val visibility = cur["visibility"]?.jsonPrimitive?.content ?: "?"
+                val uv = cur["uvIndex"]?.jsonPrimitive?.content ?: "?"
+                val precip = cur["precipMM"]?.jsonPrimitive?.content ?: "?"
                 sb.appendLine("湿度：$humidity% | 风速：${wind}km/h | 气压：${pressure}hPa")
+                sb.appendLine("能见度：${visibility}km | 紫外线指数：$uv | 降水量：${precip}mm")
                 val forecast = root["weather"]?.jsonArray
                 if (forecast != null) {
                     val days = listOf("今天", "明天", "后天")

@@ -34,7 +34,11 @@ class ListInstalledAppsTool : DeviceTool {
                         val label = runCatching { pm.getApplicationLabel(app).toString() }.getOrNull() ?: app.packageName
                         if (filter != null && filter !in label && filter.lowercase() !in app.packageName.lowercase()) return@forEach
                         val isSystem = app.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM != 0
-                        add("$label（${app.packageName}）${if (isSystem) "· 系统应用" else ""}")
+                        val version = runCatching {
+                            pm.getPackageInfo(app.packageName, 0).versionName
+                        }.getOrNull()
+                        val versionText = version?.takeIf { it.isNotBlank() }?.let { " v$it" } ?: ""
+                        add("$label$versionText（${app.packageName}）${if (isSystem) "· 系统应用" else ""}")
                     }
                 }.sorted()
                 if (result.isEmpty()) {

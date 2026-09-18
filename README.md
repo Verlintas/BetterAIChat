@@ -91,6 +91,11 @@ An **Agent** bundles a full configuration: provider + API key + model + temperat
 | `ocr_file` | OCR any image file (ML Kit, full build) |
 | `screen_record` | Record the screen to MP4 (needs capture grant) |
 | `send_email` | Compose an email via the system mail client |
+| `create_calendar_event` | Create calendar events (opens the calendar pre-filled for confirmation) |
+| `get_app_usage` | Per-app foreground usage stats (needs Usage access) |
+| `unit_convert` | Unit conversion (length/weight/temperature/area/speed/data/time) |
+| `search_contacts` | Search contacts by name (needs Contacts permission) |
+| `list_files` / `read_text_file` | Browse / read files in Downloads & Documents |
 
 ### Screen analysis — the AI can *see* your screen
 One tap → screenshot → vision model describes what's on your screen and gives operation advice. Works with any vision-capable model.

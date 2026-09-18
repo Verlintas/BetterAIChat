@@ -36,7 +36,7 @@
 | `Build` | 每个工具执行前请求你确认 |
 | `Max` | 自主多步工具调用 + 深度思考 |
 
-### AI 可以操作你的设备（55 个工具）
+### AI 可以操作你的设备（61 个工具）
 | 工具 | 功能 |
 |---|---|
 | `open_app` | 打开任意已安装应用 |
@@ -65,6 +65,11 @@
 | `ua_type` / `ua_tap` / `ua_swipe` / `ua_press` | **无障碍 UI 自动化**：输入 / 点击 / 滑动 / 按键 |
 | `load_skill` | 加载并执行已导入的 SKILL.md 技能 |
 | `read_notifications` / `get_screen_state` | 通知读取 / 屏幕状态 |
+| `create_calendar_event` | 创建日历日程（打开日历预填，用户确认保存） |
+| `get_app_usage` | 各应用使用时长统计（需「使用情况访问」权限） |
+| `unit_convert` | 单位换算（长度/重量/温度/面积/速度/数据/时间） |
+| `search_contacts` | 按姓名搜索联系人（需通讯录权限） |
+| `list_files` / `read_text_file` | 浏览 / 读取下载与文档目录中的文件 |
 
 ### 屏幕分析——AI 能"看见"屏幕
 一键截屏 → 视觉模型描述屏幕内容并给出操作建议。支持任意视觉模型。
@@ -165,4 +170,4 @@ Kotlin · Jetpack Compose (Material 3) · OkHttp (SSE) · kotlinx.serialization 
 [MIT](LICENSE)
 
 ---
-*项目：[BetterAIChat](https://github.com/Verlintas/BetterAIChat) · 原生 Android AI 智能体，55 个内置工具。*
+*项目：[BetterAIChat](https://github.com/Verlintas/BetterAIChat) · 原生 Android AI 智能体，61 个内置工具。*
