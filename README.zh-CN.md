@@ -4,6 +4,8 @@
 
 [English](README.md) · 简体中文
 
+![CI](https://github.com/Verlintas/BetterAIChat/actions/workflows/ci.yml/badge.svg)
+
 > 由 Verlintas 独立开发。一款完全自主的 Android AI 助手：接入你自己的 API Key（OpenAI 兼容 / Anthropic / Gemini），AI 可以搜索网页、操作应用、自动化任务——所有数据留在你手机上。
 
 ## 截图
