@@ -313,4 +313,7 @@ Author: Verlintas</string>
     <string name="vm_skill_saved">Saved as skill "%1$s" — see Settings; the AI can reuse it via load_skill</string>
     <string name="vm_skill_failed">Failed to save skill: %1$s</string>
     <string name="perm_contacts">Contacts (search contacts)</string>
+    <string name="chat_search_msg">Search messages</string>
+    <string name="chat_search_prev">Previous match</string>
+    <string name="chat_search_next">Next match</string>
 </resources>

@@ -313,4 +313,7 @@
     <string name="vm_skill_saved">已保存为技能「%1$s」，可在设置页查看，AI 可通过 load_skill 复用</string>
     <string name="vm_skill_failed">技能保存失败：%1$s</string>
     <string name="perm_contacts">通讯录（搜索联系人）</string>
+    <string name="chat_search_msg">搜索消息</string>
+    <string name="chat_search_prev">上一个匹配</string>
+    <string name="chat_search_next">下一个匹配</string>
 </resources>
