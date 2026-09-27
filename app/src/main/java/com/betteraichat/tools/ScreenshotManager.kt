@@ -107,6 +107,16 @@ class ScreenshotProjectionService : Service() {
             private set
         @Volatile
         private var projectionBroken = false
+        @Volatile
+        private var vDisplay: VirtualDisplay? = null
+        @Volatile
+        private var reader: ImageReader? = null
+        @Volatile
+        private var displayWidth = 0
+        @Volatile
+        private var displayHeight = 0
+        @Volatile
+        private var displayDensity = 0
 
         fun isBroken(): Boolean = projectionBroken
     }
@@ -135,6 +145,7 @@ class ScreenshotProjectionService : Service() {
             }
         }
 
+        val reqId = intent?.getLongExtra("reqId", 0L) ?: 0L
         if (projection == null || projectionBroken) {
             stopProjectionInternal()
             val code = intent?.getIntExtra("resultCode", 0) ?: 0
@@ -144,7 +155,6 @@ class ScreenshotProjectionService : Service() {
                 @Suppress("DEPRECATION")
                 intent?.getParcelableExtra("data")
             }
-            val reqId = intent?.getLongExtra("reqId", 0L) ?: 0L
             if (data == null) {
                 ScreenshotBridge.completeCapture(reqId, "ERROR:截屏授权数据丢失，请重新授权")
                 stopForeground(STOP_FOREGROUND_REMOVE)
@@ -160,9 +170,8 @@ class ScreenshotProjectionService : Service() {
             }
         }
 
-        val reqId = intent?.getLongExtra("reqId", 0L) ?: 0L
         scope.launch {
-            val result = captureOnce()
+            val result = captureFromPersistent()
             ScreenshotBridge.completeCapture(reqId, result)
         }
         return START_NOT_STICKY
@@ -183,51 +192,76 @@ class ScreenshotProjectionService : Service() {
             )
             projection = p
             projectionBroken = false
+            ensurePersistentDisplay()
             true
         } catch (e: Exception) {
+            android.util.Log.w("ScreenshotService", "createProjection failed: ${e.message}")
             false
         }
     }
 
     private fun stopProjectionInternal() {
-        projection?.stop()
+        runCatching { reader?.close() }
+        reader = null
+        runCatching { vDisplay?.release() }
+        vDisplay = null
+        runCatching { projection?.stop() }
         projection = null
         projectionBroken = false
     }
 
-    private suspend fun captureOnce(): String {
-        val p = projection
-        if (p == null) return "ERROR:截屏服务未就绪，请重新授权"
+    private fun screenMetrics(): Triple<Int, Int, Int> {
+        val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        val metrics = DisplayMetrics()
+        wm.defaultDisplay.getRealMetrics(metrics)
+        return Triple(metrics.widthPixels, metrics.heightPixels, metrics.densityDpi)
+    }
+
+    private fun ensurePersistentDisplay() {
+        if (reader != null) return
+        val p = projection ?: return
+        val (w, h, d) = screenMetrics()
+        val r = ImageReader.newInstance(w, h, PixelFormat.RGBA_8888, 2)
+        val vd = p.createVirtualDisplay(
+            "BetterAIChatShot",
+            w, h, d,
+            DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+            r.surface, null, null
+        )
+        if (vd == null) {
+            runCatching { r.close() }
+            return
+        }
+        reader = r
+        vDisplay = vd
+        displayWidth = w
+        displayHeight = h
+        displayDensity = d
+    }
+
+    private suspend fun captureFromPersistent(): String {
+        if (projection == null) return "ERROR:截屏服务未就绪，请重新授权"
+        if (reader == null) {
+            ensurePersistentDisplay()
+            if (reader == null) return "ERROR:无法创建屏幕投影（截屏授权可能已失效，请重新授权）"
+        }
         return withContext(Dispatchers.IO) {
             runCatching {
-                val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-                val metrics = DisplayMetrics()
-                wm.defaultDisplay.getRealMetrics(metrics)
-                val width = metrics.widthPixels
-                val height = metrics.heightPixels
-                val density = metrics.densityDpi
-                val reader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
-                var virtualDisplay: VirtualDisplay? = null
+                maybeResize()
+                val r = reader ?: return@runCatching "ERROR:投影未就绪"
+                var image = r.acquireLatestImage()
+                var waited = 0
+                while (image == null && waited < 5000) {
+                    delay(100)
+                    waited += 100
+                    image = r.acquireLatestImage()
+                }
+                if (image == null) return@runCatching "ERROR:获取屏幕画面超时"
+                val width = displayWidth
+                val height = displayHeight
                 var bitmap: Bitmap? = null
                 var crop: Bitmap? = null
                 try {
-                    virtualDisplay = p.createVirtualDisplay(
-                        "BetterAIChatShot",
-                        width, height, density,
-                        DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-                        reader.surface, null, null
-                    )
-                    if (virtualDisplay == null) {
-                        return@runCatching "ERROR:无法创建投影（截屏授权可能已失效，请重新授权）"
-                    }
-                    var image = reader.acquireLatestImage()
-                    var waited = 0
-                    while (image == null && waited < 5000) {
-                        delay(100)
-                        waited += 100
-                        image = reader.acquireLatestImage()
-                    }
-                    if (image == null) return@runCatching "ERROR:获取屏幕画面超时"
                     image.use {
                         val plane = it.planes[0]
                         val buffer = plane.buffer
@@ -249,12 +283,29 @@ class ScreenshotProjectionService : Service() {
                 } finally {
                     bitmap?.recycle()
                     crop?.recycle()
-                    virtualDisplay?.release()
-                    reader.close()
                 }
             }.getOrElse { e -> "ERROR:截屏失败：${e.message}" }
         }
     }
+
+    private fun maybeResize() {
+        val vd = vDisplay ?: return
+        val (w, h, d) = screenMetrics()
+        if (w == displayWidth && h == displayHeight) return
+        runCatching {
+            vd.resize(w, h, d)
+            reader?.close()
+            val r = ImageReader.newInstance(w, h, PixelFormat.RGBA_8888, 2)
+            vd.surface = r.surface
+            reader = r
+            displayWidth = w
+            displayHeight = h
+            displayDensity = d
+        }.onFailure {
+            android.util.Log.w("ScreenshotService", "resize failed, keeping ${displayWidth}x${displayHeight}: ${it.message}")
+        }
+    }
+
 
     override fun onBind(intent: Intent?): IBinder? = null
 
