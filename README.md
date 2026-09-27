@@ -207,7 +207,7 @@ Kotlin · Jetpack Compose (Material 3) · OkHttp (SSE) · kotlinx.serialization 
 
 ### Learning from this project
 
-New to Android agent development? Read **[docs/HOW_IT_WORKS.md](docs/HOW_IT_WORKS.md)** — a deep technical walkthrough covering the module architecture, the message pipeline, SSE streaming, the tool-calling agent loop, permission bridging, the automation engine, and UI rendering tricks (terminal-style scrolling, streaming cursor), with a suggested study order.
+New to the project? **[docs/HOW_IT_WORKS.md](docs/HOW_IT_WORKS.md)** is a complete developer handbook (26 chapters): getting started (build/run/test/debug with a mock server), module architecture, the message pipeline, SSE streaming, the tool-calling loop, permission bridging, the automation engine, UI rendering internals — plus dedicated chapters on Agents, the web-search pipeline and long-term memory, an extending guide (add a tool/provider in minutes), troubleshooting with known platform limits, and a handover checklist covering everything outside the repository.
 
 ---
 

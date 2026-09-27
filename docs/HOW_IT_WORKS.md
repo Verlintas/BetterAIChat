@@ -27,6 +27,15 @@ This document explains the internals of **BetterAIChat** in exhaustive detail: m
 17. [Error handling matrix](#17-error-handling-matrix)
 18. [Engineering lessons from real bugs](#18-engineering-lessons-from-real-bugs)
 19. [Suggested study order](#19-suggested-study-order)
+20. [Getting started — build, run, test, debug](#20-getting-started--build-run-test-debug)
+21. [Agents — per-conversation configurations](#21-agents--per-conversation-configurations)
+22. [The web-search pipeline](#22-the-web-search-pipeline)
+23. [Long-term memory](#23-long-term-memory)
+24. [Extending the app — how to add things](#24-extending-the-app--how-to-add-things)
+25. [Troubleshooting & known platform limits](#25-troubleshooting--known-platform-limits)
+26. [Glossary & handover checklist](#26-glossary--handover-checklist)
+
+> **Reading guide for new maintainers**: skim chapters 1–3, then jump to **20 (Getting started)** to get the app running, **24 (Extending)** for your first change, and **26 (Handover checklist)** for everything outside the repository. Chapters 4–19 are deep dives — read them when you touch the corresponding area.
 
 ---
 
@@ -1312,3 +1321,315 @@ Each of these topics maps to a concrete, working file in the repo — start at `
 ---
 
 *Project: [BetterAIChat](https://github.com/Verlintas/BetterAIChat) — a native Android AI agent with 63 built-in tools, opencode-style Skills, per-conversation Agents, Shizuku/accessibility/MediaProjection capabilities, and a background automation engine. Built with Kotlin, Jetpack Compose, Room, OkHttp and kotlinx.serialization.*
+
+---
+
+## 20. Getting started — build, run, test, debug
+
+### 20.1 Requirements
+
+| Tool | Version | Notes |
+| --- | --- | --- |
+| JDK | 17 | Gradle toolchain targets JVM 17 |
+| Android SDK | platform 36 + build-tools 36.0.0 | `compileSdk = 36`, `minSdk = 26` |
+| Gradle | wrapper (8.14.3) | always use `./gradlew` |
+| Device | Android 8.0+ (emulator fine) | Android 14/15 recommended for MediaProjection testing |
+
+No API key is needed to build. To actually chat you need a key for some OpenAI-compatible endpoint (DeepSeek, OpenAI, a local gateway, …) configured through the in-app Agent wizard.
+
+### 20.2 Build variants
+
+The app has two product flavors:
+
+| Flavor | Contents | Output |
+| --- | --- | --- |
+| `full` | everything, incl. ML Kit on-device OCR | `app/build/outputs/apk/full/debug/app-full-debug.apk` |
+| `lite` | no OCR model (~10 MB smaller) | `app/build/outputs/apk/lite/debug/app-lite-debug.apk` |
+
+```bash
+./gradlew assembleFullDebug          # the usual dev build
+./gradlew assembleLiteDebug          # lite variant
+./gradlew assembleFullRelease        # release (unsigned; signing is manual, see ch. 26)
+```
+
+OCR is a flavor-specific implementation of one interface: `app/src/full/java/.../ScreenOcr.kt` vs `app/src/lite/java/.../ScreenOcr.kt`. `OcrProvider` in `:skills` is the seam.
+
+### 20.3 Install & run
+
+```bash
+adb install -r app/build/outputs/apk/full/debug/app-full-debug.apk
+adb shell am start -n com.betteraichat/.MainActivity
+```
+
+First-run flow: Settings → Agents → New Agent → paste an API key → the wizard auto-detects the provider from the key prefix (`sk-ant-` → Claude, `AIza` → Gemini, otherwise OpenAI-compatible), fetches the model list and saves. No key at hand? Point the Base URL at any local mock (next section).
+
+### 20.4 Tests
+
+```bash
+./gradlew :core:testDebugUnitTest :skills:testDebugUnitTest :providers:testDebugUnitTest
+```
+
+Current coverage is focused on pure logic that has historically broken: SSE parsing, markdown normalization (incl. CJK bold and pipe-less tables), calculator (incl. scientific functions), tool-argument merging/parsing, unit conversion, agent-key inference. UI and Android-framework code is verified on-device — the codebase deliberately keeps logic out of composables so it stays testable.
+
+### 20.5 CI
+
+`.github/workflows/ci.yml` runs on every push/PR: unit tests for the three library modules, then `assembleFullDebug` + `assembleLiteDebug`. If CI fails, the build or a test regressed — never merge red.
+
+### 20.6 Debugging with a local mock server
+
+The fastest way to exercise the full pipeline (streaming, tool calls, markdown edge cases) without burning real API quota is a tiny SSE server on the host. Minimal version:
+
+```python
+#!/usr/bin/env python3
+import json, sys
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+class H(BaseHTTPRequestHandler):
+    def do_POST(self):
+        req = json.loads(self.rfile.read(int(self.headers.get('Content-Length', 0))) or '{}')
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/event-stream')
+        self.end_headers()
+        def ev(d):
+            self.wfile.write(b'data: ' + json.dumps(d).encode() + b'\n\n'); self.wfile.flush()
+        # scripted behavior keyed on the model name
+        if 'tool' in req.get('model', ''):
+            ev({"choices": [{"delta": {"tool_calls": [
+                {"index": 0, "id": "c1", "function": {"name": "get_time", "arguments": "{}"}}]}}]})
+        else:
+            ev({"choices": [{"delta": {"content": "hello **world**"}}]})
+        ev({"choices": [{"delta": {}, "finish_reason": "stop"}]})
+        self.wfile.write(b'data: [DONE]\n\n'); self.wfile.flush()
+
+HTTPServer(('0.0.0.0', 9999), H).serve_forever()
+```
+
+Then create an Agent with Base URL `http://10.0.2.2:9999/v1` (emulator → host loopback), any API key, and a model name containing `tool` to trigger the scripted tool call. Switching the model name switches scenarios — that is how every feature in this app was verified.
+
+### 20.7 Emulator testing tips
+
+- `adb shell input text` cannot type CJK; use English test strings or paste via the clipboard.
+- `uiautomator dump` occasionally returns **stale snapshots** during scrolling/animations. When in doubt, take a screenshot (`adb shell screencap -p /sdcard/x.png`) and OCR it — this repo's authors were misled by stale dumps more than once.
+- Grant permissions through the UI (Settings → Permissions); screenshot authorization in particular requires the system dialog ("Start now").
+- MediaProjection state lives in the app process; `adb shell am force-stop` drops it — re-authorize after force-stops.
+
+---
+
+## 21. Agents — per-conversation configurations
+
+### 21.1 The model
+
+An **Agent** is a complete AI configuration stored in the `agents` table:
+
+```
+AgentEntity(id, name, description, provider, baseUrl, apiKey, model,
+            temperature, maxTokens, reasoning, systemPrompt, isDefault,
+            createdAt, updatedAt)
+```
+
+- `apiKey` is stored **encrypted** (KeyStoreCrypto). The repository writes `"enc:" + ciphertext` and decrypts on read (`AgentRepository.encryptIfPlain/decrypt`), so the DB never holds a plaintext key.
+- `systemPrompt` is the optional custom prompt; empty means "use the mode prompt only".
+- Exactly one agent is `isDefault` (the first one created, or the one explicitly marked). Deleting the default promotes the earliest remaining agent.
+
+### 21.2 How a conversation resolves its config
+
+`ChatViewModel.resolveConfig(state)`:
+
+1. `state.agentId` (bound to the conversation) → load that agent → `AgentRepository.toConfig()`;
+2. if unset/deleted → the default agent;
+3. if there are no agents at all → legacy `SettingsRepository.configFor(provider)`.
+
+Conversations store `agentId`; the model picker in the chat menu calls `updateAgent(id)` which persists the binding via `ChatRepository.updateMeta`. Compression, memory distillation and title generation all use the same `resolveConfig`, so a conversation behaves consistently everywhere.
+
+### 21.3 The onboarding wizard
+
+`ui/agents/AgentOnboarding.kt` — four steps:
+
+1. **Key & provider** — paste the key; `inferProviderFromKey()` guesses the provider from the prefix; quick presets (DeepSeek / Qwen / Kimi / GLM / SiliconFlow) fill the Base URL; "Detect" runs `ModelProbe` (`GET {baseUrl}/models`) and lists the server's models.
+2. **Model** — server-detected models, the curated catalog, or a manual id.
+3. **Parameters** — temperature, max tokens, deep-reasoning toggle.
+4. **Prompt** — default mode prompts or a custom system prompt → save.
+
+### 21.4 Where the custom prompt goes
+
+`ChatEngine.run()` prepends it to the mode prompt:
+
+```kotlin
+val sysContent = if (custom.isBlank()) systemPromptFor(mode)
+                 else "$custom\n\n${systemPromptFor(mode)}"
+```
+
+Mode prompts encode safety behavior (e.g. "confirm before acting") and are never replaced — the custom prompt adds persona/domain context.
+
+### 21.5 Legacy migration
+
+`BetterAIChatApp.ensureDefaultAgentFromLegacySettings()` (runs once on a background scope at app start): if the agents table is empty and legacy settings contain an API key, it converts the old provider/baseUrl/model/temperature settings into a "默认 Agent" so existing users never see an empty picker.
+
+---
+
+## 22. The web-search pipeline
+
+`web_search` is deliberately more than "call an engine". The whole chain lives in `skills/tools/WebSearchTool.kt`.
+
+### 22.1 Fan-out and merge
+
+- Six engines run **concurrently** (`async` each): Bing, Baidu, Brave, DuckDuckGo, Mojeek, 360.
+- Merge rules: URL-normalized dedup, **max 2 results per domain** (diversity), **title-similarity dedup** (same article, different links).
+- **Relevance ranking**: results are scored by query-term matches (title ×3, snippet ×1) and sorted — engine order alone surfaces off-topic pages (a query about "Android 16 release date" used to return the developer-tools homepage first).
+- URLs are stripped of tracking params (`utm_*`, `spm`, `from`, …).
+
+### 22.2 One-call bodies (`read_top`)
+
+The default `read_top = 1` attaches the body of the first *successfully fetched* result:
+
+- element-level extraction (`p, h1-h6, li, pre, blockquote` inside `article/main`), not `body.text()` — this is what strips author bars;
+- `NOISE_RE` filters ~20 boilerplate patterns (views/favorites/二维码/红包…);
+- adjacent duplicate paragraphs are dropped (source pages often repeat list content in `<p>`);
+- **skip-on-failure**: blocked sites (e.g. baike.baidu.com → 403) are skipped and the next result is tried, up to 8 attempts, until `read_top` bodies are collected;
+- per-body budget = 5000/read_top chars, and the engine truncation budget (6000) keeps bodies intact on the way to the model.
+
+### 22.3 Multi-query, cache, refresh
+
+- `query` accepts an **array** (≤3) — comparison questions complete in one round trip; results merge across queries.
+- A 5-minute in-memory cache keyed by `query|max_results|read_top`; `refresh=true` bypasses it for time-sensitive follow-ups.
+- Engine diagnostics: all-fail and partial-failure notes tell the model whether retrying is even useful.
+
+### 22.4 Failure economics (why searches used to burn all rounds)
+
+- `DeviceToolRunner.healArgs` **self-heals arguments** before execution: wrong-typed values converted, misspelled parameter names corrected (levenshtein ≤2), arrays preserved; the result is annotated with what was fixed.
+- `parseToolArguments` tolerates double-encoded strings and prose-wrapped JSON (some gateways double-encode).
+- `ChatEngine.runWithCircuitBreaker` denies a tool after 3 consecutive failures with explicit guidance.
+- MAX mode allows up to 50 tool rounds; other modes 12.
+
+---
+
+## 23. Long-term memory
+
+### 23.1 Storage
+
+The `memories` table (v9) holds two kinds of rows, distinguished by `type`:
+
+- `memory` — distilled facts ("User's name is …"), injected into every request;
+- `snapshot` — the last 6 turns saved before a context compression, restorable via "Import recent chat".
+
+### 23.2 Distillation
+
+- **Automatic**: every 10 completed turns (`autoDistillCount` in `ChatViewModel`) a background distillation runs silently.
+- **Manual**: ⋮ menu → Distill important info.
+- The distillation prompt asks the model for *new* bullet points only, given the existing memories; results are filtered (length 3–200, no echo of the prompt) and inserted.
+
+### 23.3 Injection
+
+`injectMemory()` prepends a system message listing the memories to the history of every generation — this is why the assistant "remembers you" across sessions without any server-side state.
+
+### 23.4 Interaction with compression
+
+When usage crosses 85% of the model's context window, the app warns and auto-compresses after the turn: the last 6 turns are snapshotted, older history is replaced by a summary message, and the snapshot remains importable.
+
+---
+
+## 24. Extending the app — how to add things
+
+### 24.1 Add a device tool (the most common task)
+
+1. Create a class in `skills/src/main/java/com/betteraichat/skills/tools/`:
+
+```kotlin
+class MyTool : DeviceTool {
+    override val name = "my_tool"                       // snake_case, unique
+    override val description = "One sentence the MODEL reads to decide when to use it. State the argument formats."
+    override val readOnly = false                       // true => allowed in Plan mode
+    override val parameters = schemaOf(
+        "text" to stringProp("what this argument means"),
+        "count" to intProp("integer argument, default 3"),
+        required = listOf("text")
+    )
+    override suspend fun execute(context: ToolContext, arguments: JsonObject): String {
+        val text = arguments["text"]?.jsonPrimitive?.content ?: return "text 参数无效"
+        // ... do the work ...
+        return "result the model will read"
+    }
+}
+```
+
+2. Register it in `BetterAIChatApp.kt`'s tool list (`val tools: List<DeviceTool> = listOf(...)`).
+3. That's it — the registry exposes it per mode (`readOnly` tools in Plan; all tools in Build/Max), the engine gates it, and arguments get self-healed automatically.
+4. Return `"ERROR:…"` for failures with actionable text — the model reads it; `DeviceToolRunner` also treats `工具参数/工具执行`-prefixed strings as failures for the circuit breaker.
+5. Add a unit test if the tool has non-trivial logic (`skills/src/test/...`). Tools that only wrap a system API don't need one.
+
+### 24.2 Add a provider
+
+1. Implement `ChatProvider` (`core/provider/ChatProvider.kt`) in `:providers` — you must emit `StreamEvent`s: `Delta`, `ThinkingDelta`, `ToolCallsDone`, `Usage`, `Done`, `Error`.
+2. Add the id to `ProviderId`, register in `ProviderFactory`, and add base URL + curated models in `ModelCatalog`.
+3. If the wire format is OpenAI-like, reuse `OpenAiProvider` patterns (SSE parsing, tool-call accumulation) rather than starting fresh.
+
+### 24.3 Add a skill action type
+
+`SkillActionExecutor.kt` maps action strings to Android intents. Add a branch to the `when` and document the YAML shape in the chapter 12 table. Keep actions parameterized via `{placeholders}` — never interpolate untrusted text into shell commands.
+
+### 24.4 UI strings & i18n discipline
+
+- All user-visible strings live in `app/src/main/res/values/strings.xml` (Chinese, default) and `values-en/strings.xml` (English). **Both files must stay in sync** — CI doesn't check this yet, so be careful in review.
+- In composables use `stringResource(R.string.x)`; in ViewModels/services use `appContext.getString(R.string.x)`. Never hardcode user-visible text.
+- Content that is *sent to the model* (system prompts, tool descriptions, distillation instructions) intentionally stays Chinese-only — it is not UI.
+
+### 24.5 Database changes
+
+- Bump `version` in `AppDatabase.kt`, add an explicit `MIGRATION_N_N+1` (never destructive), register it in `.addMigrations(...)`, and update chapter 14's schema listing.
+- New columns on existing tables need a default (`ALTER TABLE … ADD COLUMN … NOT NULL DEFAULT …`) or must be nullable.
+
+### 24.6 New settings
+
+`SettingsRepository` for simple prefs (SharedPreferences) or a Room table if it's a list (like agents/automations). Settings UI lives in `SettingsScreen.kt`; follow the existing section pattern (each section is a composable taking `container/scope/snackbar`).
+
+---
+
+## 25. Troubleshooting & known platform limits
+
+| Symptom | Cause | What to do |
+| --- | --- | --- |
+| "截屏授权已失效" right after a working capture | Pre-v0.27.4 behavior; Android 14+ tokens are single-use | Fixed by the persistent-projection rewrite (ch. 11.2). If you see it now, the system revoked the projection (another app cast, user stopped casting) |
+| Capture works, then stops after the app was killed | MediaProjection grants are process-scoped by platform design | Re-authorize; the foreground service normally prevents this |
+| Tool calls fail with "JsonLiteral is not a JsonObject" | Gateway double-encodes arguments | Fixed in v0.26.4 (`parseToolArguments`); if a new format appears, extend that function and add a test |
+| AI loops on a broken tool call | Model keeps re-issuing invalid arguments | Circuit breaker denies after 3 consecutive failures; check the tool's `description` for unclear argument docs |
+| Markdown renders as plain text | Model emits format CommonMark rejects (`###title`, pipe-less tables) | `MarkdownNormalizer` repairs the known cases; add new repairs there with tests |
+| Search returns nothing | Network blocked / engines throttling | The tool reports engine diagnostics; verify with a real query on the device |
+| CI red but local green | Different SDK/JDK or a stale test | Run the exact CI command locally; check the workflow file |
+| `assembleRelease` output is unsigned | Signing is manual by design (keystore not in the repo) | See chapter 26 |
+
+**Deliberate design limits** (do not "fix" without understanding):
+
+- CHAT mode advertises **no tools** at all — smaller requests, no accidental tool attempts.
+- Plan mode only exposes `readOnly` tools; the gate re-checks server-side (the model is never trusted).
+- Shizuku `run_shell` is unrestricted by design; it is gated behind explicit authorization + BUILD confirmation/MAX mode.
+- OCR file / file reading tools are allow-listed to app + public Downloads/Documents/Pictures directories.
+
+---
+
+## 26. Glossary & handover checklist
+
+### 26.1 Glossary
+
+| Term | Meaning |
+| --- | --- |
+| **Agent** | A saved AI configuration (provider+key+model+params+prompt); conversations bind to one |
+| **Mode** | Chat / Plan / Build / Max — controls tool exposure and confirmation behavior |
+| **Gate** | The server-side permission check before any tool executes (`ChatEngine.gate`) |
+| **Skill** | A markdown-defined procedure (SKILL.md) loadable as tools via `load_skill` |
+| **Distill** | Extracting durable user facts into the `memories` table |
+| **Snapshot** | Last-6-turns backup saved before compression |
+| **Circuit breaker** | Denies a tool after 3 consecutive failures in one run |
+| **Self-healing** | Pre-execution argument repair in `DeviceToolRunner.healArgs` |
+| **Pinned** | "Last item fully visible" — the condition that resumes auto-follow |
+| **Flavor** | `full` (with OCR) vs `lite` build variants |
+
+### 26.2 Handover checklist (everything outside the repo)
+
+- **Keystore**: `betteraichat-release.keystore` + `keystore_pass.txt` live **outside git** (gitignored). Releases are signed manually:
+  `zipalign -f 4 … && apksigner sign --ks … --ks-pass pass:$(cat keystore_pass.txt)`. Losing the keystore means users cannot update in place — back it up.
+- **local.properties** with `sdk.dir` is machine-specific and gitignored.
+- **GitHub**: releases are created from tags `vX.Y.Z`; attach both APKs (`full`, `lite`) and include SHA-256 sums in bilingual (zh+en) notes. Keep `gh release create … --notes-file` in mind — the default `--generate-notes` produces English-only text.
+- **Versioning**: `versionCode` increments by 1 every release; `versionName` follows semver-ish `0.MINOR.PATCH` where MINOR = features, PATCH = fixes.
+- **CI**: keep the workflow green; it is the only automated gate.
+- **Publish order**: bump version → `assembleFullRelease`/`assembleLiteRelease` → zipalign + sign → `git tag vX.Y.Z && git push --tags` → `gh release create` with notes + both APKs.
+- **Known third-party pin**: the markdown renderer is pinned to 0.41.0 (newer versions require compileSdk 37); table rendering is custom (`MarkdownTable`) precisely to avoid that upgrade.

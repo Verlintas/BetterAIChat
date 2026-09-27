@@ -162,7 +162,7 @@ Kotlin · Jetpack Compose (Material 3) · OkHttp (SSE) · kotlinx.serialization 
 ```
 
 ### 学习这个项目
-想学习 Android 智能体开发？阅读 **[docs/zh/HOW_IT_WORKS.zh-CN.md](docs/zh/HOW_IT_WORKS.zh-CN.md)**——深度技术原理文档（模块架构、消息管线、SSE 流式、工具调用 Agent 循环、权限桥接、自动化引擎、UI 渲染技巧、推荐学习顺序）。
+想学习或接手这个项目？**[docs/zh/HOW_IT_WORKS.zh-CN.md](docs/zh/HOW_IT_WORKS.zh-CN.md)** 是完整的开发者手册（26 章）：上手（构建/运行/测试/用 mock 服务器调试）、模块架构、消息管线、SSE 流式、工具调用循环、权限桥接、自动化引擎、UI 渲染内幕——以及 Agent、联网搜索管线、长期记忆的专章，扩展指南（几分钟添加一个工具/服务商），排障与已知平台限制，和覆盖仓库之外一切的交接清单。
 
 ## 路线图
 - 多模型对比（同一问题，多模型并排回答）

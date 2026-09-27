@@ -1,3 +1,44 @@
+# BetterAIChat 技术原理——完整开发者手册
+
+本文档详尽解释 **BetterAIChat** 的内部实现：模块架构、请求管线的每一层、流式协议、Agent 循环、工具系统、权限桥接、自动化引擎、存储、UI 渲染、安全设计，以及来自真实 bug 的工程经验。它既是学习指南，也是**交接手册**——新人可以照着第 20 章把项目跑起来，照第 24 章做第一个改动。
+
+> 范围：约 63 个内置设备工具、opencode 风格技能、Agent（按会话的一键配置）、Shizuku + 无障碍 + MediaProjection 集成，以及后台自动化引擎。
+
+---
+
+## 目录
+
+1. [项目总览与文件地图](#1-项目总览与文件地图)
+2. [模块架构与依赖倒置](#2-模块架构与依赖倒置)
+3. [领域模型](#3-领域模型)
+4. [服务商适配器与模型目录](#4-服务商适配器与模型目录)
+5. [一条消息的完整旅程](#5-一条消息的完整旅程)
+6. [SSE 流式深入](#6-sse-流式深入)
+7. [Agent 循环（ChatEngine）](#7-agent-循环chatengine)
+8. [模式与安全闸门](#8-模式与安全闸门)
+9. [确认流程](#9-确认流程)
+10. [工具系统](#10-工具系统)
+11. [权限桥接——AI 如何「触碰」你的手机](#11-权限桥接ai-如何触碰你的手机)
+12. [技能（opencode 风格）](#12-技能opencode-风格)
+13. [自动化引擎](#13-自动化引擎)
+14. [存储与状态管理](#14-存储与状态管理)
+15. [UI 层](#15-ui-层)
+16. [安全设计](#16-安全设计)
+17. [错误处理矩阵](#17-错误处理矩阵)
+18. [真实 bug 的工程经验](#18-真实-bug-的工程经验)
+19. [推荐学习顺序](#19-推荐学习顺序)
+20. [上手——构建、运行、测试、调试](#20-上手构建运行测试调试)
+21. [Agent——按会话的完整配置](#21-agent按会话的完整配置)
+22. [联网搜索管线](#22-联网搜索管线)
+23. [长期记忆](#23-长期记忆)
+24. [扩展指南——如何添加功能](#24-扩展指南如何添加功能)
+25. [排障与已知平台限制](#25-排障与已知平台限制)
+26. [术语表与交接清单](#26-术语表与交接清单)
+
+> **新维护者阅读指南**：先浏览第 1–3 章，然后跳到 **第 20 章（上手）**把应用跑起来，**第 24 章（扩展）**做第一个改动，**第 26 章（交接清单）**了解仓库之外的一切。第 4–19 章是深入内容——触及相应领域时再读。
+
+---
+
 ## 1. 项目总览与文件地图
 
 ```
@@ -1273,3 +1314,315 @@ val blinkAlpha = rememberInfiniteTransition(label = "cursor").animateFloat(
 7. **Agent 设计** —— 基于模式的闸门（Chat/Plan/Build/Max）、prompt + 强制的纵深防御、通过 `SharedFlow` + `CompletableDeferred` 实现的确认循环，以及工具转录不变量（§7.4）。
 8. **安全性** —— 带实时状态 UI 的权限矩阵、边界处的输入校验、沙箱化的求值器、输出截断、并发互斥锁。
 9. **UX 工程** —— 布局驱动的钉底滚动（响应布局而非轮询）、闪烁光标、紧凑工具卡片（详细展开）、会话内搜索、代码块提取、随模式变化的欢迎面板。
+
+---
+
+## 20. 上手——构建、运行、测试、调试
+
+### 20.1 环境要求
+
+| 工具 | 版本 | 说明 |
+| --- | --- | --- |
+| JDK | 17 | Gradle 工具链以 JVM 17 为目标 |
+| Android SDK | platform 36 + build-tools 36.0.0 | `compileSdk = 36`，`minSdk = 26` |
+| Gradle | wrapper（8.14.3） | 一律使用 `./gradlew` |
+| 设备 | Android 8.0+（模拟器即可） | 测试 MediaProjection 建议 Android 14/15 |
+
+构建不需要任何 API Key。真正聊天需要为某个 OpenAI 兼容端点（DeepSeek、OpenAI、本地网关等）准备 Key，并通过应用内的 Agent 引导配置。
+
+### 20.2 构建变体
+
+应用有两个产品风味（flavor）：
+
+| 风味 | 内容 | 产物 |
+| --- | --- | --- |
+| `full` | 全部功能，含 ML Kit 端侧 OCR | `app/build/outputs/apk/full/debug/app-full-debug.apk` |
+| `lite` | 无 OCR 模型（小约 10MB） | `app/build/outputs/apk/lite/debug/app-lite-debug.apk` |
+
+```bash
+./gradlew assembleFullDebug          # 日常开发构建
+./gradlew assembleLiteDebug          # lite 变体
+./gradlew assembleFullRelease        # 发布构建（未签名；签名是手动流程，见第 26 章）
+```
+
+OCR 是同一接口的风味专属实现：`app/src/full/java/.../ScreenOcr.kt` 与 `app/src/lite/java/.../ScreenOcr.kt`；`:skills` 里的 `OcrProvider` 就是接缝。
+
+### 20.3 安装与运行
+
+```bash
+adb install -r app/build/outputs/apk/full/debug/app-full-debug.apk
+adb shell am start -n com.betteraichat/.MainActivity
+```
+
+首次使用流程：设置 → Agent → 新建 Agent → 粘贴 API Key → 引导会自动按前缀识别服务商（`sk-ant-` → Claude、`AIza` → Gemini，其余为 OpenAI 兼容），拉取模型列表并保存。手头没有 Key？把 Base URL 指向任意本地 mock（见下节）。
+
+### 20.4 测试
+
+```bash
+./gradlew :core:testDebugUnitTest :skills:testDebugUnitTest :providers:testDebugUnitTest
+```
+
+当前覆盖聚焦于历史上真实出过问题的纯逻辑：SSE 解析、markdown 规范化（含中文加粗与无外框表格）、计算器（含科学函数）、工具参数合并/解析、单位换算、Agent Key 推断。UI 与 Android 框架代码在真机验证——代码库刻意把逻辑挡在 composable 之外，就是为了可测试。
+
+### 20.5 CI
+
+`.github/workflows/ci.yml` 在每次 push/PR 时运行：三个库模块的单测，然后 `assembleFullDebug` + `assembleLiteDebug`。CI 挂了说明构建或测试回归了——绝不要带着红 CI 合并。
+
+### 20.6 用本地 mock 服务器调试
+
+不消耗真实 API 配额、又能完整跑通管线（流式、工具调用、markdown 边界）的最快方式是主机上的小型 SSE 服务器。最小版本：
+
+```python
+#!/usr/bin/env python3
+import json, sys
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+class H(BaseHTTPRequestHandler):
+    def do_POST(self):
+        req = json.loads(self.rfile.read(int(self.headers.get('Content-Length', 0))) or '{}')
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/event-stream')
+        self.end_headers()
+        def ev(d):
+            self.wfile.write(b'data: ' + json.dumps(d).encode() + b'\n\n'); self.wfile.flush()
+        # 按模型名切换脚本化行为
+        if 'tool' in req.get('model', ''):
+            ev({"choices": [{"delta": {"tool_calls": [
+                {"index": 0, "id": "c1", "function": {"name": "get_time", "arguments": "{}"}}]}}]})
+        else:
+            ev({"choices": [{"delta": {"content": "hello **world**"}}]})
+        ev({"choices": [{"delta": {}, "finish_reason": "stop"}]})
+        self.wfile.write(b'data: [DONE]\n\n'); self.wfile.flush()
+
+HTTPServer(('0.0.0.0', 9999), H).serve_forever()
+```
+
+然后创建 Base URL 为 `http://10.0.2.2:9999/v1`（模拟器 → 宿主回环）的 Agent，任意 API Key，模型名含 `tool` 即触发脚本化工具调用。切换模型名即切换场景——本应用的每个功能都是这样验证的。
+
+### 20.7 模拟器测试技巧
+
+- `adb shell input text` 无法输入中文；用英文测试串，或通过剪贴板粘贴。
+- `uiautomator dump` 在滚动/动画期间偶尔返回**陈旧快照**。存疑时截图（`adb shell screencap -p /sdcard/x.png`）并 OCR——本仓库的作者不止一次被陈旧 dump 误导过。
+- 权限请走 UI（设置 → 权限）授予；截屏授权尤其需要系统对话框（「开始录制」）。
+- MediaProjection 状态存活于应用进程；`adb shell am force-stop` 会丢掉它——force-stop 后需重新授权。
+
+---
+
+## 21. Agent——按会话的完整配置
+
+### 21.1 数据模型
+
+**Agent** 是存储在 `agents` 表中的完整 AI 配置：
+
+```
+AgentEntity(id, name, description, provider, baseUrl, apiKey, model,
+            temperature, maxTokens, reasoning, systemPrompt, isDefault,
+            createdAt, updatedAt)
+```
+
+- `apiKey` **加密存储**（KeyStoreCrypto）。仓库写入 `"enc:" + 密文`、读取时解密（`AgentRepository.encryptIfPlain/decrypt`），数据库中永不出现明文 Key。
+- `systemPrompt` 是可选的自定义提示；为空表示「只用模式提示」。
+- 有且只有一个 Agent 是 `isDefault`（最早创建的，或显式标记的）。删除默认 Agent 时会把剩余最早的一个提升为默认。
+
+### 21.2 会话如何解析自己的配置
+
+`ChatViewModel.resolveConfig(state)`：
+
+1. `state.agentId`（会话绑定的 Agent）→ 加载该 Agent → `AgentRepository.toConfig()`；
+2. 未设置/已删除 → 默认 Agent；
+3. 完全没有任何 Agent → 旧版 `SettingsRepository.configFor(provider)` 兜底。
+
+会话保存 `agentId`；聊天菜单里的选择器调用 `updateAgent(id)`，通过 `ChatRepository.updateMeta` 持久化绑定。压缩、记忆提炼、标题生成全部走同一个 `resolveConfig`——会话在所有环节行为一致。
+
+### 21.3 引导向导
+
+`ui/agents/AgentOnboarding.kt`——四步：
+
+1. **Key 与服务商**——粘贴 Key；`inferProviderFromKey()` 按前缀猜测服务商；快捷预设（DeepSeek / 通义千问 / Kimi / 智谱 GLM / SiliconFlow）填充 Base URL；点「检测」运行 `ModelProbe`（`GET {baseUrl}/models`）并列出服务端模型。
+2. **模型**——服务端检测结果、内置目录，或手动输入。
+3. **参数**——温度、Max Tokens、深度推理开关。
+4. **提示词**——默认模式提示或自定义系统提示 → 保存。
+
+### 21.4 自定义提示词注入位置
+
+`ChatEngine.run()` 把它拼在模式提示之前：
+
+```kotlin
+val sysContent = if (custom.isBlank()) systemPromptFor(mode)
+                 else "$custom\n\n${systemPromptFor(mode)}"
+```
+
+模式提示承载安全行为（如「执行前确认」），永不被替换——自定义提示只叠加人设/领域上下文。
+
+### 21.5 旧版迁移
+
+`BetterAIChatApp.ensureDefaultAgentFromLegacySettings()`（应用启动时在后台作用域运行一次）：若 agents 表为空且旧设置里有 API Key，就把旧的 provider/baseUrl/model/温度设置转换为「默认 Agent」，老用户永远不会看到空选择器。
+
+---
+
+## 22. 联网搜索管线
+
+`web_search` 刻意不止于「调用一个引擎」。整条链路位于 `skills/tools/WebSearchTool.kt`。
+
+### 22.1 扇出与合并
+
+- 六个引擎**并发**运行（各自 `async`）：Bing、百度、Brave、DuckDuckGo、Mojeek、360。
+- 合并规则：URL 规范化去重、**每域名最多 2 条**（多样性）、**标题相似去重**（同文不同链）。
+- **相关性排序**：按查询词命中打分（标题 ×3、摘要 ×1）排序——只靠引擎顺序会把跑题的页面排前面（搜「Android 16 发布时间」曾把开发者工具首页排第一）。
+- URL 剥离追踪参数（`utm_*`、`spm`、`from` 等）。
+
+### 22.2 一次调用拿正文（`read_top`）
+
+默认 `read_top = 1`，附带第一条**成功抓取**结果的正文：
+
+- 元素级提取（`article/main` 内的 `p, h1-h6, li, pre, blockquote`），而非 `body.text()`——这正是剥离作者栏的关键；
+- `NOISE_RE` 过滤约 20 种样板模式（阅读量/收藏/二维码/红包……）；
+- 相邻重复段落丢弃（源页面常把列表内容在 `<p>` 里重复一遍）；
+- **失败跳过**：被拒站点（如百度百科 403）自动跳过、尝试下一条，最多 8 次，直到凑齐 `read_top` 篇；
+- 单篇预算 = 5000/read_top 字符；引擎侧截断预算（6000）保证正文完整抵达模型。
+
+### 22.3 多查询、缓存与 refresh
+
+- `query` 支持**数组**（≤3）——对比类问题一轮完成；结果跨查询合并。
+- 5 分钟内存缓存，键为 `query|max_results|read_top`；时效性追问可传 `refresh=true` 绕过。
+- 引擎诊断：全失败与部分失败的提示告诉模型重试是否有意义。
+
+### 22.4 失败经济学（为什么以前搜索会烧光轮次）
+
+- `DeviceToolRunner.healArgs` 执行前**自愈参数**：类型错误自动转换、拼错的参数名纠正（编辑距离 ≤2）、数组保留；结果会标注修正内容。
+- `parseToolArguments` 容忍双重编码字符串与带说明文字的 JSON（部分网关会双重编码）。
+- `ChatEngine.runWithCircuitBreaker` 在同一轮内连续失败 3 次后拒绝该工具并给出明确指引。
+- MAX 模式最多 50 个工具轮次；其余模式 12。
+
+---
+
+## 23. 长期记忆
+
+### 23.1 存储
+
+`memories` 表（v9）按 `type` 区分两类行：
+
+- `memory`——提炼出的事实（「用户的名字是……」），注入每一次请求；
+- `snapshot`——压缩上下文前保存的最近 6 轮，可用「导入最近对话」恢复。
+
+### 23.2 提炼
+
+- **自动**：每完成 10 轮（`ChatViewModel` 的 `autoDistillCount`）静默运行一次提炼。
+- **手动**：⋮ 菜单 → 提炼重要信息。
+- 提炼提示要求模型在给定已有记忆的前提下只输出**新增**要点；结果经过滤（长度 3–200、不含提示回显）后写入。
+
+### 23.3 注入
+
+`injectMemory()` 在每次生成的 history 前插入一条列出记忆的 system 消息——这就是助手能跨会话「记得你」而无需任何服务端状态的原因。
+
+### 23.4 与压缩的配合
+
+用量超过模型上下文窗口的 85% 时应用会提示，并在本轮结束后自动压缩：最近 6 轮先存快照，更早的历史被摘要消息替换，快照仍可导入恢复。
+
+---
+
+## 24. 扩展指南——如何添加功能
+
+### 24.1 添加设备工具（最常见的任务）
+
+1. 在 `skills/src/main/java/com/betteraichat/skills/tools/` 新建类：
+
+```kotlin
+class MyTool : DeviceTool {
+    override val name = "my_tool"                       // 蛇形命名，全局唯一
+    override val description = "一句话，供模型判断何时使用。写清参数格式。"
+    override val readOnly = false                       // true => Plan 模式可用
+    override val parameters = schemaOf(
+        "text" to stringProp("这个参数的含义"),
+        "count" to intProp("整数参数，默认 3"),
+        required = listOf("text")
+    )
+    override suspend fun execute(context: ToolContext, arguments: JsonObject): String {
+        val text = arguments["text"]?.jsonPrimitive?.content ?: return "text 参数无效"
+        // ... 干活 ...
+        return "供模型阅读的结果"
+    }
+}
+```
+
+2. 在 `BetterAIChatApp.kt` 的工具列表（`val tools: List<DeviceTool> = listOf(...)`）中注册。
+3. 就这些——注册表按模式暴露（Plan 只有 `readOnly`；Build/Max 全部），引擎负责闸门，参数自动自愈。
+4. 失败返回 `"ERROR:…"` 并给出可操作文本——模型会读；`DeviceToolRunner` 也会把 `工具参数/工具执行` 前缀的字符串视为失败以参与熔断。
+5. 若工具有非平凡逻辑，加单测（`skills/src/test/...`）；纯系统 API 包装不需要。
+
+### 24.2 添加服务商
+
+1. 在 `:providers` 实现 `ChatProvider`（`core/provider/ChatProvider.kt`）——必须发出 `StreamEvent`：`Delta`、`ThinkingDelta`、`ToolCallsDone`、`Usage`、`Done`、`Error`。
+2. 在 `ProviderId` 加入 id，在 `ProviderFactory` 注册，并在 `ModelCatalog` 补充 base URL 与精选模型。
+3. 若线上格式与 OpenAI 类似，复用 `OpenAiProvider` 的模式（SSE 解析、工具调用累积），不要从零写。
+
+### 24.3 添加技能动作类型
+
+`SkillActionExecutor.kt` 把动作字符串映射为 Android Intent。在 `when` 中加分支，并在第 12 章的表格中记录 YAML 形态。动作必须参数化（`{占位符}`）——绝不把不受信任的文本插进 shell 命令。
+
+### 24.4 UI 字符串与国际化纪律
+
+- 所有用户可见文案位于 `app/src/main/res/values/strings.xml`（中文，默认）与 `values-en/strings.xml`（英文）。**两个文件必须保持同步**——CI 暂未校验，评审时要留意。
+- composable 中用 `stringResource(R.string.x)`；ViewModel/服务中用 `appContext.getString(R.string.x)`。绝不硬编码用户可见文本。
+- **发给模型的内容**（系统提示、工具描述、提炼指令）有意保持中文——那不是 UI。
+
+### 24.5 数据库变更
+
+- 提升 `AppDatabase.kt` 的 `version`，新增显式 `MIGRATION_N_N+1`（绝不做破坏性迁移），在 `.addMigrations(...)` 注册，并更新第 14 章的 schema 清单。
+- 给既有表加列必须有默认值（`ALTER TABLE … ADD COLUMN … NOT NULL DEFAULT …`）或允许为空。
+
+### 24.6 新设置项
+
+简单偏好放 `SettingsRepository`（SharedPreferences）；列表型数据用 Room 表（如 agents/automations）。设置界面在 `SettingsScreen.kt`；沿用现有分区模式（每个分区是接收 `container/scope/snackbar` 的 composable）。
+
+---
+
+## 25. 排障与已知平台限制
+
+| 现象 | 原因 | 处理 |
+| --- | --- | --- |
+| 刚截过图就报「截屏授权已失效」 | v0.27.4 之前的行为；Android 14+ token 单次使用 | 已由持续投影重写修复（§11.2）。如今再出现说明系统收回了投影（其他应用投屏、用户停止投屏） |
+| 截图正常，应用被杀后失效 | MediaProjection 授权按平台设计绑定进程 | 重新授权；前台服务正常情况下会保住它 |
+| 工具报 "JsonLiteral is not a JsonObject" | 网关双重编码参数 | v0.26.4 已修（`parseToolArguments`）；出现新格式时扩展该函数并加测试 |
+| AI 在坏工具调用上循环 | 模型反复给出非法参数 | 熔断在连续 3 次失败后拒绝；检查该工具的 `description` 是否把参数写清楚 |
+| Markdown 显示为纯文本 | 模型输出了 CommonMark 不接受的形式（`###标题`、无外框表格） | `MarkdownNormalizer` 修复已知情况；新增修复要带测试 |
+| 搜索无结果 | 网络受限/引擎限流 | 工具会报告引擎诊断；在真机上用真实查询验证 |
+| 本地绿、CI 红 | SDK/JDK 差异或测试过期 | 本地跑与 CI 完全相同的命令；检查 workflow 文件 |
+| `assembleRelease` 产物未签名 | 签名是刻意的流程（keystore 不入库） | 见第 26 章 |
+
+**刻意的设计限制**（不理解前不要「修复」）：
+
+- CHAT 模式**完全不广播工具**——请求更小、不会误触发工具。
+- Plan 模式只暴露 `readOnly` 工具；闸门在服务端二次校验（永不信任模型）。
+- Shizuku 的 `run_shell` 按设计无限制；它由显式授权 + BUILD 确认/MAX 模式把守。
+- OCR 文件/文件读取工具被白名单限制在应用目录与公共下载/文档/图片目录。
+
+---
+
+## 26. 术语表与交接清单
+
+### 26.1 术语表
+
+| 术语 | 含义 |
+| --- | --- |
+| **Agent** | 保存的 AI 配置（服务商+Key+模型+参数+提示）；会话绑定其一 |
+| **Mode（模式）** | Chat / Plan / Build / Max——控制工具暴露与确认行为 |
+| **Gate（闸门）** | 任何工具执行前的服务端权限检查（`ChatEngine.gate`） |
+| **Skill（技能）** | markdown 定义的过程（SKILL.md），可经 `load_skill` 作为工具加载 |
+| **Distill（提炼）** | 把持久的用户事实提取进 `memories` 表 |
+| **Snapshot（快照）** | 压缩前保存的最近 6 轮备份 |
+| **Circuit breaker（熔断）** | 同一轮内连续 3 次失败后拒绝该工具 |
+| **Self-healing（自愈）** | `DeviceToolRunner.healArgs` 的执行前参数修复 |
+| **Pinned（贴底）** | 「最后一项完整可见」——恢复自动跟随的条件 |
+| **Flavor（风味）** | `full`（含 OCR）与 `lite` 构建变体 |
+
+### 26.2 交接清单（仓库之外的一切）
+
+- **签名密钥**：`betteraichat-release.keystore` + `keystore_pass.txt` 在 **git 之外**（已 gitignore）。发布手动签名：
+  `zipalign -f 4 … && apksigner sign --ks … --ks-pass pass:$(cat keystore_pass.txt)`。丢失 keystore 意味着用户无法原地升级——务必备份。
+- **local.properties** 含机器相关的 `sdk.dir`，已 gitignore。
+- **GitHub**：发布以 `vX.Y.Z` tag 创建；附带两个 APK（`full`、`lite`）并在说明中写入 SHA-256，中英双语。注意 `gh release create … --notes-file`——默认的 `--generate-notes` 只产出英文。
+- **版本约定**：每次发布 `versionCode` +1；`versionName` 近似 semver 的 `0.MINOR.PATCH`，MINOR = 功能，PATCH = 修复。
+- **CI**：保持 workflow 常绿；它是唯一的自动化门禁。
+- **发布顺序**：升版本 → `assembleFullRelease`/`assembleLiteRelease` → zipalign + 签名 → `git tag vX.Y.Z && git push --tags` → `gh release create` 附说明与两个 APK。
+- **已知第三方版本锁定**：markdown 渲染器锁定 0.41.0（更新版本要求 compileSdk 37）；表格渲染是自定义的（`MarkdownTable`），正是为了避开该升级。
