@@ -34,6 +34,7 @@ This document explains the internals of **BetterAIChat** in exhaustive detail: m
 24. [Extending the app — how to add things](#24-extending-the-app--how-to-add-things)
 25. [Troubleshooting & known platform limits](#25-troubleshooting--known-platform-limits)
 26. [Glossary & handover checklist](#26-glossary--handover-checklist)
+27. [Design philosophy & development approach](#27-design-philosophy--development-approach)
 
 > **Reading guide for new maintainers**: skim chapters 1–3, then jump to **20 (Getting started)** to get the app running, **24 (Extending)** for your first change, and **26 (Handover checklist)** for everything outside the repository. Chapters 4–19 are deep dives — read them when you touch the corresponding area.
 
@@ -1633,3 +1634,70 @@ class MyTool : DeviceTool {
 - **CI**: keep the workflow green; it is the only automated gate.
 - **Publish order**: bump version → `assembleFullRelease`/`assembleLiteRelease` → zipalign + sign → `git tag vX.Y.Z && git push --tags` → `gh release create` with notes + both APKs.
 - **Known third-party pin**: the markdown renderer is pinned to 0.41.0 (newer versions require compileSdk 37); table rendering is custom (`MarkdownTable`) precisely to avoid that upgrade.
+
+---
+
+## 27. Design philosophy & development approach
+
+Chapters 1–26 describe *what* the code does. This chapter describes *why it is shaped this way* — the principles, the decisions with their trade-offs, and the working method that produced the codebase. If you are about to make a significant change, read this first; most "obvious improvements" were already considered and rejected for a reason.
+
+### 27.1 Design principles
+
+These are the rules the codebase actually follows. They are worth preserving in new code.
+
+1. **Local-first, no cloud.** The app talks directly to the model provider the user configured. There is no backend, no telemetry, no account. API keys are encrypted with the Android Keystore and never leave the device except to the provider itself. This is a product decision, and it constrains architecture: everything (memory, snapshots, agents, automations) must live in local Room/SharedPreferences.
+
+2. **The model is never trusted.** Model output is a *proposal*. Authority sits server-side (in the app): the mode gate decides which tools are even visible, `gate()` re-checks every call, read-only tools are enforced by the registry, and permissions are checked again at execution time. This is defence in depth — the system prompt also tells the model the rules, but nothing depends on it complying.
+
+3. **Every tool result is text with a budget.** Tool results are what the model "sees", so they are written for a reader with finite attention: bounded length (truncation budgets), noise filtered (author bars, boilerplate), deduplicated, and ranked by relevance. Token economics is a first-class design concern — see `read_top` budgets and the 6000-char engine cap.
+
+4. **Failures must be actionable — for the model.** Error strings are not just for humans. `"ERROR:缺少通讯录权限，请到 设置 → 权限 → 通讯录 中授权"` tells the model what to do next. A failure without a next step causes retry loops; a failure with one ends them.
+
+5. **Deny by default.** CHAT mode advertises no tools at all. Unknown tools are denied. Plan mode only exposes `readOnly` tools. Permissions that are missing produce a clear message instead of a silent no-op. When in doubt, the codebase chooses the safer default and makes the user opt in.
+
+6. **React, don't poll.** The streaming follow-scroll listens to layout changes and reacts; the file/screen watchers use flows; the SSE parser is push-driven. The one poll that survived (the streaming ticker) exists because deltas arrive faster than recomposition should run — and it is throttled. Every other "check every N ms" was removed as a bug source.
+
+7. **Small, testable seams.** Logic lives outside composables and Android framework classes wherever possible: `ChatEngine` takes a `ToolRunner` interface, OCR is an `OcrProvider` interface (the full/lite flavor seam), providers implement `ChatProvider`. This is what makes 60+ unit tests possible without an emulator — and what lets `lite` swap out ML Kit with a one-line flavor difference.
+
+8. **One source of truth per concern.** Agents own model configuration; `SettingsRepository` owns device-level preferences; the conversations table owns chat state; `resolveConfig()` is the single resolution chain. When two places could answer the same question, the codebase picks one owner and routes everything through it.
+
+### 27.2 Key decisions and their trade-offs
+
+| Decision | Why | What it costs |
+| --- | --- | --- |
+| **Hand-rolled `AppContainer` instead of Hilt** | No annotation processor (fast builds), full control of init order (see the legacy-agent migration ordering bug), tiny surface | Manual wiring; new dependencies must be threaded by hand |
+| **Tools are built-in, not MCP** | Permission bridging is deeply Android-specific (accessibility, Shizuku, MediaProjection); in-process execution has no IPC latency and shares the app's permission state | Cannot reuse third-party MCP servers (yet) — a `ToolRegistry` adapter could add this without touching the engine |
+| **Hand-written SSE parser** | Full control over partial events, retries, double-encoded payloads and vendor quirks; no heavyweight dependency; trivially unit-testable | Must maintain it against provider changes — hence the parser tests |
+| **`Flow<EngineEvent>` for the agent loop** | Cancellation is structured (stop button = `job.cancel()`), the loop is testable without UI, and the ViewModel can filter/transform events freely | Slightly more ceremony than callbacks; discipline required around thread-safety (see `runToken` guards) |
+| **Room with explicit migrations, never destructive** | Chat history is the user's data; silent loss is unacceptable for a chat app | Every schema change needs a hand-written migration and a chapter-14 update |
+| **Custom table rendering + pinned markdown lib** | The upstream markdown library's newer versions require compileSdk 37; tables are the most common broken construct in model output, so a custom renderer was worth it | We own table rendering edge cases (outer-pipe-less tables, escapes) and their tests |
+| **Argument self-healing *and* a circuit breaker** | Real models produce malformed arguments constantly (wrong types, misspelled keys, double-encoded JSON). Healing turns most failures into successes; the breaker stops the rest from burning rounds | Two layers to maintain; healing must never *hide* a real problem — fixes are always annotated in the result |
+| **Layout-driven scrolling (third iteration)** | Poll-and-scroll fought async markdown layout; reacting to layout changes is the only approach that is both correct and jitter-free | Requires understanding `snapshotFlow(layoutInfo)` and `DragInteraction` semantics — documented in ch. 15.3 so nobody "simplifies" it back into a loop |
+| **Manual release signing** | The keystore must never be in the repo or CI secrets for a hobby-scale project | Releases are manual; the checklist in ch. 26 exists because of this |
+
+### 27.3 How features get built here
+
+The workflow that produced every feature in this app, in order:
+
+1. **Define the observable behavior** — what the user sees, what the model sees, what failure looks like. Not the implementation.
+2. **Build the mock scenario first.** The local SSE server (ch. 20.6) is scripted by *model name* — `newtools`, `mtr`, `shot`… Each scenario encodes one behavior: a tool call sequence, a markdown edge case, a double-encoded argument. This makes the pipeline reproducible in seconds, without API quota.
+3. **Implement against the mock**, verifying the full path: request construction → streaming → tool execution → persistence → UI.
+4. **Verify on a real device/emulator** — mock success is necessary but not sufficient (platform behavior differs: MediaProjection, accessibility, storage scopes).
+5. **Write unit tests for the logic that broke or could break** — parser edge cases, normalizers, calculators, argument healing. Not for coverage's sake; each test in this repo traces to a real failure or a real edge case.
+6. **Run an audit pass periodically.** This codebase was hardened by three parallel audits (chat core / tools / storage+UI) that produced 45+ fixes. Audits work best as independent passes with fresh eyes, followed by batch fixes.
+7. **Keep CI green, commit in small steps.** CI (tests + both flavors) is the only automated gate; history is linear and bisectable.
+
+### 27.4 Anti-patterns this codebase avoids (and why)
+
+- **IO or bitmap decoding in composables** — caused main-thread jank and ANR risk; all decoding is `withContext(Dispatchers.Default)` now.
+- **`eval()`-style math** — the calculator is a hand-written recursive-descent parser; arbitrary code execution is never an option, even for "just math".
+- **Hardcoded user-visible strings** — i18n discipline (both string files); the one place Chinese-only text remains is model-facing content, deliberately.
+- **`currentTimeMillis()` as an identifier** — two reminders created in the same millisecond overwrote each other; `RequestCodes` uses an atomic generator now.
+- **`fallbackToDestructiveMigration()`** — never. Data loss is not a migration strategy.
+- **Trusting `isScrollInProgress` for user intent** — programmatic scrolls set it too; the follow logic was silently disabled by its own scrolling until `DragInteraction` was used instead.
+- **`runCatching` around cancellation** — swallowing `CancellationException` leaks resources (speech recognizers) and breaks structured concurrency; resource-holding tools rethrow it explicitly.
+- **Unbounded tool loops** — a model stuck on a broken call used to exhaust the round budget; now: self-heal → annotated retry → circuit breaker → actionable denial.
+
+### 27.5 If you take over: the spirit of the project
+
+BetterAIChat exists to prove that a single developer can ship a *real* agent — not a chat wrapper — on a phone: local-first, privacy-respecting, with genuine device capabilities. The engineering bias throughout is **make the model's job easy** (clear tools, clean results, actionable errors) and **keep the human in control** (modes, confirmations, explicit permissions). When choosing between a clever implementation and a debuggable one, this codebase picks debuggable every time — that is why the mock server, the audit passes, and this document exist.
