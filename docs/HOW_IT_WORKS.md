@@ -1154,6 +1154,7 @@ AppNav
 - **Tool cards**: compact by default - a single row with the tool name, a colored `StatusBadge` and a Details button; expanding reveals monospace args and the result (8-line ellipsis with expand-all).
 - **Code blocks**: extracted from markdown and rendered separately with a dark background and a copy button — this avoids the markdown renderer choking on long/fenced code and gives a native-feeling experience.
 - **Thinking**: `ThinkingCard` collapses long reasoning text with an expand/collapse row.
+- **Markdown normalization** (`core/chat/MarkdownNormalizer.kt`): models emit markdown that CommonMark refuses to parse. Before rendering we repair it: full-width pipes `｜` -> `|`, tables without outer pipes are still parsed by our table component, missing spaces after `#`/`-`/`1.`/`>` are inserted, full-width stars are converted, and CJK-intraword emphasis (`中文**加粗**中文`, which CommonMark rejects) is padded with hair spaces so it renders. Each repair has unit tests.
 
 ### 15.3 Layout-driven bottom-follow scrolling
 
