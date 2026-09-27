@@ -2,6 +2,7 @@ package com.betteraichat.core.chat
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -136,5 +137,64 @@ class IntrawordBoldTest {
         val md = "| a |\n|---|\n| dir\\ |"
         val data = com.betteraichat.core.chat.MarkdownNormalizer.parseTable(md)
         assertEquals("dir\\", data!!.rows[0][0])
+    }
+}
+
+class NormalizeV4Test {
+    @Test
+    fun `heading without space fixed`() {
+        val out = com.betteraichat.core.chat.MarkdownNormalizer.normalize("###标题\n正文")
+        assertTrue(out.startsWith("### 标题"))
+    }
+
+    @Test
+    fun `dash list without space fixed`() {
+        val out = com.betteraichat.core.chat.MarkdownNormalizer.normalize("-项目一\n-项目二")
+        assertTrue(out.contains("- 项目一"))
+        assertTrue(out.contains("- 项目二"))
+    }
+
+    @Test
+    fun `ordered list without space fixed`() {
+        val out = com.betteraichat.core.chat.MarkdownNormalizer.normalize("1.第一项\n2.第二项")
+        assertTrue(out.contains("1. 第一项"))
+    }
+
+    @Test
+    fun `version numbers untouched`() {
+        val out = com.betteraichat.core.chat.MarkdownNormalizer.normalize("升级到 1.5 版本")
+        assertEquals("升级到 1.5 版本", out)
+    }
+
+    @Test
+    fun `quote without space fixed`() {
+        val out = com.betteraichat.core.chat.MarkdownNormalizer.normalize(">引用内容")
+        assertTrue(out.startsWith("> 引用内容"))
+    }
+
+    @Test
+    fun `fullwidth stars converted`() {
+        val out = com.betteraichat.core.chat.MarkdownNormalizer.normalize("＊＊加粗＊＊")
+        assertTrue(out.contains("**加粗**"))
+    }
+
+    @Test
+    fun `table without outer pipes parses`() {
+        val md = "项目 | 价格 | 备注\n--- | :---: | ---:\n苹果 | 5 | 甜\n香蕉 | 3 | 糯"
+        val data = com.betteraichat.core.chat.MarkdownNormalizer.parseTable(md)
+        assertNotNull(data)
+        assertEquals(3, data!!.headers.size)
+        assertEquals("项目", data.headers[0])
+        assertEquals(2, data.rows.size)
+        assertEquals(com.betteraichat.core.chat.MarkdownNormalizer.TableAlign.CENTER, data.alignments[1])
+        assertEquals(com.betteraichat.core.chat.MarkdownNormalizer.TableAlign.END, data.alignments[2])
+    }
+
+    @Test
+    fun `table with outer pipes still parses`() {
+        val md = "| a | b |\n|---|---|\n| 1 | 2 |"
+        val data = com.betteraichat.core.chat.MarkdownNormalizer.parseTable(md)
+        assertNotNull(data)
+        assertEquals(2, data!!.headers.size)
     }
 }

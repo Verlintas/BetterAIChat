@@ -78,7 +78,7 @@ class ChatEngine(
             } else m
         }
         var toolRounds = 0
-        val maxRounds = 12
+        val maxRounds = if (mode == AppMode.MAX) 50 else 12
         val toolFailures = java.util.concurrent.ConcurrentHashMap<String, Int>()
         while (true) {
             if (toolRounds >= maxRounds) {

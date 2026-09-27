@@ -228,12 +228,19 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
     } else ""
 
     var wasAtBottom by remember { mutableStateOf(true) }
+    var forceFollow by remember { mutableStateOf(false) }
+    LaunchedEffect(listState) {
+        listState.interactionSource.interactions.collect { interaction ->
+            if (interaction is androidx.compose.foundation.interaction.DragInteraction.Start) {
+                wasAtBottom = false
+                forceFollow = false
+            }
+        }
+    }
     LaunchedEffect(listState) {
         snapshotFlow { listState.isScrollInProgress }
             .collect { scrolling ->
-                if (scrolling) {
-                    wasAtBottom = false
-                } else {
+                if (!scrolling) {
                     val info = listState.layoutInfo
                     val last = info.visibleItemsInfo.lastOrNull { it.index == info.totalItemsCount - 1 }
                     val pinned = last != null && last.offset >= 0 &&
@@ -244,31 +251,27 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
     }
 
     var initialScrollDone by remember { mutableStateOf(false) }
-    var forceFollow by remember { mutableStateOf(false) }
     val streaming = state.messages.lastOrNull()?.streaming == true
 
-    LaunchedEffect(streaming, forceFollow, wasAtBottom, initialScrollDone, state.messages.size) {
+    LaunchedEffect(initialScrollDone, forceFollow, wasAtBottom, state.messages.size) {
         if (state.messages.isEmpty()) return@LaunchedEffect
         if (initialScrollDone && !forceFollow && !wasAtBottom) return@LaunchedEffect
-        var attempts = 0
-        while (attempts++ < 2400) {
-            if (listState.isScrollInProgress) {
-                forceFollow = false
-                break
-            }
-            val info = listState.layoutInfo
-            val total = info.totalItemsCount
-            if (total > 0) {
-                runCatching { listState.scrollToItem(total - 1, Int.MAX_VALUE) }
-                val lastItem = info.visibleItemsInfo.lastOrNull { it.index == total - 1 }
-                val bottom = lastItem?.let { it.offset + it.size } ?: -1
-                val viewportBottom = info.viewportEndOffset
-                val pinned = lastItem != null && bottom >= viewportBottom - 20
-                if (pinned && !streaming && !forceFollow) break
-            }
-            delay(80)
-        }
+        runCatching { listState.scrollToItem(state.messages.size - 1, Int.MAX_VALUE) }
         initialScrollDone = true
+    }
+
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.layoutInfo }
+            .collect { info ->
+                val total = info.totalItemsCount
+                if (total == 0) return@collect
+                if (!forceFollow && !wasAtBottom) return@collect
+                if (listState.isScrollInProgress) return@collect
+                val last = info.visibleItemsInfo.lastOrNull { it.index == total - 1 }
+                if (last == null || last.offset + last.size > info.viewportEndOffset + 2) {
+                    runCatching { listState.scrollToItem(total - 1, Int.MAX_VALUE) }
+                }
+            }
     }
 
     LaunchedEffect(state.sendTick) {
@@ -285,13 +288,6 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
             delay(400)
             forceFollow = false
         }
-    }
-
-    LaunchedEffect(listState) {
-        snapshotFlow { listState.isScrollInProgress }
-            .collect { scrolling ->
-                if (scrolling) forceFollow = false
-            }
     }
 
     LaunchedEffect(state.notification) {

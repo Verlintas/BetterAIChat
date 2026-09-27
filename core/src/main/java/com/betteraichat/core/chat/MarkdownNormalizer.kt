@@ -8,13 +8,25 @@ object MarkdownNormalizer {
     private val INTRAWORD_ITALIC = Regex("""(?<=[\p{L}\p{N}])(?<!\*)\*([^*\n]+?)\*(?!\*)(?=[\p{L}\p{N}])""")
     private const val HAIR_SPACE = "\u200A"
 
+    private val HEADING_NO_SPACE = Regex("^(#{1,6})([^\\s#])", RegexOption.MULTILINE)
+    private val DASH_LIST_NO_SPACE = Regex("^([-+])([^\\s\\-+])", RegexOption.MULTILINE)
+    private val ORDERED_LIST_NO_SPACE = Regex("^(\\d{1,3}\\.)([^\\s\\d])", RegexOption.MULTILINE)
+    private val QUOTE_NO_SPACE = Regex("^>(?![\\s>])", RegexOption.MULTILINE)
+
     fun normalize(content: String): String {
         val tableFixed = content.lines().map { line ->
             if (line.contains('｜') && line.count { it == '｜' } >= 2) {
                 line.replace('｜', '|')
             } else line
         }.joinToString("\n")
-        val converted = tableFixed
+        val starsFixed = tableFixed
+            .replace('＊', '*')
+        val spacingFixed = starsFixed
+            .replace(HEADING_NO_SPACE, "$1 $2")
+            .replace(DASH_LIST_NO_SPACE, "$1 $2")
+            .replace(ORDERED_LIST_NO_SPACE, "$1 $2")
+            .replace(QUOTE_NO_SPACE, "> ")
+        val converted = spacingFixed
             .replace(TRIPLE_STAR, "**$1**")
             .replace(UNDERSCORE_BOLD, "**$1**")
         return fixIntrawordEmphasis(converted)
@@ -46,25 +58,29 @@ object MarkdownNormalizer {
     private val TABLE_SEPARATOR_REGEX = Regex("^\\s*:?-{2,}:?\\s*(\\|\\s*:?-{2,}:?\\s*)*$")
 
     fun parseTable(md: String): TableData? {
-        val rawRows = mutableListOf<List<String>>()
-        var separator: List<String>? = null
-        md.lines().forEach { line ->
-            val trimmed = line.trim()
-            if (!trimmed.startsWith("|")) return@forEach
-            val cells = splitRow(trimmed)
-            if (cells.isEmpty()) return@forEach
-            if (cells.all { TABLE_SEPARATOR_REGEX.matches(it) }) {
-                separator = cells
-                return@forEach
+        val lines = md.lines().map { it.trim() }.filter { it.isNotEmpty() }
+        if (lines.size < 2) return null
+        var sepIdx = -1
+        for (i in 1 until lines.size) {
+            if (!lines[i].contains('|')) continue
+            val cells = splitRow(lines[i])
+            if (cells.isNotEmpty() && cells.all { TABLE_SEPARATOR_REGEX.matches(it) }) {
+                sepIdx = i
+                break
             }
-            rawRows.add(cells)
         }
-        if (rawRows.isEmpty()) return null
-        val columnCount = rawRows.maxOf { it.size }
-        val headers = rawRows.first().padded(columnCount)
-        val rows = rawRows.drop(1).map { it.padded(columnCount) }
+        if (sepIdx <= 0) return null
+        val separator = splitRow(lines[sepIdx])
+        val headers = splitRow(lines[sepIdx - 1])
+        if (headers.isEmpty()) return null
+        val rows = lines.drop(sepIdx + 1)
+            .takeWhile { it.contains('|') }
+            .map { splitRow(it) }
+        val columnCount = (headers.size).coerceAtLeast(separator.size)
+        val alignedHeaders = headers.padded(columnCount)
+        val alignedRows = rows.map { it.padded(columnCount) }
         val alignments = (0 until columnCount).map { i ->
-            val sep = separator?.getOrNull(i) ?: ""
+            val sep = separator.getOrNull(i) ?: ""
             val left = sep.startsWith(":")
             val right = sep.endsWith(":")
             when {
@@ -73,7 +89,7 @@ object MarkdownNormalizer {
                 else -> TableAlign.START
             }
         }
-        return TableData(headers, rows, alignments)
+        return TableData(alignedHeaders, alignedRows, alignments)
     }
 
     private fun splitRow(line: String): List<String> {
