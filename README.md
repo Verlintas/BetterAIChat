@@ -120,9 +120,9 @@ The AI can create automations that run tool sequences automatically:
 
 ### Full UI automation — the AI can *drive* your phone
 With two toggles in Settings (Accessibility + Usage access), the AI gains a complete automation loop:
-1. `screen_ocr` reads the text on screen
-2. `ua_tap` / `ua_swipe` / `ua_type` / `ua_press` perform the actions (tap, scroll, type, Home/Back/Recents)
-3. `take_screenshot` / `screen_ocr` verify the result
+1. `ua_find_text` / `screen_ocr` inspect the UI (text elements with coordinates)
+2. `ua_tap_text` taps elements by their text (or `ua_tap` by coordinates); `ua_swipe` / `ua_type` / `ua_press` do the rest
+3. `screen_ocr` / `take_screenshot` verify the result
 
 Works on any app — no root, no Shizuku needed for this path.
 
@@ -147,7 +147,9 @@ web_search merges **Bing / Baidu / Brave / DuckDuckGo / Mojeek** with URL dedup 
 - Voice input button, read-aloud for any message, auto read-aloud toggle
 
 ### Organization
-- Multi-conversation management: pin, archive, search (title + full-text content), rename, swipe-to-delete, clear context
+- Multi-conversation management: pin, archive, search, last-message previews, rename, swipe-to-delete, clear context
+- In-chat search: jump between matches with a live counter
+- Image viewer with pinch-zoom and double-tap zoom
 - Starred messages with a dedicated favorites page
 - Export conversations as Markdown (share sheet)
 - Long-press message actions: copy / speak / edit & resend / star / delete
@@ -185,7 +187,7 @@ Download the APK from [Releases](https://github.com/Verlintas/BetterAIChat/relea
 | Microphone | Voice input & voice assistant mode |
 | Camera | Flashlight control |
 | Modify system settings | Brightness / screen timeout |
-| Screen capture | Screen analysis (Android 15: choose "Entire screen" during consent) |
+| Screen capture | Screen analysis (Android 15: choose "Entire screen"). The grant persists for the app session - one authorization covers all later captures |
 | Shizuku (optional) | Root-level shell execution |
 
 All permissions are granted manually; tools return clear errors when unauthorized.

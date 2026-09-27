@@ -397,7 +397,7 @@ Subtleties:
   │  tap 允许 ──────────────▶│  respondConfirm(true) ─────────────────┼──── deferred.complete(true)
   │                          │                                        │        ToolRunner.run()  ──▶ DeviceTool.execute()
   │                          │                                        │        insertMessage(TOOL result)
-  │                          │                                        │        loop again (max 8 rounds)
+  │                          │                                        │        loop again (MAX: 50 rounds, others: 12)
   │                          │                                        └── Completed
   │ ◀── final UI ────────────│◀── refresh()
 ```
@@ -596,9 +596,9 @@ fun run(messages, config, mode): Flow<EngineEvent> = flow {
     val provider = providerFactory(config.provider)     // guarded in try
     var history = messages
     var toolRounds = 0
-    val maxRounds = 8
+    val maxRounds = if (mode == AppMode.MAX) 50 else 12
     while (true) {
-        if (toolRounds >= maxRounds) { emit(Failed("工具调用轮次超过 8 次")); return@flow }
+        if (toolRounds >= maxRounds) { emit(Failed("工具调用轮次已达上限")); return@flow }
         var text = StringBuilder(); var thinking = StringBuilder()
         var toolCalls = emptyList<ToolCall>()
         try {
@@ -855,7 +855,7 @@ class Parser(private val input: String) {
 | Capability | Bridge | User grant | Example tools |
 |---|---|---|---|
 | Screenshot & screen analysis | `MediaProjection` + foreground service | one-time auth (Android 15: pick BetterAIChat as the app to capture) | `take_screenshot`, `screen_ocr` |
-| UI automation | `AccessibilityService` | enable in system settings | `ua_type`, `ua_tap`, `ua_swipe`, `ua_press` |
+| UI automation | `AccessibilityService` | enable in system settings | `ua_type`, `ua_tap`, `ua_swipe`, `ua_press`, `ua_tap_text`, `ua_find_text` |
 | Root-level shell | Shizuku | install Shizuku + grant | `run_shell`, `manage_app`, `set_wifi`, `set_power_saver` |
 | Read notifications | `NotificationListenerService` | notification access | `read_notifications` |
 | Foreground app | `UsageStatsManager` | usage access (appops) | `get_foreground_app` |
@@ -872,23 +872,36 @@ The Settings screen shows live status for each grant and deep-links to the syste
 
 ### 11.2 MediaProjection lifecycle (the tricky one)
 
+**Android 14+ changed the rules**: a MediaProjection token can be consumed exactly once (`getMediaProjection`), and its `createVirtualDisplay` can be called only once per token. The naive "create projection -> capture -> tear down" flow therefore works exactly once; the second capture fails with "authorization expired" - an app that analyzes the screen and then takes another screenshot goes blind.
+
+The service therefore creates the `VirtualDisplay` + `ImageReader` **once, when authorization arrives**, and keeps them alive for the whole session:
+
 ```kotlin
-// ScreenshotManager
-override suspend fun capture(): String {
-    val data = resultData ?: return "ERROR:尚未授权截屏…"
-    if (ScreenshotProjectionService.isBroken()) { clearProjection(); return "ERROR:授权已失效，请重新授权" }
-    val deferred = ScreenshotBridge.registerCapture()
-    context.startForegroundService(intent)          // service holds the projection
-    return withTimeoutOrNull(60_000) { deferred.await() } ?: "ERROR:截屏超时"
+// On first authorized request: create the persistent pipeline (single token use)
+private fun ensurePersistentDisplay() {
+    if (reader != null) return
+    val (w, h, d) = screenMetrics()
+    val r = ImageReader.newInstance(w, h, PixelFormat.RGBA_8888, 2)
+    vDisplay = projection!!.createVirtualDisplay("BetterAIChatShot", w, h, d,
+        DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, r.surface, null, null)
+    reader = r
+}
+
+// Every capture just reads the latest frame from the persistent reader
+private suspend fun captureFromPersistent(): String {
+    maybeResize()                       // rotation/resolution changes: vd.resize + swap reader
+    val image = reader!!.acquireLatestImage() ?: waitAndRetry()
+    // planes -> bitmap (rowStride padding handled) -> cacheDir/screenshots/*.png
 }
 ```
 
 Key mechanics:
 
-- The **foreground service** (`foregroundServiceType="mediaProjection"`) owns the `MediaProjection` so the process isn't killed while capturing.
-- `ImageReader` + `VirtualDisplay` capture a frame; the bitmap is written to `cacheDir/screenshots/`.
-- A `registerCallback(onStop)` marks the projection broken when the system reclaims it (e.g. after a screen rotation or Android's one-session consent expiry) so the next capture fails fast with a clear message instead of hanging.
-- `ScreenshotBridge` is a **synchronized** registry of `CompletableDeferred<String>` so concurrent captures can't cross-wire results.
+- The **foreground service** (`foregroundServiceType="mediaProjection"`) owns the pipeline so the process (and the grant) survive backgrounding and screen-off.
+- `acquireLatestImage()` always returns the newest frame; when the screen is static the projection keeps producing frames, so no "trigger a repaint first" dance is needed.
+- `registerCallback(onStop)` marks the projection broken when the system reclaims it (user stops casting, another app requests projection) so the next capture fails fast with a clear message.
+- `ScreenshotBridge` is a **synchronized** registry of request-id -> `CompletableDeferred<String>` so concurrent captures can't cross-wire results.
+- If the OS fully kills the app process, Android requires re-authorization - true for every screen-sharing app; the foreground service normally keeps it alive.
 
 ### 11.3 Accessibility gestures (threads matter)
 
@@ -1125,7 +1138,7 @@ AppNav
       │           └── AiBlock
       │                 ├── meta row (model · mode · time)
       │                 ├── markdown bubble (+ blinking cursor while streaming)
-      │                 ├── ToolCallCard per call (step badge, args, status, result)
+      │                 ├── ToolCallCard per call (compact row + Details expander)
       │                 ├── "执行步骤：已完成 n / m" progress while streaming tools
       │                 ├── HighlightedCodeCard per extracted code block
       │                 ├── link cards
@@ -1138,59 +1151,60 @@ AppNav
 ### 15.2 Message rendering details
 
 - **User vs AI alignment**: user bubble right-aligned (`Arrangement.End`), AI block left with an avatar row.
-- **Tool cards**: a `Surface` with a step badge ("第 N 步"), the tool name, monospace args (2-line ellipsis), a colored `StatusBadge`, and the result (6-line ellipsis).
+- **Tool cards**: compact by default - a single row with the tool name, a colored `StatusBadge` and a Details button; expanding reveals monospace args and the result (8-line ellipsis with expand-all).
 - **Code blocks**: extracted from markdown and rendered separately with a dark background and a copy button — this avoids the markdown renderer choking on long/fenced code and gives a native-feeling experience.
 - **Thinking**: `ThinkingCard` collapses long reasoning text with an expand/collapse row.
 
-### 15.3 Terminal-style bottom-follow scrolling
+### 15.3 Layout-driven bottom-follow scrolling
 
-The naive implementation — `animateScrollToItem` on every delta — jitters because the streaming item's height changes on every frame. The working solution (v0.25 rewrite) is **touch-aware**: any user gesture pauses the follow instantly, and following only resumes when the list is *fully* pinned to the bottom:
+Two earlier approaches failed: `animateScrollToItem` on every delta jittered (the streaming item's height changes on every frame), and a "force-scroll every 80 ms" loop fought Markdown's asynchronous layout, producing visible jitter. The current implementation (v0.27.3) is **layout-driven**: after each layout pass, if the last item's bottom exceeds the viewport and following is active, scroll exactly once. No loop, no delay, no competition with the layout system.
 
 ```kotlin
-// "truly at bottom": the last item is FULLY visible (offset >= 0 and its
-// bottom inside the viewport) — a partially visible long message does NOT count
+// wasAtBottom flips false ONLY on real user drags. Using isScrollInProgress
+// here was a trap: programmatic scrolls also set it, which silently
+// disabled the follow.
 var wasAtBottom by remember { mutableStateOf(true) }
+var forceFollow by remember { mutableStateOf(false) }
+LaunchedEffect(listState) {
+    listState.interactionSource.interactions.collect { interaction ->
+        if (interaction is DragInteraction.Start) {
+            wasAtBottom = false
+            forceFollow = false
+        }
+    }
+}
 LaunchedEffect(listState) {
     snapshotFlow { listState.isScrollInProgress }
         .collect { scrolling ->
-            if (scrolling) {
-                wasAtBottom = false            // touch = pause following
-            } else {
+            if (!scrolling) {
                 val info = listState.layoutInfo
                 val last = info.visibleItemsInfo.lastOrNull { it.index == info.totalItemsCount - 1 }
                 val pinned = last != null && last.offset >= 0 &&
                     last.offset + last.size <= info.viewportEndOffset + 1
-                if (pinned) wasAtBottom = true // user scrolled back to the bottom
+                if (pinned) wasAtBottom = true
             }
         }
 }
 
-// Pin loop: while streaming (or forceFollow) keep re-scrolling until the layout
-// confirms the last item is pinned; a touch (isScrollInProgress) breaks it instantly
-LaunchedEffect(streaming, forceFollow, wasAtBottom, initialScrollDone) {
-    if (state.messages.isEmpty()) return@LaunchedEffect
-    if (initialScrollDone && !forceFollow && !wasAtBottom) return@LaunchedEffect
-    var attempts = 0
-    while (attempts++ < 2400) {
-        if (listState.isScrollInProgress) { forceFollow = false; break }
-        val info = listState.layoutInfo
-        val total = info.totalItemsCount
-        if (total > 0) {
-            runCatching { listState.scrollToItem(total - 1, Int.MAX_VALUE) }
-            val lastItem = info.visibleItemsInfo.lastOrNull { it.index == total - 1 }
-            val bottom = lastItem?.let { it.offset + it.size } ?: -1
-            val pinned = lastItem != null && bottom >= info.viewportEndOffset - 20
-            if (pinned && !streaming && !forceFollow) break
+// The follower: fires after every layout; scrolls once only when the last
+// item actually overflows the viewport (content grew), then stays quiet
+// until the next growth.
+LaunchedEffect(listState) {
+    snapshotFlow { listState.layoutInfo }
+        .collect { info ->
+            val total = info.totalItemsCount
+            if (total == 0) return@collect
+            if (!forceFollow && !wasAtBottom) return@collect
+            if (listState.isScrollInProgress) return@collect
+            val last = info.visibleItemsInfo.lastOrNull { it.index == total - 1 }
+            if (last == null || last.offset + last.size > info.viewportEndOffset + 2) {
+                runCatching { listState.scrollToItem(total - 1, Int.MAX_VALUE) }
+            }
         }
-        delay(80)
-    }
-    initialScrollDone = true
 }
 ```
 
-The insight: `scrollToItem(index, Int.MAX_VALUE)` is only reliable **after the item's real height is measured**. Markdown renders asynchronously, so you re-scroll every 80 ms until the layout *confirms* the last item's bottom is at the viewport bottom. Polling until a layout invariant holds — rather than assuming one scroll suffices — is the pattern to copy.
-
-`forceFollow` is set on send and while streaming, and cleared 400 ms after streaming ends; `wasAtBottom` (updated from real touch events, with a fully-visible-last-item check) handles the user-scrolled-up case — small scrolls on a tall streaming message no longer yank the list back down.
+The insight: **don't poll, react**. `snapshotFlow { layoutInfo }` fires exactly when layout changed (i.e. when the streaming text grew). Checking "does the last item overflow?" turns each growth into at most one scroll. Programmatic scrolls don't re-trigger the follow path, and user drags are detected via `DragInteraction` rather than the ambiguous `isScrollInProgress`.
 
 ### 15.4 Streaming cursor
 
@@ -1290,7 +1304,7 @@ If you want to genuinely learn from this codebase:
 6. **Android system integration** — `AlarmManager.setExactAndAllowWhileIdle`, sticky battery broadcasts, `MediaProjection` + foreground service lifecycle, `AccessibilityService` gesture dispatch (main thread + timeout), `NotificationListenerService`, Shizuku binder IPC.
 7. **Agent design** — mode-based gate (Chat/Plan/Build/Max), prompt+enforcement defense in depth, the confirm loop via `SharedFlow` + `CompletableDeferred`, and the tool-transcript invariant (§7.4).
 8. **Safety** — permission matrix with live status UI, input validation at boundaries, sandboxed evaluator, output truncation, concurrency mutexes.
-9. **UX engineering** — terminal-style pinned scrolling (poll-until-layout-invariant), blinking cursor, tool cards, code-block extraction, mode-aware welcome panel.
+9. **UX engineering** — layout-driven pinned scrolling (react to layout, don't poll), blinking cursor, compact tool cards with detail expansion, in-chat search, code-block extraction, mode-aware welcome panel.
 
 Each of these topics maps to a concrete, working file in the repo — start at `ChatViewModel.send()` and trace through `ChatEngine.run()` to `OpenAiProvider.chatStream()`, then branch out into the tools and system services.
 

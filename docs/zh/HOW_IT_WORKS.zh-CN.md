@@ -365,7 +365,7 @@ val body = OpenAiRequest(
   │  tap 允许 ──────────────▶│  respondConfirm(true) ─────────────────┼──── deferred.complete(true)
   │                          │                                        │        ToolRunner.run()  ──▶ DeviceTool.execute()
   │                          │                                        │        insertMessage(TOOL 结果)
-  │                          │                                        │        再次循环（最多 8 轮）
+  │                          │                                        │        再次循环（MAX 最多 50 轮，其余模式 12 轮）
   │                          │                                        └── Completed
   │ ◀── 最终 UI ─────────────│◀── refresh()
 ```
@@ -565,9 +565,9 @@ fun run(messages, config, mode): Flow<EngineEvent> = flow {
     val provider = providerFactory(config.provider)     // 在 try 中保护
     var history = messages
     var toolRounds = 0
-    val maxRounds = 8
+    val maxRounds = if (mode == AppMode.MAX) 50 else 12
     while (true) {
-        if (toolRounds >= maxRounds) { emit(Failed("工具调用轮次超过 8 次")); return@flow }
+        if (toolRounds >= maxRounds) { emit(Failed("工具调用轮次已达上限")); return@flow }
         var text = StringBuilder(); var thinking = StringBuilder()
         var toolCalls = emptyList<ToolCall>()
         try {
@@ -824,7 +824,7 @@ class Parser(private val input: String) {
 | 能力 | 桥接方式 | 用户授权 | 示例工具 |
 |---|---|---|---|
 | 截屏与屏幕分析 | `MediaProjection` + 前台服务 | 一次性授权（Android 15：选择 BetterAIChat 作为要捕获的应用） | `take_screenshot`, `screen_ocr` |
-| UI 自动化 | `AccessibilityService` | 在系统设置中启用 | `ua_type`, `ua_tap`, `ua_swipe`, `ua_press` |
+| UI 自动化 | `AccessibilityService` | 在系统设置中启用 | `ua_type`, `ua_tap`, `ua_swipe`, `ua_press`, `ua_tap_text`, `ua_find_text` |
 | root 级 shell | Shizuku | 安装 Shizuku 并授权 | `run_shell`, `manage_app`, `set_wifi`, `set_power_saver` |
 | 读取通知 | `NotificationListenerService` | 通知使用权 | `read_notifications` |
 | 前台应用 | `UsageStatsManager` | 使用情况访问权限（appops） | `get_foreground_app` |
@@ -841,23 +841,36 @@ class Parser(private val input: String) {
 
 ### 11.2 MediaProjection 生命周期（最棘手的一个）
 
+**Android 14+ 改变了规则**：一个 MediaProjection token 只能被消费一次（`getMediaProjection`），且其 `createVirtualDisplay` 每个 token 也只能调用一次。因此「创建投影 → 截图 → 拆除」的朴素流程只工作一次；第二次截图就会以「授权已失效」失败——先分析屏幕、再截一张图的 App 会直接变瞎。
+
+所以服务在**授权到达时一次性创建** `VirtualDisplay` + `ImageReader`，并在整个会话期间保持存活：
+
 ```kotlin
-// ScreenshotManager
-override suspend fun capture(): String {
-    val data = resultData ?: return "ERROR:尚未授权截屏…"
-    if (ScreenshotProjectionService.isBroken()) { clearProjection(); return "ERROR:授权已失效，请重新授权" }
-    val deferred = ScreenshotBridge.registerCapture()
-    context.startForegroundService(intent)          // 服务持有 projection
-    return withTimeoutOrNull(60_000) { deferred.await() } ?: "ERROR:截屏超时"
+// 首次授权请求时：创建常驻管线（token 单次消费）
+private fun ensurePersistentDisplay() {
+    if (reader != null) return
+    val (w, h, d) = screenMetrics()
+    val r = ImageReader.newInstance(w, h, PixelFormat.RGBA_8888, 2)
+    vDisplay = projection!!.createVirtualDisplay("BetterAIChatShot", w, h, d,
+        DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, r.surface, null, null)
+    reader = r
+}
+
+// 每次截图只从常驻 reader 读取最新帧
+private suspend fun captureFromPersistent(): String {
+    maybeResize()                       // 旋转/分辨率变化：vd.resize + 更换 reader
+    val image = reader!!.acquireLatestImage() ?: waitAndRetry()
+    // planes -> bitmap（处理 rowStride padding）-> cacheDir/screenshots/*.png
 }
 ```
 
 关键机制：
 
-- **前台服务**（`foregroundServiceType="mediaProjection"`）持有 `MediaProjection`，这样捕获期间进程不会被杀死。
-- `ImageReader` + `VirtualDisplay` 捕获一帧画面；bitmap 写入 `cacheDir/screenshots/`。
-- 当系统收回投影（例如屏幕旋转之后，或 Android 的单次会话同意过期）时，`registerCallback(onStop)` 会把投影标记为失效，这样下次捕获会带着清晰的错误信息快速失败，而不是挂起。
-- `ScreenshotBridge` 是一个**同步化（synchronized）**的 `CompletableDeferred<String>` 注册表，并发捕获之间不会串扰结果。
+- **前台服务**（`foregroundServiceType="mediaProjection"`）持有管线，使进程（与授权）在切后台与锁屏后继续存活。
+- `acquireLatestImage()` 始终返回最新帧；屏幕静止时投影仍会持续产帧，无需「先触发重绘」之类的操作。
+- 当系统收回投影时（用户停止投屏、其他应用请求投影），`registerCallback(onStop)` 会标记投影失效，使下次截图快速失败并给出清晰信息。
+- `ScreenshotBridge` 是**同步化**的「请求 ID → `CompletableDeferred<String>`」注册表，并发截图不会串扰结果。
+- 若系统彻底杀掉应用进程，Android 要求重新授权——所有投屏类应用皆如此；正常情况下前台服务会保持授权有效。
 
 ### 11.3 无障碍手势（线程很关键）
 
@@ -1107,59 +1120,58 @@ AppNav
 ### 15.2 消息渲染细节
 
 - **用户与 AI 的对齐方式**：用户气泡右对齐（`Arrangement.End`），AI 块居左并带头像行。
-- **工具卡片**：一个 `Surface`，包含步骤徽章（"第 N 步"）、工具名、等宽字体参数（两行省略）、带颜色的 `StatusBadge` 以及执行结果（六行省略）。
+- **工具卡片**：默认紧凑——单行显示工具名、彩色 `StatusBadge` 与「详细」按钮；展开后显示等宽参数与执行结果（八行省略 + 展开全部）。
 - **代码块**：从 markdown 中提取出来单独渲染，使用深色背景并带复制按钮 —— 这避免了 markdown 渲染器在长代码/fenced 代码上出问题，同时带来接近原生的体验。
 - **思考过程**：`ThinkingCard` 将冗长的推理文本折叠起来，提供展开/收起行。
 
-### 15.3 终端风格的底部跟随滚动
+### 15.3 布局驱动的底部跟随滚动
 
-朴素的实现 —— 每次增量变化都调用 `animateScrollToItem` —— 会产生抖动，因为流式输出的条目高度每一帧都在变化。v0.25 重写后的方案是**触摸感知**：任何用户手势立即暂停跟随，只有列表**真正完全贴底**时才恢复：
+此前两种方案都失败了：每次增量都 `animateScrollToItem` 会抖动（流式条目高度每帧变化）；「每 80ms 强制滚动」的循环会与 Markdown 的异步布局互相竞争，产生肉眼可见的抖动。当前实现（v0.27.3）是**布局驱动**的：每次布局完成后，若最后一项底部超出视口且跟随处于开启状态，则精确补滚一次。无循环、无延迟、不与布局系统竞争。
 
 ```kotlin
-// “真正贴底”：最后一条消息完整可见（offset >= 0 且其底部在视口内）——
-// 部分可见的超长消息不算贴底
+// wasAtBottom 只在真实用户拖拽时置 false。用 isScrollInProgress 是个陷阱：
+// 程序自身滚动也会触发它，从而静默关闭跟随。
 var wasAtBottom by remember { mutableStateOf(true) }
+var forceFollow by remember { mutableStateOf(false) }
+LaunchedEffect(listState) {
+    listState.interactionSource.interactions.collect { interaction ->
+        if (interaction is DragInteraction.Start) {
+            wasAtBottom = false
+            forceFollow = false
+        }
+    }
+}
 LaunchedEffect(listState) {
     snapshotFlow { listState.isScrollInProgress }
         .collect { scrolling ->
-            if (scrolling) {
-                wasAtBottom = false            // 触摸 = 暂停跟随
-            } else {
+            if (!scrolling) {
                 val info = listState.layoutInfo
                 val last = info.visibleItemsInfo.lastOrNull { it.index == info.totalItemsCount - 1 }
                 val pinned = last != null && last.offset >= 0 &&
                     last.offset + last.size <= info.viewportEndOffset + 1
-                if (pinned) wasAtBottom = true // 用户自己滚回底部 → 恢复跟随
+                if (pinned) wasAtBottom = true
             }
         }
 }
 
-// 贴底循环：流式期间（或 forceFollow）持续重新滚动，直到布局确认贴底；
-// 触摸（isScrollInProgress）立即中断
-LaunchedEffect(streaming, forceFollow, wasAtBottom, initialScrollDone) {
-    if (state.messages.isEmpty()) return@LaunchedEffect
-    if (initialScrollDone && !forceFollow && !wasAtBottom) return@LaunchedEffect
-    var attempts = 0
-    while (attempts++ < 2400) {
-        if (listState.isScrollInProgress) { forceFollow = false; break }
-        val info = listState.layoutInfo
-        val total = info.totalItemsCount
-        if (total > 0) {
-            runCatching { listState.scrollToItem(total - 1, Int.MAX_VALUE) }
-            val lastItem = info.visibleItemsInfo.lastOrNull { it.index == total - 1 }
-            val bottom = lastItem?.let { it.offset + it.size } ?: -1
-            val pinned = lastItem != null && bottom >= info.viewportEndOffset - 20
-            if (pinned && !streaming && !forceFollow) break
+// 跟随器：每次布局后触发；仅当最后一项确实溢出视口（内容增长）时滚一次，
+// 然后保持安静，直到下一次增长。
+LaunchedEffect(listState) {
+    snapshotFlow { listState.layoutInfo }
+        .collect { info ->
+            val total = info.totalItemsCount
+            if (total == 0) return@collect
+            if (!forceFollow && !wasAtBottom) return@collect
+            if (listState.isScrollInProgress) return@collect
+            val last = info.visibleItemsInfo.lastOrNull { it.index == total - 1 }
+            if (last == null || last.offset + last.size > info.viewportEndOffset + 2) {
+                runCatching { listState.scrollToItem(total - 1, Int.MAX_VALUE) }
+            }
         }
-        delay(80)
-    }
-    initialScrollDone = true
 }
 ```
 
-关键洞见：`scrollToItem(index, Int.MAX_VALUE)` 只有在**条目的真实高度被测量之后**才可靠。Markdown 是异步渲染的，所以要每隔 80 毫秒重新滚动一次，直到布局*确认*最后一条的底部已到达视口底部。轮询直到布局不变量成立 —— 而不是假设一次滚动就足够 —— 这才是值得照搬的模式。
-
-`forceFollow` 在发送时和流式输出期间置为 true，流式输出结束后 400 毫秒清除；`wasAtBottom`（由真实触摸事件驱动、并校验最后一项完整可见）负责处理用户手动向上滚动的情况——在超长流式消息上小幅上滑不再把列表拽回底部。
+关键洞见：**不要轮询，要响应**。`snapshotFlow { layoutInfo }` 恰好在布局变化时触发（即流式文本增长时）；「最后一项是否溢出？」的检查把每次增长转化为至多一次滚动。程序滚动不会重新触发跟随路径，用户拖拽通过 `DragInteraction` 识别，而不是含糊的 `isScrollInProgress`。
 
 ### 15.4 流式光标
 
@@ -1259,4 +1271,4 @@ val blinkAlpha = rememberInfiniteTransition(label = "cursor").animateFloat(
 6. **Android 系统集成** —— `AlarmManager.setExactAndAllowWhileIdle`、sticky 电池广播、`MediaProjection` + 前台服务生命周期、`AccessibilityService` 手势分发（主线程 + 超时）、`NotificationListenerService`、Shizuku binder IPC。
 7. **Agent 设计** —— 基于模式的闸门（Chat/Plan/Build/Max）、prompt + 强制的纵深防御、通过 `SharedFlow` + `CompletableDeferred` 实现的确认循环，以及工具转录不变量（§7.4）。
 8. **安全性** —— 带实时状态 UI 的权限矩阵、边界处的输入校验、沙箱化的求值器、输出截断、并发互斥锁。
-9. **UX 工程** —— 终端风格的钉底滚动（轮询直到布局不变量成立）、闪烁光标、工具卡片、代码块提取、随模式变化的欢迎面板。
+9. **UX 工程** —— 布局驱动的钉底滚动（响应布局而非轮询）、闪烁光标、紧凑工具卡片（详细展开）、会话内搜索、代码块提取、随模式变化的欢迎面板。

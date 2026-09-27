@@ -60,7 +60,7 @@
 | `get_location` / `transcribe_audio` / `ocr_file` / `send_email` | 定位 / 录音转写 / 图片 OCR / 邮件 |
 | `set_dnd` / `manage_app` / `set_wifi` / `set_power_saver` | 勿扰 / 应用管理 / WiFi / 省电 |
 | `screen_record` / `list_installed_apps` | 录屏 / 应用列表 |
-| `screen_ocr` | **读取屏幕文字**（截屏 + 端侧中英文 OCR） |
+| `screen_ocr` | **读取屏幕文字（附每行坐标）**（截屏 + 端侧中英文 OCR） |
 | `create_automation` / `list_automations` / `delete_automation` | 自动化管理 |
 | `ua_type` / `ua_tap` / `ua_swipe` / `ua_press` | **无障碍 UI 自动化**：输入 / 点击 / 滑动 / 按键 |
 | `ua_tap_text` / `ua_find_text` | **按文字查找/点击界面元素**（比坐标点击可靠） |
@@ -91,9 +91,9 @@
 - 设置 → 自动化 管理（列表/开关/删除）
 
 ### 完整 UI 自动化——AI 能"驾驶"你的手机
-1. `screen_ocr` 读取屏幕文字
-2. `ua_tap` / `ua_swipe` / `ua_type` / `ua_press` 执行操作
-3. `take_screenshot` 验证结果
+1. `ua_find_text` / `screen_ocr` 查看界面元素与文字位置（含坐标）
+2. `ua_tap_text` 按文字点击（或 `ua_tap` 按坐标），`ua_swipe` / `ua_type` / `ua_press` 执行操作
+3. `screen_ocr` / `take_screenshot` 验证结果
 
 无需 root、无需 Shizuku。
 
@@ -111,7 +111,9 @@
 - 语音输入、任意消息朗读、自动朗读开关
 
 ### 组织管理
-- 搜索、置顶、归档、收藏消息、清除上下文、导出对话、上下文压缩（AI 总结）
+- 会话列表：搜索、置顶、归档、滑动删除、最后消息预览
+- 会话内搜索：关键字定位历史消息（计数 + 上下跳转）
+- 图片查看支持双指缩放/双击放大；收藏消息、清除上下文、导出对话、上下文压缩（AI 总结）
 
 ### 主题
 8 套强调色（橙/红/粉/靛蓝/蓝/紫/绿/青），默认橙色呼应图标，即时切换
