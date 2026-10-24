@@ -1,5 +1,7 @@
 package com.betteraichat.ui.settings
 
+import android.content.Context
+import com.betteraichat.R
 import com.betteraichat.core.model.ProviderId
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -25,51 +27,54 @@ object ModelProbe {
         val models: List<String> = emptyList()
     )
 
-    suspend fun probe(provider: ProviderId, baseUrl: String, apiKey: String): ProbeResult =
+    suspend fun probe(context: Context, provider: ProviderId, baseUrl: String, apiKey: String): ProbeResult =
         withContext(Dispatchers.IO) {
             when (provider) {
-                ProviderId.OPENAI_COMPAT -> probeOpenAiCompat(baseUrl, apiKey)
-                ProviderId.ANTHROPIC -> probeAnthropic(baseUrl, apiKey)
-                ProviderId.GEMINI -> probeGemini(baseUrl, apiKey)
+                ProviderId.OPENAI_COMPAT -> probeOpenAiCompat(context, baseUrl, apiKey)
+                ProviderId.ANTHROPIC -> probeAnthropic(context, baseUrl, apiKey)
+                ProviderId.GEMINI -> probeGemini(context, baseUrl, apiKey)
             }
         }
 
-    private fun probeOpenAiCompat(baseUrl: String, apiKey: String): ProbeResult {
+    private fun connected(context: Context, models: List<String>, emptyMessage: Int) = ProbeResult(
+        ok = true,
+        message = if (models.isEmpty()) context.getString(emptyMessage) else context.getString(R.string.probe_connected_models, models.size),
+        models = models
+    )
+
+    private fun probeOpenAiCompat(context: Context, baseUrl: String, apiKey: String): ProbeResult {
         val clean = baseUrl.trimEnd('/')
         val candidates = listOf("$clean/models", "$clean/v1/models")
-        var lastError = ""
+        var lastCode: Int? = null
         for (url in candidates) {
             val req = Request.Builder()
                 .url(url)
                 .header("Authorization", "Bearer $apiKey")
                 .build()
             val response = runCatching { client.newCall(req).execute() }.getOrNull()
-            if (response == null) {
-                lastError = "网络连接失败"
-                continue
-            }
+            if (response == null) continue
             response.use {
                 when {
                     it.isSuccessful -> {
                         val models = parseOpenAiModels(it.body?.string().orEmpty())
-                        return ProbeResult(
-                            ok = true,
-                            message = if (models.isEmpty()) "连接成功（未返回模型列表）" else "连接成功，发现 ${models.size} 个模型",
-                            models = models
-                        )
+                        return connected(context, models, R.string.probe_connected_empty)
                     }
-                    it.code == 401 -> return ProbeResult(false, "API Key 无效或已过期（HTTP 401）")
-                    it.code == 403 -> return ProbeResult(false, "API Key 无权限访问（HTTP 403）")
+                    it.code == 401 -> return ProbeResult(false, context.getString(R.string.probe_auth_invalid))
+                    it.code == 403 -> return ProbeResult(false, context.getString(R.string.probe_auth_forbidden))
                     it.code == 404 && url == candidates.last() ->
-                        return ProbeResult(false, "Base URL 不正确（HTTP 404），请检查地址")
-                    else -> lastError = "HTTP ${it.code}"
+                        return ProbeResult(false, context.getString(R.string.probe_base_url_404))
+                    else -> lastCode = it.code
                 }
             }
         }
-        return ProbeResult(false, if (lastError.isBlank()) "连接失败" else "连接失败：$lastError")
+        return if (lastCode != null) {
+            ProbeResult(false, context.getString(R.string.probe_http_error, lastCode))
+        } else {
+            ProbeResult(false, context.getString(R.string.probe_network_failed))
+        }
     }
 
-    private fun probeAnthropic(baseUrl: String, apiKey: String): ProbeResult {
+    private fun probeAnthropic(context: Context, baseUrl: String, apiKey: String): ProbeResult {
         val url = "${baseUrl.trimEnd('/')}/v1/models"
         val req = Request.Builder()
             .url(url)
@@ -82,24 +87,22 @@ object ModelProbe {
                     when {
                         it.isSuccessful -> {
                             val models = parseAnthropicModels(it.body?.string().orEmpty())
-                            ProbeResult(
-                                ok = true,
-                                message = if (models.isEmpty()) "连接成功" else "连接成功，发现 ${models.size} 个模型",
-                                models = models
-                            )
+                            connected(context, models, R.string.probe_connected)
                         }
-                        it.code == 401 -> ProbeResult(false, "API Key 无效或已过期（HTTP 401）")
-                        it.code == 404 -> ProbeResult(false, "Base URL 不正确（HTTP 404）")
-                        it.code == 429 -> ProbeResult(false, "请求过于频繁或额度不足（HTTP 429）")
-                        else -> ProbeResult(false, "连接失败（HTTP ${it.code}）")
+                        it.code == 401 -> ProbeResult(false, context.getString(R.string.probe_auth_invalid))
+                        it.code == 404 -> ProbeResult(false, context.getString(R.string.probe_base_url_404_short))
+                        it.code == 429 -> ProbeResult(false, context.getString(R.string.probe_rate_limited))
+                        else -> ProbeResult(false, context.getString(R.string.probe_http_error_brief, it.code))
                     }
                 }
             },
-            onFailure = { e -> ProbeResult(false, "网络连接失败：${e.message}") }
+            onFailure = { e ->
+                ProbeResult(false, context.getString(R.string.probe_network_failed_detail, e.message.orEmpty()))
+            }
         )
     }
 
-    private fun probeGemini(baseUrl: String, apiKey: String): ProbeResult {
+    private fun probeGemini(context: Context, baseUrl: String, apiKey: String): ProbeResult {
         val url = "${baseUrl.trimEnd('/')}/v1beta/models"
         val req = Request.Builder()
             .url(url)
@@ -111,19 +114,17 @@ object ModelProbe {
                     when {
                         it.isSuccessful -> {
                             val models = parseGeminiModels(it.body?.string().orEmpty())
-                            ProbeResult(
-                                ok = true,
-                                message = if (models.isEmpty()) "连接成功" else "连接成功，发现 ${models.size} 个模型",
-                                models = models
-                            )
+                            connected(context, models, R.string.probe_connected)
                         }
-                        it.code == 400 -> ProbeResult(false, "API Key 无效（HTTP 400）")
-                        it.code == 403 -> ProbeResult(false, "API Key 无权限（HTTP 403）")
-                        else -> ProbeResult(false, "连接失败（HTTP ${it.code}）")
+                        it.code == 400 -> ProbeResult(false, context.getString(R.string.probe_gemini_key_invalid))
+                        it.code == 403 -> ProbeResult(false, context.getString(R.string.probe_gemini_forbidden))
+                        else -> ProbeResult(false, context.getString(R.string.probe_http_error_brief, it.code))
                     }
                 }
             },
-            onFailure = { e -> ProbeResult(false, "网络连接失败：${e.message}") }
+            onFailure = { e ->
+                ProbeResult(false, context.getString(R.string.probe_network_failed_detail, e.message.orEmpty()))
+            }
         )
     }
 

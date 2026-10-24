@@ -239,15 +239,37 @@ Author: Verlintas</string>
     <string name="agent_step">Step %1$d of %2$d</string>
     <string name="agent_name">Agent name</string>
     <string name="agent_untitled">Untitled Agent</string>
-    <string name="agent_step1_hint">Paste your API key — the provider is auto-detected from the prefix (sk-ant- = Claude, AIza = Gemini). Tap "Detect" to fetch available models.</string>
+    <string name="agent_step1_hint">Paste your API key — the provider is detected from the prefix (sk-ant- = Claude, AIza = Gemini) and the model list is fetched automatically. You can also set the provider and Base URL manually.</string>
     <string name="agent_api_key">API Key</string>
     <string name="agent_base_url">Base URL</string>
-    <string name="agent_detect">Detect</string>
-    <string name="agent_detecting">Detecting…</string>
+    <string name="agent_detect">Fetch models</string>
+    <string name="agent_detecting">Fetching models…</string>
     <string name="agent_probe_key_first">Paste your API key first</string>
-    <string name="agent_step2_hint">Pick a model: prefer detected server models, or choose from the built-in catalog / type manually.</string>
+    <string name="agent_step2_hint">Pick a model: the provider\'s models are fetched automatically; you can also choose from the built-in catalog or type an ID.</string>
     <string name="agent_detected_models">%1$d models detected on server</string>
     <string name="agent_catalog_models">Built-in model catalog</string>
+    <string name="agent_models_empty">The provider returned no model list — pick one from the catalog below or type a model ID.</string>
+    <string name="probe_connected_models">Connected — %1$d models found</string>
+    <string name="probe_connected_empty">Connected (no model list returned)</string>
+    <string name="probe_connected">Connected</string>
+    <string name="probe_network_failed">Network connection failed</string>
+    <string name="probe_network_failed_detail">Network connection failed: %1$s</string>
+    <string name="probe_auth_invalid">API key is invalid or expired (HTTP 401)</string>
+    <string name="probe_auth_forbidden">This API key lacks access (HTTP 403)</string>
+    <string name="probe_base_url_404">Incorrect Base URL (HTTP 404) — check the address</string>
+    <string name="probe_base_url_404_short">Incorrect Base URL (HTTP 404)</string>
+    <string name="probe_rate_limited">Too many requests or quota exhausted (HTTP 429)</string>
+    <string name="probe_http_error">Connection failed: HTTP %1$d</string>
+    <string name="probe_http_error_brief">Connection failed (HTTP %1$d)</string>
+    <string name="probe_failed">Connection failed</string>
+    <string name="probe_gemini_key_invalid">Invalid API key (HTTP 400)</string>
+    <string name="probe_gemini_forbidden">This API key lacks access (HTTP 403)</string>
+    <string name="agent_filter_models">Filter models…</string>
+    <string name="provider_openai_compat">OpenAI-compatible</string>
+    <string name="provider_anthropic">Anthropic Claude</string>
+    <string name="provider_gemini">Google Gemini</string>
+    <string name="agent_model_required">Pick or type a model before continuing</string>
+    <string name="agent_credentials_required">API key and Base URL are required</string>
     <string name="agent_model_id">Model ID</string>
     <string name="agent_temperature">Temperature</string>
     <string name="agent_temperature_hint">Higher = more creative, lower = more precise</string>
@@ -275,7 +297,7 @@ Author: Verlintas</string>
     <string name="agents_delete_body">Conversations using "%1$s" will fall back to the default Agent.</string>
     <string name="agents_deleted">Deleted "%1$s"</string>
     <string name="chat_select_agent">Select Agent</string>
-    <string name="agent_quick_providers">Popular OpenAI-compatible providers (tap to fill Base URL):</string>
+    <string name="agent_quick_providers">Popular OpenAI-compatible providers (tap to fill Base URL and a default model):</string>
     <string name="chat_details">Details</string>
     <string name="conv_delete_title">Delete conversation?</string>
     <string name="conv_delete_body">"%1$s" and all its messages will be permanently deleted. This cannot be undone.</string>

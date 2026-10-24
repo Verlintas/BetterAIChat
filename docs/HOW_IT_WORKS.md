@@ -1301,6 +1301,8 @@ These are all bugs found in code review and fixed in v0.20.1 — each with a tra
 
 12. **O(n²) string accumulation** on the main thread during long streams. *Lesson: appending immutable strings in a loop is quadratic — accumulate, then publish.*
 
+13. **A form that could not scroll.** `Modifier.verticalScroll(...).height(440.dp)` made the scroll container measure an exactly-440dp child, so the viewport had zero scroll range: the Base URL field and the "Detect" button were clipped and unreachable — users reported "there is no model selection". Fix: put the height constraint **outside** the scroll (`heightIn(max).verticalScroll`). *Lesson: modifier order is layout semantics; a scroll container must receive the bounded viewport, not an already-fixed child. Test long forms on a real small screen.*
+
 ---
 
 ## 19. Suggested study order
@@ -1446,8 +1448,8 @@ Conversations store `agentId`; the model picker in the chat menu calls `updateAg
 
 `ui/agents/AgentOnboarding.kt` — four steps:
 
-1. **Key & provider** — paste the key; `inferProviderFromKey()` guesses the provider from the prefix; quick presets (DeepSeek / Qwen / Kimi / GLM / SiliconFlow) fill the Base URL; "Detect" runs `ModelProbe` (`GET {baseUrl}/models`) and lists the server's models.
-2. **Model** — server-detected models, the curated catalog, or a manual id.
+1. **Key & provider** — paste the key; `inferProviderFromKey()` guesses the provider from the prefix and `ModelProbe` (`GET {baseUrl}/models`) is called automatically after a short debounce. Quick presets (DeepSeek / Qwen / Kimi / GLM / SiliconFlow) fill the Base URL and a default model; the provider and Base URL can also be set manually. A status line reports "Connected — N models found" or the exact failure.
+2. **Model** — the provider's models (fetched automatically, filterable when there are many), the curated catalog, or a manual id. The first detected model is preselected; **Next stays disabled until a model is chosen**, so an Agent can never be saved with an empty model.
 3. **Parameters** — temperature, max tokens, deep-reasoning toggle.
 4. **Prompt** — default mode prompts or a custom system prompt → save.
 

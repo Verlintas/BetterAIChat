@@ -1300,6 +1300,8 @@ val blinkAlpha = rememberInfiniteTransition(label = "cursor").animateFloat(
 
 12. **O(n²) 字符串累积** 发生在长流式输出期间的主线程上。*教训：在循环中追加不可变字符串是平方级复杂度 —— 先累积，再一次发布。*
 
+13. **一个根本无法滚动的表单。** `Modifier.verticalScroll(...).height(440.dp)` 让滚动容器测量到一个固定 440dp 的子项，视口滚动范围为零：Base URL 输入框和「自动识别」按钮被裁掉且永远点不到——用户反馈「没有模型选择」。修复：把高度约束放到滚动**外层**（`heightIn(max).verticalScroll`）。*教训：modifier 顺序就是布局语义；滚动容器需要的是有界视口，而不是一个已经被固定的子项。长表单要在真实小屏上验证。*
+
 ---
 
 ## 19. 推荐学习顺序
@@ -1439,8 +1441,8 @@ AgentEntity(id, name, description, provider, baseUrl, apiKey, model,
 
 `ui/agents/AgentOnboarding.kt`——四步：
 
-1. **Key 与服务商**——粘贴 Key；`inferProviderFromKey()` 按前缀猜测服务商；快捷预设（DeepSeek / 通义千问 / Kimi / 智谱 GLM / SiliconFlow）填充 Base URL；点「检测」运行 `ModelProbe`（`GET {baseUrl}/models`）并列出服务端模型。
-2. **模型**——服务端检测结果、内置目录，或手动输入。
+1. **Key 与服务商**——粘贴 Key；`inferProviderFromKey()` 按前缀猜测服务商，并在短暂防抖后**自动**调用 `ModelProbe`（`GET {baseUrl}/models`）。快捷预设（DeepSeek / 通义千问 / Kimi / 智谱 GLM / SiliconFlow）同时填充 Base URL 与默认模型；服务商和 Base URL 也可手动设置。状态行会显示「连接成功，发现 N 个模型」或具体失败原因。
+2. **模型**——服务端自动获取的模型（数量多时可筛选）、内置目录，或手动输入。检测到的第一个模型会被预选；**未选择模型时「下一步」保持禁用**，因此不可能保存一个模型为空的 Agent。
 3. **参数**——温度、Max Tokens、深度推理开关。
 4. **提示词**——默认模式提示或自定义系统提示 → 保存。
 
