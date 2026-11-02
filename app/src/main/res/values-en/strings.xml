@@ -102,6 +102,9 @@
     <string name="settings_save">Save configuration</string>
     <string name="settings_default_mode">Default mode</string>
     <string name="settings_default_mode_sub">Mode used for new chats: Chat / Plan (read-only) / Build (tools with confirmation) / Max (autonomous)</string>
+    <string name="settings_tool_limit">Tool call limit</string>
+    <string name="settings_tool_limit_sub">Maximum tool calls per reply. Unlimited suits long automations; with a cap, the AI summarises progress when the cap is reached instead of stopping abruptly.</string>
+    <string name="tool_limit_unlimited">Unlimited</string>
     <string name="settings_language">Language</string>
     <string name="settings_appearance">Appearance</string>
     <string name="settings_accent">Accent color</string>
@@ -236,6 +239,7 @@ Author: Verlintas</string>
     <string name="tasks_hourly">Every %1$d hours</string>
     <string name="chat_more">More</string>
     <string name="agent_onboarding_title">Create Agent</string>
+    <string name="agent_onboarding_title_edit">Edit Agent</string>
     <string name="agent_step">Step %1$d of %2$d</string>
     <string name="agent_name">Agent name</string>
     <string name="agent_untitled">Untitled Agent</string>

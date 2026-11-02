@@ -462,7 +462,9 @@ private fun AgentSection(
     editing?.let { agent ->
         AgentOnboardingDialog(
             isEdit = true,
-            originalApiKey = agent.apiKey,
+            editingId = agent.id,
+            editingIsDefault = agent.isDefault,
+            originalApiKey = runCatching { container.agentRepository.toConfig(agent).apiKey }.getOrDefault(""),
             initialName = agent.name,
             initialProvider = runCatching { ProviderId.valueOf(agent.provider) }.getOrDefault(ProviderId.OPENAI_COMPAT),
             initialBaseUrl = agent.baseUrl,
@@ -513,6 +515,7 @@ private fun ConversationSection(
     var autoSpeak by remember { mutableStateOf(settings.getAutoSpeak()) }
     var voiceAssistant by remember { mutableStateOf(settings.getVoiceAssistant()) }
     var accentColor by remember { mutableStateOf(settings.getAccentColor()) }
+    var toolLimit by remember { mutableStateOf(settings.getToolCallLimit()) }
 
     Column(
         modifier = modifier.verticalScroll(rememberScrollState()).padding(16.dp),
@@ -533,6 +536,35 @@ private fun ConversationSection(
                         settings.setDefaultMode(m)
                     },
                     label = { Text(m.displayName) }
+                )
+            }
+        }
+
+        HorizontalDivider()
+
+        Text(stringResource(R.string.settings_tool_limit), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text(
+            stringResource(R.string.settings_tool_limit_sub),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        androidx.compose.foundation.layout.FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            listOf(0, 50, 100, 200, 500).forEach { limit ->
+                FilterChip(
+                    selected = toolLimit == limit,
+                    onClick = {
+                        toolLimit = limit
+                        settings.setToolCallLimit(limit)
+                    },
+                    label = {
+                        Text(
+                            if (limit == 0) stringResource(R.string.tool_limit_unlimited)
+                            else limit.toString()
+                        )
+                    }
                 )
             }
         }

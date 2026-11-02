@@ -431,7 +431,7 @@ class ChatViewModel(
                 streamTickerJob = myTicker
                 val history = repository.getHistory(cid).map { repository.messageToDomain(it) }
                 val historyWithMemory = injectMemory(history, cid)
-                engine.run(historyWithMemory, config, s.mode).collect { ev ->
+                engine.run(historyWithMemory, config, s.mode, settings.getToolCallLimit()).collect { ev ->
                     if (myToken != runToken) return@collect
                     when (ev) {
                         is EngineEvent.Delta -> {

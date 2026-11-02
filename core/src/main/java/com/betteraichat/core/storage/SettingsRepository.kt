@@ -133,6 +133,12 @@ class SettingsRepository(context: Context) {
         prefs.edit().putBoolean("voice_assistant", enabled).apply()
     }
 
+    fun getToolCallLimit(): Int = prefs.getInt("tool_call_limit", 0)
+
+    fun setToolCallLimit(limit: Int) {
+        prefs.edit().putInt("tool_call_limit", limit.coerceAtLeast(0)).apply()
+    }
+
     fun getLanguage(): AppLanguage = runCatching {
         AppLanguage.valueOf(prefs.getString("language", AppLanguage.SYSTEM.name)!!)
     }.getOrDefault(AppLanguage.SYSTEM)

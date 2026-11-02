@@ -407,7 +407,7 @@ val body = OpenAiRequest(
   │  tap 允许 ──────────────▶│  respondConfirm(true) ─────────────────┼──── deferred.complete(true)
   │                          │                                        │        ToolRunner.run()  ──▶ DeviceTool.execute()
   │                          │                                        │        insertMessage(TOOL 结果)
-  │                          │                                        │        再次循环（MAX 最多 50 轮，其余模式 12 轮）
+  │                          │                                        │        再次循环（默认无限制；可配置上限）
   │                          │                                        └── Completed
   │ ◀── 最终 UI ─────────────│◀── refresh()
 ```
@@ -603,17 +603,16 @@ private suspend fun executeWithRetry(call: okhttp3.Call): okhttp3.Response {
 ### 7.1 循环主体
 
 ```kotlin
-fun run(messages, config, mode): Flow<EngineEvent> = flow {
+fun run(messages, config, mode, maxToolCalls = 0): Flow<EngineEvent> = flow {
     val provider = providerFactory(config.provider)     // 在 try 中保护
     var history = messages
-    var toolRounds = 0
-    val maxRounds = if (mode == AppMode.MAX) 50 else 12
+    var toolCallsUsed = 0
     while (true) {
-        if (toolRounds >= maxRounds) { emit(Failed("工具调用轮次已达上限")); return@flow }
+        val budgetReached = maxToolCalls > 0 && toolCallsUsed >= maxToolCalls
         var text = StringBuilder(); var thinking = StringBuilder()
         var toolCalls = emptyList<ToolCall>()
         try {
-            val tools = toolCatalog.specsFor(mode)
+            val tools = if (budgetReached) emptyList() else toolCatalog.specsFor(mode)
             val sys = ChatMessage(role = SYSTEM, content = systemPromptFor(mode))
             provider.chatStream(listOf(sys) + history, effectiveConfig, tools).collect { ev -> … }
         } catch (e: Exception) {
@@ -621,10 +620,10 @@ fun run(messages, config, mode): Flow<EngineEvent> = flow {
             emit(EngineEvent.Failed(e.message ?: e.javaClass.simpleName))
             return@flow
         }
-        val assistantMsg = ChatMessage(role = ASSISTANT, content = text, toolCalls = toolCalls, …)
+        val assistantMsg = ChatMessage(role = ASSISTANT, content = text, toolCalls = if (budgetReached) emptyList() else toolCalls, …)
         emit(EngineEvent.AssistantFinished(assistantMsg))
-        if (toolCalls.isEmpty()) break                    // ← 正常退出
-        toolRounds++
+        if (toolCalls.isEmpty() || budgetReached) break    // ← 正常退出 / 最后一次总结
+        toolCallsUsed += toolCalls.size
         history = history + assistantMsg
         for (call in toolCalls) {
             val spec = toolCatalog.find(call.name)
@@ -641,6 +640,8 @@ fun run(messages, config, mode): Flow<EngineEvent> = flow {
     emit(EngineEvent.Completed)
 }.flowOn(Dispatchers.IO)
 ```
+
+`maxToolCalls = 0` 表示**无限制**，这也是默认值：长流程自动化不会在中途被强行截断。设置 → Chat 提供可选上限（50/100/200/500）用于控制成本。达到上限时引擎不会报错退出，而是追加一条系统提醒、在最后一次调用中关闭工具，让模型总结「已完成什么、还剩什么」；所有工具结果早已写入会话历史，继续发消息即可接着做。若模型无视提醒仍返回工具调用，引擎也会写入一条可见的兜底总结，而不是留下空消息。
 
 ### 7.2 为什么用 `Flow` 而不是回调
 
@@ -1249,7 +1250,7 @@ val blinkAlpha = rememberInfiniteTransition(label = "cursor").animateFloat(
 | 恶意 URL | `download_file` 上限 100 MB，并拒绝过大的 `Content-Length`；`web_read`/`fetch_rss` 通过 jsoup 的默认限制约束响应大小 |
 | API key 窃取 | key 用 Android Keystore 加密；绝不写日志；只以密文存储 |
 | 后台滥用 | 每一项特权能力都要求显式、可见的用户授权；自动化任务只执行用户让 AI 创建的序列 |
-| 长内容 DoS | 流式输出受读超时 + 每动作超时 + 引擎最多 8 轮工具调用限制 |
+| 长内容 DoS | 流式输出受读超时 + 每动作超时 + 可选（用户配置的）工具调用上限（默认无限制） |
 | 并发执行竞态 | 引擎互斥锁（`runJob?.isActive`）、每自动化任务互斥锁、同步的 caches/bridges |
 
 ---
@@ -1301,6 +1302,8 @@ val blinkAlpha = rememberInfiniteTransition(label = "cursor").animateFloat(
 12. **O(n²) 字符串累积** 发生在长流式输出期间的主线程上。*教训：在循环中追加不可变字符串是平方级复杂度 —— 先累积，再一次发布。*
 
 13. **一个根本无法滚动的表单。** `Modifier.verticalScroll(...).height(440.dp)` 让滚动容器测量到一个固定 440dp 的子项，视口滚动范围为零：Base URL 输入框和「自动识别」按钮被裁掉且永远点不到——用户反馈「没有模型选择」。修复：把高度约束放到滚动**外层**（`heightIn(max).verticalScroll`）。*教训：modifier 顺序就是布局语义；滚动容器需要的是有界视口，而不是一个已经被固定的子项。长表单要在真实小屏上验证。*
+
+14. **一次「编辑」变成了复制。** Agent 向导同时承担新建与编辑，但保存路径构造 `AgentEntity` 时从不带 `id`，点保存就会插入重复行；它还把存储的密文（`enc:…`）直接拿去做模型探测，并会在更新时清掉 `isDefault`。修复：携带 `editingId`、保留默认标记，并在复用已存 Key 时通过 `toConfig` 解密。*教训：同一个表单兼做新建与编辑时，身份必须是表单状态的一部分——要验证写入路径，而不只是标题。*
 
 ---
 
@@ -1495,7 +1498,7 @@ val sysContent = if (custom.isBlank()) systemPromptFor(mode)
 - `DeviceToolRunner.healArgs` 执行前**自愈参数**：类型错误自动转换、拼错的参数名纠正（编辑距离 ≤2）、数组保留；结果会标注修正内容。
 - `parseToolArguments` 容忍双重编码字符串与带说明文字的 JSON（部分网关会双重编码）。
 - `ChatEngine.runWithCircuitBreaker` 在同一轮内连续失败 3 次后拒绝该工具并给出明确指引。
-- MAX 模式最多 50 个工具轮次；其余模式 12。
+- 所有模式的工具调用**默认无限制**。设置 → Chat 可设置可选上限（50/100/200/500）；达到上限时引擎会做最后一次不带工具的总结，而不是失败退出，且所有结果都保留在会话中，可继续接着做。
 
 ---
 

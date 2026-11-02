@@ -102,6 +102,9 @@
     <string name="settings_save">保存配置</string>
     <string name="settings_default_mode">默认模式</string>
     <string name="settings_default_mode_sub">新建对话时使用的模式：Chat 纯对话 / Plan 只读分析 / Build 工具需确认 / Max 自主执行</string>
+    <string name="settings_tool_limit">工具调用上限</string>
+    <string name="settings_tool_limit_sub">单次回复最多允许的工具调用次数。无限制适合长流程自动化；设置上限后，达到上限时会先总结进度而不是直接中断。</string>
+    <string name="tool_limit_unlimited">无限制</string>
     <string name="settings_language">语言</string>
     <string name="settings_appearance">外观</string>
     <string name="settings_accent">强调色</string>
@@ -236,6 +239,7 @@
     <string name="tasks_hourly">每 %1$d 小时</string>
     <string name="chat_more">更多</string>
     <string name="agent_onboarding_title">新建 Agent</string>
+    <string name="agent_onboarding_title_edit">编辑 Agent</string>
     <string name="agent_step">步骤 %1$d / %2$d</string>
     <string name="agent_name">Agent 名称</string>
     <string name="agent_untitled">未命名 Agent</string>

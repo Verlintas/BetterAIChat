@@ -407,7 +407,7 @@ Subtleties:
   │  tap 允许 ──────────────▶│  respondConfirm(true) ─────────────────┼──── deferred.complete(true)
   │                          │                                        │        ToolRunner.run()  ──▶ DeviceTool.execute()
   │                          │                                        │        insertMessage(TOOL result)
-  │                          │                                        │        loop again (MAX: 50 rounds, others: 12)
+  │                          │                                        │        loop again (unlimited by default; optional cap)
   │                          │                                        └── Completed
   │ ◀── final UI ────────────│◀── refresh()
 ```
@@ -602,17 +602,16 @@ Timeouts: `connectTimeout(30s)` + `readTimeout(120s)`. The read timeout is the g
 ### 7.1 The loop
 
 ```kotlin
-fun run(messages, config, mode): Flow<EngineEvent> = flow {
+fun run(messages, config, mode, maxToolCalls = 0): Flow<EngineEvent> = flow {
     val provider = providerFactory(config.provider)     // guarded in try
     var history = messages
-    var toolRounds = 0
-    val maxRounds = if (mode == AppMode.MAX) 50 else 12
+    var toolCallsUsed = 0
     while (true) {
-        if (toolRounds >= maxRounds) { emit(Failed("工具调用轮次已达上限")); return@flow }
+        val budgetReached = maxToolCalls > 0 && toolCallsUsed >= maxToolCalls
         var text = StringBuilder(); var thinking = StringBuilder()
         var toolCalls = emptyList<ToolCall>()
         try {
-            val tools = toolCatalog.specsFor(mode)
+            val tools = if (budgetReached) emptyList() else toolCatalog.specsFor(mode)
             val sys = ChatMessage(role = SYSTEM, content = systemPromptFor(mode))
             provider.chatStream(listOf(sys) + history, effectiveConfig, tools).collect { ev -> … }
         } catch (e: Exception) {
@@ -620,10 +619,10 @@ fun run(messages, config, mode): Flow<EngineEvent> = flow {
             emit(EngineEvent.Failed(e.message ?: e.javaClass.simpleName))
             return@flow
         }
-        val assistantMsg = ChatMessage(role = ASSISTANT, content = text, toolCalls = toolCalls, …)
+        val assistantMsg = ChatMessage(role = ASSISTANT, content = text, toolCalls = if (budgetReached) emptyList() else toolCalls, …)
         emit(EngineEvent.AssistantFinished(assistantMsg))
-        if (toolCalls.isEmpty()) break                    // ← normal exit
-        toolRounds++
+        if (toolCalls.isEmpty() || budgetReached) break    // ← normal exit / final summary pass
+        toolCallsUsed += toolCalls.size
         history = history + assistantMsg
         for (call in toolCalls) {
             val spec = toolCatalog.find(call.name)
@@ -640,6 +639,8 @@ fun run(messages, config, mode): Flow<EngineEvent> = flow {
     emit(EngineEvent.Completed)
 }.flowOn(Dispatchers.IO)
 ```
+
+`maxToolCalls = 0` means **unlimited**, which is the default: long automations are never cut off mid-task. Settings → Chat exposes optional caps (50/100/200/500) for cost control. When a configured cap is reached, the engine appends a system nudge, disables tools for one final pass, and asks the model to summarize what was done and what remains — it does **not** fail the run. Every tool result is already persisted in the conversation, so continuing simply resumes from the transcript. If the model ignores the nudge and returns another tool call, the engine still ends the run with a visible fallback summary instead of an empty bubble.
 
 ### 7.2 Why a `Flow` and not a callback
 
@@ -1250,7 +1251,7 @@ A blinking `▋` appended to the live text — the cheapest possible "typing" af
 | Malicious URLs | `download_file` caps at 100 MB and rejects oversized `Content-Length`; `web_read`/`fetch_rss` bound response size via jsoup's default limit |
 | API key theft | Key encrypted with Android Keystore; never logged; stored only in ciphertext |
 | Background abuse | Every privileged capability requires an explicit, visible user grant; automations only run sequences the user asked the AI to create |
-| DoS via long content | Streaming outputs bounded by read timeout + per-action timeouts + engine max 8 tool rounds |
+| DoS via long content | Streaming outputs bounded by read timeout + per-action timeouts + optional user-configured tool-call cap (unlimited by default) |
 | Concurrent execution races | Engine mutex (`runJob?.isActive`), per-automation mutex, synchronized caches/bridges |
 
 ---
@@ -1302,6 +1303,8 @@ These are all bugs found in code review and fixed in v0.20.1 — each with a tra
 12. **O(n²) string accumulation** on the main thread during long streams. *Lesson: appending immutable strings in a loop is quadratic — accumulate, then publish.*
 
 13. **A form that could not scroll.** `Modifier.verticalScroll(...).height(440.dp)` made the scroll container measure an exactly-440dp child, so the viewport had zero scroll range: the Base URL field and the "Detect" button were clipped and unreachable — users reported "there is no model selection". Fix: put the height constraint **outside** the scroll (`heightIn(max).verticalScroll`). *Lesson: modifier order is layout semantics; a scroll container must receive the bounded viewport, not an already-fixed child. Test long forms on a real small screen.*
+
+14. **An "edit" that created a copy.** The Agent wizard served both create and edit, but the save path always built an `AgentEntity` without an `id`, so editing inserted a duplicate; it also fed the stored ciphertext (`enc:…`) to the model probe and would clear `isDefault` on update. Fix: carry `editingId`, preserve the default flag, and decrypt via `toConfig` when reusing a stored key. *Lesson: when one form serves create and edit, identity is part of the form state — test the write path, not just the title.*
 
 ---
 
@@ -1502,7 +1505,7 @@ The default `read_top = 1` attaches the body of the first *successfully fetched*
 - `DeviceToolRunner.healArgs` **self-heals arguments** before execution: wrong-typed values converted, misspelled parameter names corrected (levenshtein ≤2), arrays preserved; the result is annotated with what was fixed.
 - `parseToolArguments` tolerates double-encoded strings and prose-wrapped JSON (some gateways double-encode).
 - `ChatEngine.runWithCircuitBreaker` denies a tool after 3 consecutive failures with explicit guidance.
-- MAX mode allows up to 50 tool rounds; other modes 12.
+- Tool calls are **unlimited by default** in every mode. Settings → Chat can set an optional cap (50/100/200/500); when it is reached, the engine makes one final tool-less pass that summarizes progress instead of failing, and the transcript keeps every result for continuing.
 
 ---
 

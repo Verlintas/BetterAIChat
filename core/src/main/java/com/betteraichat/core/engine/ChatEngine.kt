@@ -63,7 +63,8 @@ class ChatEngine(
     fun run(
         messages: List<ChatMessage>,
         config: ProviderConfig,
-        mode: AppMode
+        mode: AppMode,
+        maxToolCalls: Int = 0
     ): Flow<EngineEvent> = flow {
         val provider = try {
             providerFactory(config.provider)
@@ -77,28 +78,37 @@ class ChatEngine(
                 m.copy(content = truncateToolResult(m.content))
             } else m
         }
-        var toolRounds = 0
-        val maxRounds = if (mode == AppMode.MAX) 50 else 12
+        var toolCallsUsed = 0
         val toolFailures = java.util.concurrent.ConcurrentHashMap<String, Int>()
         while (true) {
-            if (toolRounds >= maxRounds) {
-                emit(EngineEvent.Failed("工具调用已达 $maxRounds 次上限。请基于目前已获取的信息直接回答用户，不要再调用工具"))
-                return@flow
-            }
+            val budgetReached = maxToolCalls > 0 && toolCallsUsed >= maxToolCalls
             var text = StringBuilder()
             var thinking = StringBuilder()
             var thinkingSignature: String? = null
             var toolCalls = emptyList<ToolCall>()
             try {
-                val tools = toolCatalog.specsFor(mode)
+                val tools = if (budgetReached) emptyList() else toolCatalog.specsFor(mode)
                 val custom = config.systemPrompt.trim()
-                val sysContent = if (custom.isBlank()) {
+                val basePrompt = if (custom.isBlank()) {
                     systemPromptFor(mode)
                 } else {
                     "$custom\n\n${systemPromptFor(mode)}"
                 }
+                val sysContent = if (maxToolCalls > 0 && !budgetReached) {
+                    "$basePrompt\n\n本次运行最多允许 $maxToolCalls 次工具调用，请提前规划、合并步骤、避免重复。"
+                } else {
+                    basePrompt
+                }
                 val sys = ChatMessage(role = ChatRole.SYSTEM, content = sysContent)
-                provider.chatStream(listOf(sys) + history, effectiveConfig, tools).collect { ev ->
+                val requestHistory = if (budgetReached) {
+                    history + ChatMessage(
+                        role = ChatRole.USER,
+                        content = "（系统提示）本次运行的工具调用已达上限（$maxToolCalls 次）。请立即基于已完成的步骤和已获取的信息回答用户：说明完成了什么、还剩什么、用户如何继续；不要再调用工具。"
+                    )
+                } else {
+                    history
+                }
+                provider.chatStream(listOf(sys) + requestHistory, effectiveConfig, tools).collect { ev ->
                     when (ev) {
                         is StreamEvent.Delta -> {
                             text.append(ev.text)
@@ -120,18 +130,23 @@ class ChatEngine(
                 emit(EngineEvent.Failed(e.message ?: e.javaClass.simpleName))
                 return@flow
             }
+            if (budgetReached && text.isBlank()) {
+                val fallback = "已达到本次的工具调用上限（$maxToolCalls 次）。已完成的结果都已保留，可以继续发消息接着做。"
+                text.append(fallback)
+                emit(EngineEvent.Delta(fallback))
+            }
             val assistantMsg = ChatMessage(
                 role = ChatRole.ASSISTANT,
                 content = text.toString(),
-                toolCalls = toolCalls,
+                toolCalls = if (budgetReached) emptyList() else toolCalls,
                 model = config.model,
                 mode = mode,
                 thinkingText = thinking.toString().ifBlank { null },
                 thinkingSignature = thinkingSignature
             )
             emit(EngineEvent.AssistantFinished(assistantMsg))
-            if (toolCalls.isEmpty()) break
-            toolRounds++
+            if (toolCalls.isEmpty() || budgetReached) break
+            toolCallsUsed += toolCalls.size
             val finishedCalls = mutableListOf<ToolCall>()
             history = history + assistantMsg.copy(
                 toolCalls = toolCalls.map { it.copy(status = ToolCallStatus.PENDING) }

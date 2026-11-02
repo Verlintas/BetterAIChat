@@ -47,6 +47,8 @@ import kotlinx.coroutines.launch
 @Composable
 fun AgentOnboardingDialog(
     isEdit: Boolean = false,
+    editingId: Long = 0L,
+    editingIsDefault: Boolean = false,
     originalApiKey: String = "",
     initialName: String = "",
     initialProvider: ProviderId = ProviderId.OPENAI_COMPAT,
@@ -149,6 +151,7 @@ fun AgentOnboardingDialog(
             val effectiveKey = if (apiKey.isBlank() && isEdit) originalApiKey else apiKey
             container.agentRepository.save(
                 com.betteraichat.core.db.AgentEntity(
+                    id = if (isEdit) editingId else 0L,
                     name = name.ifBlank { context.getString(R.string.agent_untitled) },
                     description = model,
                     provider = provider.name,
@@ -159,7 +162,7 @@ fun AgentOnboardingDialog(
                     maxTokens = maxTokens,
                     reasoning = reasoning,
                     systemPrompt = if (useCustomPrompt) systemPrompt else "",
-                    isDefault = false,
+                    isDefault = if (isEdit) editingIsDefault else false,
                     createdAt = System.currentTimeMillis(),
                     updatedAt = System.currentTimeMillis()
                 )
@@ -171,7 +174,7 @@ fun AgentOnboardingDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.agent_onboarding_title)) },
+        title = { Text(stringResource(if (isEdit) R.string.agent_onboarding_title_edit else R.string.agent_onboarding_title)) },
         text = {
             Column(
                 modifier = Modifier
