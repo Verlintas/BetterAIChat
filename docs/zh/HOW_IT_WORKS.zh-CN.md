@@ -2,7 +2,7 @@
 
 本文档详尽解释 **BetterAIChat** 的内部实现：模块架构、请求管线的每一层、流式协议、Agent 循环、工具系统、权限桥接、自动化引擎、存储、UI 渲染、安全设计，以及来自真实 bug 的工程经验。它既是学习指南，也是**交接手册**——新人可以照着第 20 章把项目跑起来，照第 24 章做第一个改动。
 
-> 范围：约 63 个内置设备工具、opencode 风格技能、Agent（按会话的一键配置）、Shizuku + 无障碍 + MediaProjection 集成，以及后台自动化引擎。
+> 范围：约 64 个内置设备工具、opencode 风格技能、Agent（按会话的一键配置）、Shizuku + 无障碍 + MediaProjection 集成，以及后台自动化引擎。
 
 ---
 
@@ -99,7 +99,7 @@ BetterAIChat/
         ├── ToolRegistry.kt                 # 内置 + 技能定义的工具
         ├── DeviceToolRunner.kt             # name+args → DeviceTool.execute
         ├── SkillActionExecutor.kt          # 执行技能定义的动作类型
-        └── tools/                          # 63 个工具实现
+        └── tools/                          # 64 个工具实现
 ```
 
 存在两个构建风味（flavor）：**full**（全功能，约 55 MB）和 **lite**（约 10 MB，不含端侧 OCR）。风味专属代码位于 `app/src/full/` 和 `app/src/lite/`。
@@ -176,7 +176,7 @@ class AppContainer(context: Application) {
     val automationScheduler = AutomationScheduler(context.applicationContext, db) { runner }
     private val automationBridge = object : AutomationBridge { … }
 
-    val tools: List<DeviceTool> = listOf( /* 63 个工具，见 BetterAIChatApp.kt */ )
+    val tools: List<DeviceTool> = listOf( /* 64 个工具，见 BetterAIChatApp.kt */ )
     val registry = ToolRegistry(tools)
     val runner = DeviceToolRunner(registry, toolContext)
     val engine = ChatEngine(providerFactory, registry, runner)
@@ -643,6 +643,8 @@ fun run(messages, config, mode, maxToolCalls = 0): Flow<EngineEvent> = flow {
 
 `maxToolCalls = 0` 表示**无限制**，这也是默认值：长流程自动化不会在中途被强行截断。设置 → Chat 提供可选上限（50/100/200/500）用于控制成本。达到上限时引擎不会报错退出，而是追加一条系统提醒、在最后一次调用中关闭工具，让模型总结「已完成什么、还剩什么」；所有工具结果早已写入会话历史，继续发消息即可接着做。若模型无视提醒仍返回工具调用，引擎也会写入一条可见的兜底总结，而不是留下空消息。
 
+**批量 UI 操作。** `ua_sequence` 接收 1–30 个有序的无障碍步骤（`tap`、`tap_text`、`type`、`press`、`swipe`、`wait`），在一次工具调用里依次执行；每步可带 `wait_ms` 等待界面变化，总预算 45 秒。任一步失败立即停止并返回已完成步骤——20 次点击的流程只需一次往返；Build 模式下整批只确认一次。BUILD/MAX 的系统提示还要求模型在多步任务开始前用一句话给出计划与预估调用次数，聊天顶栏会在运行中显示实时的工具调用计数。
+
 ### 7.2 为什么用 `Flow` 而不是回调
 
 引擎是一个**冷流（cold flow）**：在被 collect 之前什么都不会执行。这给 ViewModel 带来了：
@@ -867,7 +869,7 @@ class Parser(private val input: String) {
 | 能力 | 桥接方式 | 用户授权 | 示例工具 |
 |---|---|---|---|
 | 截屏与屏幕分析 | `MediaProjection` + 前台服务 | 一次性授权（Android 15：选择 BetterAIChat 作为要捕获的应用） | `take_screenshot`, `screen_ocr` |
-| UI 自动化 | `AccessibilityService` | 在系统设置中启用 | `ua_type`, `ua_tap`, `ua_swipe`, `ua_press`, `ua_tap_text`, `ua_find_text` |
+| UI 自动化 | `AccessibilityService` | 在系统设置中启用 | `ua_type`, `ua_tap`, `ua_swipe`, `ua_press`, `ua_tap_text`, `ua_find_text`, `ua_sequence` |
 | root 级 shell | Shizuku | 安装 Shizuku 并授权 | `run_shell`, `manage_app`, `set_wifi`, `set_power_saver` |
 | 读取通知 | `NotificationListenerService` | 通知使用权 | `read_notifications` |
 | 前台应用 | `UsageStatsManager` | 使用情况访问权限（appops） | `get_foreground_app` |

@@ -63,6 +63,7 @@ data class ChatUiState(
     val mode: AppMode = AppMode.CHAT,
     val messages: List<UiMessage> = emptyList(),
     val isRunning: Boolean = false,
+    val toolCallCount: Int = 0,
     val input: String = "",
     val confirmRequest: ConfirmRequest? = null,
     val error: String? = null,
@@ -411,7 +412,7 @@ class ChatViewModel(
 
     private fun runGeneration(cid: Long) {
         if (runJob?.isActive == true) return
-        _state.update { it.copy(isRunning = true) }
+        _state.update { it.copy(isRunning = true, toolCallCount = 0) }
         toolCallRoundsThisRun = 0
         val myToken = ++runToken
         var currentJob: Job? = null
@@ -469,6 +470,7 @@ class ChatViewModel(
                                 streaming = newStreamingMessage(config, s)
                             }
                             toolCallRoundsThisRun++
+                            _state.update { it.copy(toolCallCount = it.toolCallCount + 1) }
                             streaming = streaming?.copy(
                                 toolCalls = upsertCall(streaming?.toolCalls ?: emptyList(), ev.call)
                             )

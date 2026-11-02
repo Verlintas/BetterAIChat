@@ -381,6 +381,10 @@ fun ChatScreen(conversationId: Long, onBack: () -> Unit) {
                         val subtitle = buildString {
                             if (state.agentName.isNotBlank()) append(state.agentName)
                             if (usageText.isNotBlank()) append(" · ").append(usageText.trim())
+                            if (state.isRunning && state.toolCallCount > 0) {
+                                append(" · ")
+                                append(stringResource(com.betteraichat.R.string.chat_tool_calls, state.toolCallCount))
+                            }
                         }
                         if (subtitle.isNotBlank()) {
                             Text(

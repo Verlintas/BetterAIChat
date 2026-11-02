@@ -90,3 +90,9 @@ fun boolProp(description: String): JsonObject = buildJsonObject {
     put("type", "boolean")
     put("description", description)
 }
+
+fun arrayProp(description: String, items: JsonObject): JsonObject = buildJsonObject {
+    put("type", "array")
+    put("description", description)
+    put("items", items)
+}

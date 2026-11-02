@@ -66,6 +66,7 @@ import com.betteraichat.skills.tools.UaSwipeTool
 import com.betteraichat.skills.tools.UaTapTool
 import com.betteraichat.skills.tools.UaTapTextTool
 import com.betteraichat.skills.tools.UaFindTextTool
+import com.betteraichat.skills.tools.UaSequenceTool
 import com.betteraichat.skills.tools.UaTypeTool
 import com.betteraichat.skills.tools.VibrateTool
 import com.betteraichat.skills.tools.WebReadTool
@@ -264,6 +265,7 @@ class AppContainer(context: Application) {
             ReadTextFileTool(),
             UaTapTextTool(),
             UaFindTextTool(),
+            UaSequenceTool(),
         LoadSkillTool({ skillRepository.loadAll() }, { registry }, actionExecutor),
         GetTimeTool(),
         MediaControlTool(),

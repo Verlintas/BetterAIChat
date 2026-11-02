@@ -2,7 +2,7 @@
 
 This document explains the internals of **BetterAIChat** in exhaustive detail: module architecture, every layer of the request pipeline, the streaming protocol, the agent loop, the tool system, permission bridging, the automation engine, storage, UI rendering, security, and the engineering lessons learned from real bugs. It is written as a study guide for programmers who want to understand a real, working Android AI-agent application.
 
-> Scope: ~63 built-in device tools, opencode-style Skills, Agents (one-tap per-conversation configs), Shizuku + Accessibility + MediaProjection integration, and a background automation engine.
+> Scope: ~64 built-in device tools, opencode-style Skills, Agents (one-tap per-conversation configs), Shizuku + Accessibility + MediaProjection integration, and a background automation engine.
 
 ---
 
@@ -99,7 +99,7 @@ BetterAIChat/
         ├── ToolRegistry.kt                 # builtin + skill-defined tools
         ├── DeviceToolRunner.kt             # name+args → DeviceTool.execute
         ├── SkillActionExecutor.kt          # Runs skill-defined action types
-        └── tools/                          # 63 tool implementations
+        └── tools/                          # 64 tool implementations
 ```
 
 Two build flavors exist: **full** (everything, ~55 MB) and **lite** (~10 MB, no on-device OCR). Flavor-specific code lives in `app/src/full/` and `app/src/lite/`.
@@ -176,7 +176,7 @@ class AppContainer(context: Application) {
     val automationScheduler = AutomationScheduler(context.applicationContext, db) { runner }
     private val automationBridge = object : AutomationBridge { … }
 
-    val tools: List<DeviceTool> = listOf( /* 63 tools, see BetterAIChatApp.kt */ )
+    val tools: List<DeviceTool> = listOf( /* 64 tools, see BetterAIChatApp.kt */ )
     val registry = ToolRegistry(tools)
     val runner = DeviceToolRunner(registry, toolContext)
     val engine = ChatEngine(providerFactory, registry, runner)
@@ -642,6 +642,8 @@ fun run(messages, config, mode, maxToolCalls = 0): Flow<EngineEvent> = flow {
 
 `maxToolCalls = 0` means **unlimited**, which is the default: long automations are never cut off mid-task. Settings → Chat exposes optional caps (50/100/200/500) for cost control. When a configured cap is reached, the engine appends a system nudge, disables tools for one final pass, and asks the model to summarize what was done and what remains — it does **not** fail the run. Every tool result is already persisted in the conversation, so continuing simply resumes from the transcript. If the model ignores the nudge and returns another tool call, the engine still ends the run with a visible fallback summary instead of an empty bubble.
 
+**Batching UI actions.** `ua_sequence` takes an ordered array of 1–30 accessibility steps (`tap`, `tap_text`, `type`, `press`, `swipe`, `wait`) and runs them in a single tool call, with an optional `wait_ms` after each step and a 45-second total budget. It stops at the first failure and returns the completed steps, so a 20-tap flow costs one round trip instead of twenty; Build mode confirms the whole batch once. The BUILD/MAX prompts also ask the model to state a one-line plan with an estimated call count before starting a multi-step task, and the chat subtitle shows a live tool-call counter while a run is active.
+
 ### 7.2 Why a `Flow` and not a callback
 
 The engine is a **cold flow**: nothing runs until someone collects. This gives the ViewModel:
@@ -866,7 +868,7 @@ class Parser(private val input: String) {
 | Capability | Bridge | User grant | Example tools |
 |---|---|---|---|
 | Screenshot & screen analysis | `MediaProjection` + foreground service | one-time auth (Android 15: pick BetterAIChat as the app to capture) | `take_screenshot`, `screen_ocr` |
-| UI automation | `AccessibilityService` | enable in system settings | `ua_type`, `ua_tap`, `ua_swipe`, `ua_press`, `ua_tap_text`, `ua_find_text` |
+| UI automation | `AccessibilityService` | enable in system settings | `ua_type`, `ua_tap`, `ua_swipe`, `ua_press`, `ua_tap_text`, `ua_find_text`, `ua_sequence` |
 | Root-level shell | Shizuku | install Shizuku + grant | `run_shell`, `manage_app`, `set_wifi`, `set_power_saver` |
 | Read notifications | `NotificationListenerService` | notification access | `read_notifications` |
 | Foreground app | `UsageStatsManager` | usage access (appops) | `get_foreground_app` |
@@ -1326,7 +1328,7 @@ Each of these topics maps to a concrete, working file in the repo — start at `
 
 ---
 
-*Project: [BetterAIChat](https://github.com/Verlintas/BetterAIChat) — a native Android AI agent with 63 built-in tools, opencode-style Skills, per-conversation Agents, Shizuku/accessibility/MediaProjection capabilities, and a background automation engine. Built with Kotlin, Jetpack Compose, Room, OkHttp and kotlinx.serialization.*
+*Project: [BetterAIChat](https://github.com/Verlintas/BetterAIChat) — a native Android AI agent with 64 built-in tools, opencode-style Skills, per-conversation Agents, Shizuku/accessibility/MediaProjection capabilities, and a background automation engine. Built with Kotlin, Jetpack Compose, Room, OkHttp and kotlinx.serialization.*
 
 ---
 
