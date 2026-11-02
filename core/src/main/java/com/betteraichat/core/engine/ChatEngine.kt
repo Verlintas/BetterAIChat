@@ -64,7 +64,8 @@ class ChatEngine(
         messages: List<ChatMessage>,
         config: ProviderConfig,
         mode: AppMode,
-        maxToolCalls: Int = 0
+        maxToolCalls: Int = 0,
+        budgetSummary: String = ""
     ): Flow<EngineEvent> = flow {
         val provider = try {
             providerFactory(config.provider)
@@ -131,7 +132,9 @@ class ChatEngine(
                 return@flow
             }
             if (budgetReached && text.isBlank()) {
-                val fallback = "已达到本次的工具调用上限（$maxToolCalls 次）。已完成的结果都已保留，可以继续发消息接着做。"
+                val fallback = budgetSummary.ifBlank {
+                    "已达到本次的工具调用上限（$maxToolCalls 次）。已完成的结果都已保留，可以继续发消息接着做。"
+                }
                 text.append(fallback)
                 emit(EngineEvent.Delta(fallback))
             }

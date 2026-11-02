@@ -105,6 +105,7 @@
     <string name="settings_tool_limit">Tool call limit</string>
     <string name="settings_tool_limit_sub">Maximum tool calls per reply. Unlimited suits long automations; with a cap, the AI summarises progress when the cap is reached instead of stopping abruptly.</string>
     <string name="tool_limit_unlimited">Unlimited</string>
+    <string name="tool_budget_summary">Reached the tool-call limit for this run (%1$d calls). All completed results are saved — send another message to continue.</string>
     <string name="settings_language">Language</string>
     <string name="settings_appearance">Appearance</string>
     <string name="settings_accent">Accent color</string>
