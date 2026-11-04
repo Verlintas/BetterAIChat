@@ -1596,6 +1596,7 @@ class MyTool : DeviceTool {
 
 | Symptom | Cause | What to do |
 | --- | --- | --- |
+| Input box overlapped by the navigation bar (3-button navigation / ColorOS 16 / Android 16) | The chat bottom bar only applied `imePadding`, so the navigation-bar inset was ignored whenever the keyboard was closed | Fixed: the bottom bar now pads `navigationBars ∪ ime` (the max of the two), verified with both 3-button and gesture navigation |
 | "截屏授权已失效" right after a working capture | Pre-v0.27.4 behavior; Android 14+ tokens are single-use | Fixed by the persistent-projection rewrite (ch. 11.2). If you see it now, the system revoked the projection (another app cast, user stopped casting) |
 | Capture works, then stops after the app was killed | MediaProjection grants are process-scoped by platform design | Re-authorize; the foreground service normally prevents this |
 | Tool calls fail with "JsonLiteral is not a JsonObject" | Gateway double-encodes arguments | Fixed in v0.26.4 (`parseToolArguments`); if a new format appears, extend that function and add a test |

@@ -1589,6 +1589,7 @@ class MyTool : DeviceTool {
 
 | 现象 | 原因 | 处理 |
 | --- | --- | --- |
+| 输入框被系统导航栏遮挡（三按钮导航 / ColorOS 16 / Android 16） | 聊天底栏只应用了 `imePadding`，键盘收起时忽略了导航栏 inset | 已修复：底栏改为 `navigationBars ∪ ime`（两者取最大值），三按钮与手势导航均验证通过 |
 | 刚截过图就报「截屏授权已失效」 | v0.27.4 之前的行为；Android 14+ token 单次使用 | 已由持续投影重写修复（§11.2）。如今再出现说明系统收回了投影（其他应用投屏、用户停止投屏） |
 | 截图正常，应用被杀后失效 | MediaProjection 授权按平台设计绑定进程 | 重新授权；前台服务正常情况下会保住它 |
 | 工具报 "JsonLiteral is not a JsonObject" | 网关双重编码参数 | v0.26.4 已修（`parseToolArguments`）；出现新格式时扩展该函数并加测试 |
