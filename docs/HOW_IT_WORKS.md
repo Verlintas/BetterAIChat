@@ -694,6 +694,13 @@ private suspend fun failPendingToolCalls() {
 
 This is a great example of a **correctness invariant** (conversation history must be a valid tool-call transcript) discovered through a failure mode analysis, not through testing.
 
+**The 2026 recurrence (v0.27.8).** Stopping during tool execution still produced dangling calls in a different way: `stop()` repaired `pendingAssistantEntity` and then called `persistStreamingPartial()`, which saw the tool-execution placeholder (empty text, RUNNING tool calls) as a new round and inserted it as a second assistant message — with no tool results. The next request then 400'd with *"An assistant message with 'tool_calls' must be followed by tool messages…"* (reported on DeepSeek in Max mode).
+
+Two layers now prevent this:
+
+1. `persistStreamingPartial()` never persists a message whose text is blank; tool-only streaming state is UI state, not a transcript entry.
+2. Before every request, `repairToolTranscript()` (`core/chat/ToolTranscriptRepair.kt`) walks the loaded history and appends a synthetic `"已取消（上一轮中断，自动补齐）"` tool result for any tool call that has no matching `toolCallId` (also normalizing blank ids). This heals old poisoned conversations and any future cancellation path, including process death mid-tool, without discarding context.
+
 ---
 
 ## 8. Modes & the safety gate
@@ -1308,6 +1315,8 @@ These are all bugs found in code review and fixed in v0.20.1 — each with a tra
 
 14. **An "edit" that created a copy.** The Agent wizard served both create and edit, but the save path always built an `AgentEntity` without an `id`, so editing inserted a duplicate; it also fed the stored ciphertext (`enc:…`) to the model probe and would clear `isDefault` on update. Fix: carry `editingId`, preserve the default flag, and decrypt via `toConfig` when reusing a stored key. *Lesson: when one form serves create and edit, identity is part of the form state — test the write path, not just the title.*
 
+15. **A dangling tool call after Stop.** Stopping during tool execution persisted the assistant's tool calls twice: `failPendingToolCalls()` repaired the pending row, then `persistStreamingPartial()` inserted the tool-only streaming placeholder as a second assistant message with no results. The next request 400'd (*"An assistant message with 'tool_calls' must be followed by tool messages…"*). Fix: never persist a contentless tool-only streaming message, and run `repairToolTranscript()` before every request to append cancellation results for any unmatched tool call. *Lesson: cancellation paths must leave the external protocol in a valid state — verify the transcript after the repair, not just that the repair ran.*
+
 ---
 
 ## 19. Suggested study order
@@ -1599,6 +1608,7 @@ class MyTool : DeviceTool {
 | Input box overlapped by the navigation bar (3-button navigation / ColorOS 16 / Android 16) | The chat bottom bar only applied `imePadding`, so the navigation-bar inset was ignored whenever the keyboard was closed | Fixed: the bottom bar now pads `navigationBars ∪ ime` (the max of the two), verified with both 3-button and gesture navigation |
 | "截屏授权已失效" right after a working capture | Pre-v0.27.4 behavior; Android 14+ tokens are single-use | Fixed by the persistent-projection rewrite (ch. 11.2). If you see it now, the system revoked the projection (another app cast, user stopped casting) |
 | Capture works, then stops after the app was killed | MediaProjection grants are process-scoped by platform design | Re-authorize; the foreground service normally prevents this |
+| `An assistant message with 'tool_calls' must be followed by tool messages…` (HTTP 400) | A previous run was stopped mid-tool; old builds could persist a second assistant tool-call message with no results | Fixed in v0.27.8: stop no longer persists contentless tool-only messages, and `repairToolTranscript()` appends cancellation results before every request. Existing conversations heal on the next send |
 | Tool calls fail with "JsonLiteral is not a JsonObject" | Gateway double-encodes arguments | Fixed in v0.26.4 (`parseToolArguments`); if a new format appears, extend that function and add a test |
 | AI loops on a broken tool call | Model keeps re-issuing invalid arguments | Circuit breaker denies after 3 consecutive failures; check the tool's `description` for unclear argument docs |
 | Markdown renders as plain text | Model emits format CommonMark rejects (`###title`, pipe-less tables) | `MarkdownNormalizer` repairs the known cases; add new repairs there with tests |

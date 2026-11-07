@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.betteraichat.AppContainer
 import com.betteraichat.core.catalog.ModelCatalog
 import com.betteraichat.core.chat.ChatRepository
+import com.betteraichat.core.chat.repairToolTranscript
 import com.betteraichat.core.db.MessageEntity
 import com.betteraichat.core.engine.ChatEngine
 import com.betteraichat.core.engine.EngineEvent
@@ -430,7 +431,7 @@ class ChatViewModel(
                     }
                 }
                 streamTickerJob = myTicker
-                val history = repository.getHistory(cid).map { repository.messageToDomain(it) }
+                val history = repairToolTranscript(repository.getHistory(cid).map { repository.messageToDomain(it) })
                 val historyWithMemory = injectMemory(history, cid)
                 val toolLimit = settings.getToolCallLimit()
                 engine.run(
@@ -627,7 +628,7 @@ class ChatViewModel(
 
     private suspend fun persistStreamingPartial(cid: Long) {
         val st = streaming ?: return
-        if (st.content.isBlank() && st.toolCalls.isEmpty()) return
+        if (st.content.isBlank()) return
         val sameRound = pendingAssistantEntity != null &&
             pendingAssistantEntity?.conversationId == cid &&
             pendingRound == streamingRound

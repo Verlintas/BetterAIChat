@@ -695,6 +695,13 @@ private suspend fun failPendingToolCalls() {
 
 这是一个绝佳的例子，展示了**正确性不变量（correctness invariant）**（对话历史必须是有效的工具调用转录）是如何通过失效模式分析发现、而不是通过测试发现的。
 
+**2026 年再次出现（v0.27.8）。** 在工具执行中停止仍会以另一种方式留下未闭环调用：`stop()` 修复 `pendingAssistantEntity` 后又调用 `persistStreamingPartial()`，后者把「工具执行中」的占位状态（文本为空、工具 RUNNING）当成新一轮，插入了第二条没有工具结果的 assistant 消息。下一次请求就会 400：*"An assistant message with 'tool_calls' must be followed by tool messages…"*（Max 模式下 DeepSeek 实测反馈）。
+
+现在有两层防护：
+
+1. `persistStreamingPartial()` 不再持久化文本为空的流式消息；只有工具状态的流式对象属于 UI 状态，不应成为历史记录。
+2. 每次请求前 `repairToolTranscript()`（`core/chat/ToolTranscriptRepair.kt`）扫描历史，为任何找不到对应 `toolCallId` 的工具调用补一条 `"已取消（上一轮中断，自动补齐）"` 的 TOOL 结果（同时规范化空 id）。这能治愈旧的「中毒会话」以及未来任何取消路径（包括工具执行中进程被杀），且不丢上下文。
+
 ---
 
 ## 8. 模式与安全门
@@ -1307,6 +1314,8 @@ val blinkAlpha = rememberInfiniteTransition(label = "cursor").animateFloat(
 
 14. **一次「编辑」变成了复制。** Agent 向导同时承担新建与编辑，但保存路径构造 `AgentEntity` 时从不带 `id`，点保存就会插入重复行；它还把存储的密文（`enc:…`）直接拿去做模型探测，并会在更新时清掉 `isDefault`。修复：携带 `editingId`、保留默认标记，并在复用已存 Key 时通过 `toConfig` 解密。*教训：同一个表单兼做新建与编辑时，身份必须是表单状态的一部分——要验证写入路径，而不只是标题。*
 
+15. **停止后悬空的工具调用。** 在工具执行中停止会把 assistant 的工具调用持久化两次：`failPendingToolCalls()` 修复了 pending 行，随后 `persistStreamingPartial()` 又把只有工具状态的流式占位当成第二条 assistant 消息插入，且没有结果。下一次请求就会 400（*"An assistant message with 'tool_calls' must be followed by tool messages…"*）。修复：文本为空的工具流式消息一律不持久化，并在每次请求前运行 `repairToolTranscript()` 为任何未匹配的工具调用补上取消结果。*教训：取消路径必须让外部协议保持有效——要验证修复后的转录，而不只是确认修复代码跑过。*
+
 ---
 
 ## 19. 推荐学习顺序
@@ -1593,6 +1602,7 @@ class MyTool : DeviceTool {
 | 刚截过图就报「截屏授权已失效」 | v0.27.4 之前的行为；Android 14+ token 单次使用 | 已由持续投影重写修复（§11.2）。如今再出现说明系统收回了投影（其他应用投屏、用户停止投屏） |
 | 截图正常，应用被杀后失效 | MediaProjection 授权按平台设计绑定进程 | 重新授权；前台服务正常情况下会保住它 |
 | 工具报 "JsonLiteral is not a JsonObject" | 网关双重编码参数 | v0.26.4 已修（`parseToolArguments`）；出现新格式时扩展该函数并加测试 |
+| 报 `An assistant message with 'tool_calls' must be followed by tool messages…`（HTTP 400） | 上一轮在工具执行中被停止；旧版本可能把第二条只有 tool_calls、没有结果的 assistant 消息写入历史 | v0.27.8 已修：停止时不再持久化空的工具流式占位，且每次请求前 `repairToolTranscript()` 自动补取消结果；旧会话下次发送时自愈 |
 | AI 在坏工具调用上循环 | 模型反复给出非法参数 | 熔断在连续 3 次失败后拒绝；检查该工具的 `description` 是否把参数写清楚 |
 | Markdown 显示为纯文本 | 模型输出了 CommonMark 不接受的形式（`###标题`、无外框表格） | `MarkdownNormalizer` 修复已知情况；新增修复要带测试 |
 | 搜索无结果 | 网络受限/引擎限流 | 工具会报告引擎诊断；在真机上用真实查询验证 |
