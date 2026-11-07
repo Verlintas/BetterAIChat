@@ -122,6 +122,28 @@ class ChatEngineToolBudgetTest {
     }
 
     @Test
+    fun `error-prefixed tool result is reported as failed`() = runBlocking {
+        val provider = ScriptedProvider(listOf(
+            { toolCallRound("c1") },
+            { textRound("handled") }
+        ))
+        val failingRunner = object : ToolRunner {
+            override suspend fun run(name: String, arguments: String): String = "ERROR:permission denied"
+        }
+        val events = ChatEngine({ provider }, catalog, failingRunner)
+            .run(
+                messages = listOf(ChatMessage(ChatRole.USER, "do the task")),
+                config = config,
+                mode = AppMode.MAX,
+                maxToolCalls = 0
+            )
+            .toList()
+
+        val finished = events.filterIsInstance<EngineEvent.ToolCallFinished>().single()
+        assertEquals(com.betteraichat.core.model.ToolCallStatus.FAILED, finished.call.status)
+    }
+
+    @Test
     fun `zero budget means unlimited tool calls`() = runBlocking {
         val provider = ScriptedProvider(listOf(
             { toolCallRound("c1") },

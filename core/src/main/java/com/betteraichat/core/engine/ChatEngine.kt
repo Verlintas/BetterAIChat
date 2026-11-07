@@ -282,7 +282,10 @@ class ChatEngine(
         emitEvent(EngineEvent.ToolCallStarted(call))
         return try {
             val result = withTimeout(60_000) { toolRunner.run(call.name, call.arguments) }
-            ToolCallStatus.DONE to result
+            val failed = result.startsWith("ERROR") ||
+                result.startsWith("工具参数") ||
+                result.startsWith("工具执行")
+            (if (failed) ToolCallStatus.FAILED else ToolCallStatus.DONE) to result
         } catch (e: CancellationException) {
             throw e
         } catch (e: kotlinx.coroutines.TimeoutCancellationException) {

@@ -284,7 +284,7 @@ fun MessageItem(
                     color = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
                 ) {
                     Text(
-                        stringResource(com.betteraichat.R.string.tool_steps, done, msg.toolCalls.size, if (running > 0) stringResource(com.betteraichat.R.string.status_running) else ""),
+                        stringResource(com.betteraichat.R.string.tool_steps, done, msg.toolCalls.size, if (running > 0) " · " + stringResource(com.betteraichat.R.string.status_running) else ""),
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary
