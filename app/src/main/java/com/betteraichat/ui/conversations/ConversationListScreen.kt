@@ -48,6 +48,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.betteraichat.R
+import com.betteraichat.core.chat.markdownPreview
 import com.betteraichat.core.db.ConversationEntity
 import com.betteraichat.core.mode.AppMode
 import com.betteraichat.core.model.ProviderId
@@ -61,6 +63,7 @@ private val CONV_TIME_FORMAT = SimpleDateFormat("MM-dd", Locale.getDefault())
 private val CONV_TIME_FULL = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
 private val CONV_TIME_HM = SimpleDateFormat("HH:mm", Locale.getDefault())
 
+@Composable
 private fun formatConversationTime(ts: Long): String {
     if (ts <= 0) return ""
     val now = java.util.Calendar.getInstance()
@@ -73,7 +76,7 @@ private fun formatConversationTime(ts: Long): String {
     val isYesterday = sameYear &&
         yesterday.get(java.util.Calendar.DAY_OF_YEAR) == then.get(java.util.Calendar.DAY_OF_YEAR)
     return when {
-        isYesterday -> "昨天"
+        isYesterday -> stringResource(R.string.conv_yesterday)
         sameYear -> CONV_TIME_FORMAT.format(Date(ts))
         else -> CONV_TIME_FULL.format(Date(ts))
     }
@@ -134,17 +137,17 @@ fun ConversationListScreen(
                 title = { Text("BetterAIChat") },
                 actions = {
                     IconButton(onClick = onOpenStarred) {
-                        Icon(Icons.Filled.Star, contentDescription = "收藏")
+                        Icon(Icons.Filled.Star, contentDescription = stringResource(R.string.conv_starred))
                     }
                     IconButton(onClick = onOpenSettings) {
-                        Icon(Icons.Filled.Settings, contentDescription = "设置")
+                        Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.conv_settings))
                     }
                 }
             )
         },
         floatingActionButton = {
             FloatingActionButton(onClick = { onOpenChat(-1L) }) {
-                Icon(Icons.Filled.Add, contentDescription = "新对话")
+                Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.chat_new_chat))
             }
         }
     ) { padding ->
@@ -155,12 +158,12 @@ fun ConversationListScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
-                placeholder = { Text("搜索会话…") },
+                placeholder = { Text(stringResource(R.string.conv_search_hint)) },
                 singleLine = true,
                 trailingIcon = {
                     if (searchQuery.isNotEmpty()) {
                         IconButton(onClick = { searchQuery = "" }) {
-                            Icon(Icons.Filled.Close, contentDescription = "清空")
+                            Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.conv_clear_search))
                         }
                     }
                 }
@@ -176,7 +179,7 @@ fun ConversationListScreen(
                     items(filteredActive, key = { "a${it.id}" }) { c ->
                         SwipeableConversationCard(
                             conversation = c,
-                            preview = lastMessageMap[c.id]?.replace('\n', ' ')?.trim().orEmpty(),
+                            preview = markdownPreview(lastMessageMap[c.id].orEmpty()),
                             onClick = { onOpenChat(c.id) },
                             onRename = {
                                 renameTarget = c
@@ -196,8 +199,8 @@ fun ConversationListScreen(
                         item {
                             TextButton(onClick = { showArchived = !showArchived }) {
                                 Text(
-                                    if (showArchived) "收起已归档（${archivedConversations.size}）"
-                                    else "已归档（${archivedConversations.size}）"
+                                    if (showArchived) stringResource(R.string.conv_archived_collapse, archivedConversations.size)
+                                    else stringResource(R.string.conv_archived, archivedConversations.size)
                                 )
                             }
                         }
@@ -205,7 +208,7 @@ fun ConversationListScreen(
                             items(filteredArchived, key = { "r${it.id}" }) { c ->
                                 SwipeableConversationCard(
                                     conversation = c,
-                                    preview = lastMessageMap[c.id]?.replace('\n', ' ')?.trim().orEmpty(),
+                                    preview = markdownPreview(lastMessageMap[c.id].orEmpty()),
                                     onClick = { onOpenChat(c.id) },
                                     onRename = {
                                         renameTarget = c
@@ -269,7 +272,7 @@ fun ConversationListScreen(
     renameTarget?.let { c ->
         AlertDialog(
             onDismissRequest = { renameTarget = null },
-            title = { Text("重命名对话") },
+            title = { Text(stringResource(R.string.conv_rename_title)) },
             text = {
                 OutlinedTextField(
                     value = renameText,
@@ -284,10 +287,10 @@ fun ConversationListScreen(
                         scope.launch { container.repository.updateTitle(c.id, name) }
                     }
                     renameTarget = null
-                }) { Text("保存") }
+                }) { Text(stringResource(R.string.conv_save)) }
             },
             dismissButton = {
-                TextButton(onClick = { renameTarget = null }) { Text("取消") }
+                TextButton(onClick = { renameTarget = null }) { Text(stringResource(R.string.cancel)) }
             }
         )
     }
@@ -300,9 +303,9 @@ private fun EmptyHint(modifier: Modifier = Modifier) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Text("还没有对话", style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(R.string.conv_empty_title), style = MaterialTheme.typography.titleMedium)
         Text(
-            "点击右下角 + 开始第一次对话",
+            stringResource(R.string.conv_empty_hint),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -395,35 +398,35 @@ private fun SwipeableConversationCard(
         }
         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
             DropdownMenuItem(
-                text = { Text(if (conversation.pinned) "取消置顶" else "置顶") },
+                text = { Text(stringResource(if (conversation.pinned) R.string.conv_unpin else R.string.conv_pin)) },
                 onClick = {
                     menuOpen = false
                     onTogglePin()
                 }
             )
             DropdownMenuItem(
-                text = { Text(if (conversation.archived) "取消归档" else "归档") },
+                text = { Text(stringResource(if (conversation.archived) R.string.conv_unarchive else R.string.conv_archive)) },
                 onClick = {
                     menuOpen = false
                     onToggleArchive()
                 }
             )
             DropdownMenuItem(
-                text = { Text("重命名") },
+                text = { Text(stringResource(R.string.conv_rename)) },
                 onClick = {
                     menuOpen = false
                     onRename()
                 }
             )
             DropdownMenuItem(
-                text = { Text("清除聊天记录") },
+                text = { Text(stringResource(R.string.conv_clear_messages)) },
                 onClick = {
                     menuOpen = false
                     onClearMessages()
                 }
             )
             DropdownMenuItem(
-                text = { Text("删除会话", color = MaterialTheme.colorScheme.error) },
+                text = { Text(stringResource(R.string.conv_delete), color = MaterialTheme.colorScheme.error) },
                 onClick = {
                     menuOpen = false
                     onDelete()

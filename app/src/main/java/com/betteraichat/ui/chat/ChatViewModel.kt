@@ -1064,19 +1064,26 @@ class ChatViewModel(
     fun retryLast() {
         if (currentConversationId <= 0 || _state.value.isRunning) return
         viewModelScope.launch {
-            val last = repository.getHistory(currentConversationId).lastOrNull { it.role == "USER" }
-                ?: run {
-                    _state.update { it.copy(notification = appContext.getString(com.betteraichat.R.string.vm_no_retry)) }
-                    return@launch
-                }
-            _state.update { it.copy(error = null) }
-            val hadAttachments = runCatching {
-                last.attachmentsJson != null && last.attachmentsJson!!.isNotBlank()
-            }.getOrDefault(false)
-            sendWithContent(last.content, emptyList())
-            if (hadAttachments) {
-                _state.update { it.copy(notification = appContext.getString(com.betteraichat.R.string.vm_retry_no_image)) }
+            val cid = currentConversationId
+            val history = repository.getHistory(cid)
+            if (history.none { it.role == "USER" }) {
+                _state.update { it.copy(notification = appContext.getString(com.betteraichat.R.string.vm_no_retry)) }
+                return@launch
             }
+            var deleteFrom = -1L
+            for (i in history.indices.reversed()) {
+                val msg = history[i]
+                if (msg.role == "ASSISTANT" && msg.toolCallsJson.isNullOrBlank()) {
+                    deleteFrom = msg.id
+                } else {
+                    break
+                }
+            }
+            if (deleteFrom > 0) {
+                repository.deleteMessagesRange(cid, deleteFrom, history.last().id)
+            }
+            _state.update { it.copy(error = null) }
+            runGeneration(cid)
         }
     }
 

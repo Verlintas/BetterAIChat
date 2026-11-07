@@ -23,10 +23,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.betteraichat.R
 import com.betteraichat.core.model.ChatRole
 import com.betteraichat.ui.rememberContainer
 
@@ -45,10 +47,10 @@ fun StarredScreen(onBack: () -> Unit, onOpenChat: (Long) -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("收藏") },
+                title = { Text(stringResource(R.string.starred_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = "返回")
+                        Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.settings_back))
                     }
                 }
             )
@@ -60,9 +62,9 @@ fun StarredScreen(onBack: () -> Unit, onOpenChat: (Long) -> Unit) {
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
-                Text("还没有收藏", style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.starred_empty_title), style = MaterialTheme.typography.titleMedium)
                 Text(
-                    "长按消息 → 收藏，可在这里统一查看",
+                    stringResource(R.string.starred_empty_hint),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -78,7 +80,7 @@ fun StarredScreen(onBack: () -> Unit, onOpenChat: (Long) -> Unit) {
                     Card(onClick = { onOpenChat(msg.conversationId) }, modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.padding(12.dp)) {
                             Text(
-                                if (isUser) "用户" else "AI",
+                                stringResource(if (isUser) R.string.starred_role_user else R.string.starred_role_ai),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = if (isUser) MaterialTheme.colorScheme.primary
                                 else MaterialTheme.colorScheme.onSurfaceVariant
@@ -90,7 +92,7 @@ fun StarredScreen(onBack: () -> Unit, onOpenChat: (Long) -> Unit) {
                                 overflow = TextOverflow.Ellipsis
                             )
                             Text(
-                                "来自：${titleMap[msg.conversationId] ?: "对话"}",
+                                stringResource(R.string.starred_from, titleMap[msg.conversationId] ?: stringResource(R.string.starred_unknown_conversation)),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontWeight = FontWeight.Normal

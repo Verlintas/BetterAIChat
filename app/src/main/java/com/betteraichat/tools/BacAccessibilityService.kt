@@ -7,6 +7,7 @@ import android.os.Bundle
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.betteraichat.skills.AccessibilityBridge
+import com.betteraichat.skills.UiTextMatch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
@@ -106,8 +107,9 @@ class BacAccessibilityService : AccessibilityService(), AccessibilityBridge {
             return@withContext "ERROR:屏幕上没有找到包含「$query」的元素。可先用 ua_find_text 查看屏幕上的文字与位置，或改用坐标点击。"
         }
         val node = matches.first()
+        val target = clickableAncestor(node)
         val rect = android.graphics.Rect()
-        node.getBoundsInScreen(rect)
+        target.getBoundsInScreen(rect)
         val cx = rect.centerX()
         val cy = rect.centerY()
         val label = node.text?.toString() ?: node.contentDescription?.toString() ?: query
@@ -140,25 +142,49 @@ class BacAccessibilityService : AccessibilityService(), AccessibilityBridge {
     }
 
     private fun collectTextNodes(root: AccessibilityNodeInfo, query: String): List<AccessibilityNodeInfo> {
-        val out = mutableListOf<AccessibilityNodeInfo>()
+        val out = mutableListOf<Pair<AccessibilityNodeInfo, Int>>()
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(root)
         var visited = 0
-        while (queue.isNotEmpty() && visited < 600 && out.size < 30) {
+        while (queue.isNotEmpty() && visited < 600 && out.size < 60) {
             val node = queue.removeFirst()
             visited++
             val t = node.text?.toString().orEmpty()
             val d = node.contentDescription?.toString().orEmpty()
-            if ((t.isNotBlank() || d.isNotBlank()) &&
-                (t.contains(query, ignoreCase = true) || d.contains(query, ignoreCase = true))
-            ) {
-                out.add(node)
-            }
+            val score = listOf(t, d)
+                .filter { it.isNotBlank() }
+                .mapNotNull { UiTextMatch.score(it, query) }
+                .minOrNull()
+            if (score != null) out += node to score
             for (i in 0 until node.childCount) {
                 node.getChild(i)?.let { queue.add(it) }
             }
         }
         return out
+            .sortedWith(
+                compareBy<Pair<AccessibilityNodeInfo, Int>> { it.second }
+                    .thenBy { if (isClickableOrChild(it.first)) 0 else 1 }
+                    .thenBy { nodeArea(it.first) }
+            )
+            .take(30)
+            .map { it.first }
+    }
+
+    private fun isClickableOrChild(node: AccessibilityNodeInfo): Boolean =
+        node.isClickable || node.parent?.isClickable == true
+
+    private fun clickableAncestor(node: AccessibilityNodeInfo): AccessibilityNodeInfo {
+        var current = node
+        while (!current.isClickable) {
+            current = current.parent ?: break
+        }
+        return current
+    }
+
+    private fun nodeArea(node: AccessibilityNodeInfo): Int {
+        val rect = android.graphics.Rect()
+        node.getBoundsInScreen(rect)
+        return (rect.width().coerceAtLeast(0) * rect.height().coerceAtLeast(0))
     }
 
     private fun collectAllTextNodes(root: AccessibilityNodeInfo): List<AccessibilityNodeInfo> {
