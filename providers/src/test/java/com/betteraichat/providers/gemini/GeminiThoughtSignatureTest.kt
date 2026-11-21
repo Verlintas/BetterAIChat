@@ -5,6 +5,7 @@ import com.betteraichat.core.model.ChatRole
 import com.betteraichat.core.model.ToolCall
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -37,6 +38,24 @@ class GeminiThoughtSignatureTest {
         assertEquals("sig-123", part.thoughtSignature)
         val encoded = json.encodeToString(GeminiContent.serializer(), contents.single())
         assertTrue(encoded.contains("\"thoughtSignature\":\"sig-123\""))
+    }
+
+    @Test
+    fun `unsigned gemini3 history uses the skip sentinel on the first call`() {
+        val message = ChatMessage(
+            role = ChatRole.ASSISTANT,
+            content = "",
+            toolCalls = listOf(
+                ToolCall(id = "c1", name = "web_search", arguments = """{"query":"a"}"""),
+                ToolCall(id = "c2", name = "web_search", arguments = """{"query":"b"}""")
+            )
+        )
+        val contents = with(GeminiProvider()) {
+            listOf(message).toGeminiContents(json, unsignedFallback = true)
+        }
+        val parts = contents.single().parts
+        assertEquals("skip_thought_signature_validator", parts[0].thoughtSignature)
+        assertNull(parts[1].thoughtSignature)
     }
 
     @Test

@@ -101,7 +101,8 @@ data class AnthropicUsage(
 data class AnthropicDelta(
     val type: String? = null,
     val text: String? = null,
-    @SerialName("partial_json") val partialJson: String? = null
+    @SerialName("partial_json") val partialJson: String? = null,
+    val signature: String? = null
 )
 
 @Serializable
@@ -197,7 +198,7 @@ class AnthropicProvider : ChatProvider {
                                 currentBlockArgs = StringBuilder()
                             }
                             "thinking" -> {
-                                block.signature?.let {
+                                block.signature?.takeIf { it.isNotBlank() }?.let {
                                     thinkingSignature = it
                                     emit(StreamEvent.ThinkingSignature(it))
                                 }
@@ -212,6 +213,10 @@ class AnthropicProvider : ChatProvider {
                         when (delta.type) {
                             "text_delta" -> delta.text?.let { emit(StreamEvent.Delta(it)) }
                             "thinking_delta" -> delta.text?.let { emit(StreamEvent.ThinkingDelta(it)) }
+                            "signature_delta" -> delta.signature?.let {
+                                thinkingSignature = it
+                                emit(StreamEvent.ThinkingSignature(it))
+                            }
                             "input_json_delta" -> delta.partialJson?.let { currentBlockArgs.append(it) }
                         }
                     }
@@ -273,7 +278,7 @@ class AnthropicProvider : ChatProvider {
         return call.clone().execute()
     }
 
-    private fun ChatMessage.toWire(reasoning: Boolean): AnthropicMessage = when (role) {
+    internal fun ChatMessage.toWire(reasoning: Boolean): AnthropicMessage = when (role) {
         ChatRole.USER -> {
             val blocks = mutableListOf<AnthropicBlock>()
             if (content.isNotBlank()) blocks.add(AnthropicBlock(type = "text", text = content))
@@ -298,11 +303,11 @@ class AnthropicProvider : ChatProvider {
         }
         ChatRole.ASSISTANT -> {
             val blocks = mutableListOf<AnthropicBlock>()
-            if (reasoning && !thinkingText.isNullOrBlank()) {
+            if (reasoning && !thinkingSignature.isNullOrBlank()) {
                 blocks.add(
                     AnthropicBlock(
                         type = "thinking",
-                        thinkingText = thinkingText,
+                        thinkingText = thinkingText ?: "",
                         signature = thinkingSignature
                     )
                 )

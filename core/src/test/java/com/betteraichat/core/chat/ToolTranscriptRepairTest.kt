@@ -68,7 +68,25 @@ class ToolTranscriptRepairTest {
         val repaired = repairToolTranscript(history)
 
         val toolIds = repaired.filter { it.role == ChatRole.TOOL }.mapNotNull { it.toolCallId }
-        assertEquals(setOf("c1", "c2"), toolIds.toSet())
-        assertEquals("c2", repaired[2].toolCallId)
+        assertEquals(listOf("c1", "c2"), toolIds)
+        assertEquals("c1", repaired[2].toolCallId)
+        assertEquals("c2", repaired[3].toolCallId)
+    }
+
+    @Test
+    fun `orphan and duplicate tool results are dropped`() {
+        val history = listOf(
+            user("a"),
+            assistant(call("c1")),
+            tool("c1"),
+            tool("c1"),
+            tool("orphan"),
+            user("next")
+        )
+        val repaired = repairToolTranscript(history)
+
+        val toolIds = repaired.filter { it.role == ChatRole.TOOL }.mapNotNull { it.toolCallId }
+        assertEquals(listOf("c1"), toolIds)
+        assertTrue(repaired.none { it.toolCallId == "orphan" })
     }
 }

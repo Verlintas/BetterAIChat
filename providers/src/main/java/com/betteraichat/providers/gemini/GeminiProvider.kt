@@ -25,6 +25,8 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.concurrent.TimeUnit
 
+private const val SKIP_SIGNATURE = "skip_thought_signature_validator"
+
 @Serializable
 data class GeminiRequest(
     @SerialName("systemInstruction") val systemInstruction: GeminiSystemInstruction? = null,
@@ -134,7 +136,8 @@ class GeminiProvider : ChatProvider {
             systemInstruction = system?.takeIf { it.isNotBlank() }?.let {
                 GeminiSystemInstruction(listOf(GeminiPart(text = it)))
             },
-            contents = messages.filter { it.role != ChatRole.SYSTEM }.toGeminiContents(json),
+            contents = messages.filter { it.role != ChatRole.SYSTEM }
+                .toGeminiContents(json, config.model.contains("gemini-3")),
             generationConfig = GeminiGenerationConfig(
                 temperature = config.temperature,
                 maxOutputTokens = config.maxTokens
@@ -179,12 +182,10 @@ class GeminiProvider : ChatProvider {
                         return@parse false
                     }
                     resp.usageMetadata?.let { lastUsage = it }
-                    val parts = resp.candidates.firstOrNull()?.content?.parts ?: return@parse true
+                    val candidate = resp.candidates.firstOrNull()
+                    if (candidate?.finishReason != null) finished = true
+                    val parts = candidate?.content?.parts ?: return@parse true
                     sawCandidate = true
-                    val reason = resp.candidates.firstOrNull()?.finishReason
-                    if (reason == "STOP" || reason == "MAX_TOKENS" || reason == "SAFETY" || reason == "RECITATION") {
-                        finished = true
-                    }
                     for (part in parts) {
                         part.thoughtSignature?.let { pendingThoughtSignature = it }
                         if (part.thought && !part.text.isNullOrBlank()) {
@@ -235,7 +236,7 @@ class GeminiProvider : ChatProvider {
         return call.clone().execute()
     }
 
-    internal fun List<ChatMessage>.toGeminiContents(json: Json): List<GeminiContent> {
+    internal fun List<ChatMessage>.toGeminiContents(json: Json, unsignedFallback: Boolean = false): List<GeminiContent> {
         val result = mutableListOf<GeminiContent>()
         for (m in this) {
             val parts = buildList {
@@ -251,13 +252,15 @@ class GeminiProvider : ChatProvider {
                     }
                     ChatRole.ASSISTANT -> {
                         if (m.content.isNotBlank()) add(GeminiPart(text = m.content))
-                        m.toolCalls.forEach { tc ->
+                        m.toolCalls.forEachIndexed { index, tc ->
                             val args = runCatching { json.parseToJsonElement(tc.arguments).jsonObject }
                                 .getOrDefault(JsonObject(emptyMap()))
+                            val signature = tc.thoughtSignature
+                                ?: if (unsignedFallback && index == 0) SKIP_SIGNATURE else null
                             add(
                                 GeminiPart(
                                     functionCall = GeminiFunctionCall(name = tc.name, args = args),
-                                    thoughtSignature = tc.thoughtSignature
+                                    thoughtSignature = signature
                                 )
                             )
                         }

@@ -336,7 +336,9 @@ sealed interface StreamEvent {
 
 The abstraction is deliberately vendor-neutral: OpenAI emits `delta.tool_calls`, Anthropic emits `delta.content[]` with `input_json_delta`, Gemini emits `functionCall` in its own shape — but all three boil down to `Delta` + `ToolCallsDone`.
 
-**Gemini 3 thought signatures.** Gemini 3 models enforce an opaque per-turn state for multi-turn function calling: the `functionCall` part must be replayed with the `thoughtSignature` returned by the previous response, or the API rejects the request with HTTP 400 (`Function call is missing a thought_signature`). `ToolCall` therefore carries an optional `thoughtSignature`. `GeminiProvider` buffers a signature that arrives on a preceding thought/text part and attaches it to the next function call (with parallel calls, only the first one carries it), and `toGeminiContents()` serializes it back onto the function-call part. The signature is persisted in `toolCallsJson`, so it survives history reloads and compression.
+**Gemini 3 thought signatures.** Gemini 3 models enforce an opaque per-turn state for multi-turn function calling: the `functionCall` part must be replayed with the `thoughtSignature` returned by the previous response, or the API rejects the request with HTTP 400 (`Function call is missing a thought_signature`). `ToolCall` therefore carries an optional `thoughtSignature`. `GeminiProvider` buffers a signature that arrives on a preceding thought/text part and attaches it to the next function call (with parallel calls, only the first one carries it), and `toGeminiContents()` serializes it back onto the function-call part. The signature is persisted in `toolCallsJson`, so it survives history reloads and compression. Unsigned history imported from another provider gets the documented `skip_thought_signature_validator` sentinel on the first call; old conversations without a signature can still be replayed.
+
+**Anthropic thinking signatures.** Anthropic streams a thinking block's signature as a `signature_delta` inside `content_block_delta`, just before the block closes. The provider captures it, the engine persists it on the assistant message, and `toWire()` replays a thinking block (with empty text when `display: omitted`) whenever a signature exists. Blocks without a signature are skipped instead of being sent invalid.
 
 ### 4.2 ModelCatalog — curated model metadata
 
@@ -701,7 +703,7 @@ This is a great example of a **correctness invariant** (conversation history mus
 Two layers now prevent this:
 
 1. `persistStreamingPartial()` never persists a message whose text is blank; tool-only streaming state is UI state, not a transcript entry.
-2. Before every request, `repairToolTranscript()` (`core/chat/ToolTranscriptRepair.kt`) walks the loaded history and appends a synthetic `"已取消（上一轮中断，自动补齐）"` tool result for any tool call that has no matching `toolCallId` (also normalizing blank ids). This heals old poisoned conversations and any future cancellation path, including process death mid-tool, without discarding context.
+2. Before every request, `repairToolTranscript()` (`core/chat/ToolTranscriptRepair.kt`) walks the loaded history and appends a synthetic `"已取消（上一轮中断，自动补齐）"` tool result for any tool call that has no matching `toolCallId` (also normalizing blank ids). This heals old poisoned conversations and any future cancellation path, including process death mid-tool, without discarding context. It also emits every assistant's results immediately after it in **tool-call order** and drops orphan/duplicate results — Gemini matches parallel function responses positionally, so order is part of correctness there.
 
 ---
 

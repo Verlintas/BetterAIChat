@@ -336,7 +336,9 @@ sealed interface StreamEvent {
 
 这个抽象刻意保持厂商中立：OpenAI 发出 `delta.tool_calls`，Anthropic 发出带 `input_json_delta` 的 `delta.content[]`，Gemini 以自己的格式发出 `functionCall`——但三者最终都归结为 `Delta` + `ToolCallsDone`。
 
-**Gemini 3 的 thought signature。** Gemini 3 系列在多轮 Function Calling 中强制携带不透明的 per-turn 状态：上一轮返回的 `thoughtSignature` 必须原样回传到 `functionCall` part，否则 API 返回 HTTP 400（`Function call is missing a thought_signature`）。因此 `ToolCall` 增加可选的 `thoughtSignature` 字段；`GeminiProvider` 会缓存出现在前置 thought/text part 上的签名，并附加到下一个 functionCall（并行调用只有第一个携带），`toGeminiContents()` 再把它写回 functionCall part。签名会持久化在 `toolCallsJson` 中，历史重载和压缩后都不会丢。
+**Gemini 3 的 thought signature。** Gemini 3 系列在多轮 Function Calling 中强制携带不透明的 per-turn 状态：上一轮返回的 `thoughtSignature` 必须原样回传到 `functionCall` part，否则 API 返回 HTTP 400（`Function call is missing a thought_signature`）。因此 `ToolCall` 增加可选的 `thoughtSignature` 字段；`GeminiProvider` 会缓存出现在前置 thought/text part 上的签名，并附加到下一个 functionCall（并行调用只有第一个携带），`toGeminiContents()` 再把它写回 functionCall part。签名会持久化在 `toolCallsJson` 中，历史重载和压缩后都不会丢。来自其他服务商的旧历史没有签名时，会在第一个调用上使用官方约定的 `skip_thought_signature_validator` 哨兵值。
+
+**Anthropic thinking signature。** Anthropic 会在 thinking block 关闭前通过 `content_block_delta` 里的 `signature_delta` 下发签名。provider 捕获后由引擎持久化到 assistant 消息；`toWire()` 只要存在签名就回放 thinking block（`display: omitted` 时文本为空）。没有签名的 block 会被跳过，而不是带着非法签名发送。
 
 ### 4.2 ModelCatalog —— 精选的模型元数据
 
@@ -702,7 +704,7 @@ private suspend fun failPendingToolCalls() {
 现在有两层防护：
 
 1. `persistStreamingPartial()` 不再持久化文本为空的流式消息；只有工具状态的流式对象属于 UI 状态，不应成为历史记录。
-2. 每次请求前 `repairToolTranscript()`（`core/chat/ToolTranscriptRepair.kt`）扫描历史，为任何找不到对应 `toolCallId` 的工具调用补一条 `"已取消（上一轮中断，自动补齐）"` 的 TOOL 结果（同时规范化空 id）。这能治愈旧的「中毒会话」以及未来任何取消路径（包括工具执行中进程被杀），且不丢上下文。
+2. 每次请求前 `repairToolTranscript()`（`core/chat/ToolTranscriptRepair.kt`）扫描历史，为任何找不到对应 `toolCallId` 的工具调用补一条 `"已取消（上一轮中断，自动补齐）"` 的 TOOL 结果（同时规范化空 id）。这能治愈旧的「中毒会话」以及未来任何取消路径（包括工具执行中进程被杀），且不丢上下文。它还会把每个 assistant 的工具结果按**工具调用顺序**紧跟其后重新输出，并丢弃孤儿/重复结果——Gemini 的并行 functionResponse 是按位置匹配的，顺序本身就是正确性的一部分。
 
 ---
 
