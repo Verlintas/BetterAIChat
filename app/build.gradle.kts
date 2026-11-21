@@ -13,8 +13,8 @@ android {
         applicationId = "com.betteraichat"
         minSdk = 26
         targetSdk = 36
-        versionCode = 64
-        versionName = "0.27.8"
+        versionCode = 65
+        versionName = "0.27.9"
     }
 
     buildTypes {
