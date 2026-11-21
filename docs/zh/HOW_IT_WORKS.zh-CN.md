@@ -336,6 +336,8 @@ sealed interface StreamEvent {
 
 这个抽象刻意保持厂商中立：OpenAI 发出 `delta.tool_calls`，Anthropic 发出带 `input_json_delta` 的 `delta.content[]`，Gemini 以自己的格式发出 `functionCall`——但三者最终都归结为 `Delta` + `ToolCallsDone`。
 
+**Gemini 3 的 thought signature。** Gemini 3 系列在多轮 Function Calling 中强制携带不透明的 per-turn 状态：上一轮返回的 `thoughtSignature` 必须原样回传到 `functionCall` part，否则 API 返回 HTTP 400（`Function call is missing a thought_signature`）。因此 `ToolCall` 增加可选的 `thoughtSignature` 字段；`GeminiProvider` 会缓存出现在前置 thought/text part 上的签名，并附加到下一个 functionCall（并行调用只有第一个携带），`toGeminiContents()` 再把它写回 functionCall part。签名会持久化在 `toolCallsJson` 中，历史重载和压缩后都不会丢。
+
 ### 4.2 ModelCatalog —— 精选的模型元数据
 
 ```kotlin
@@ -1316,6 +1318,8 @@ val blinkAlpha = rememberInfiniteTransition(label = "cursor").animateFloat(
 
 15. **停止后悬空的工具调用。** 在工具执行中停止会把 assistant 的工具调用持久化两次：`failPendingToolCalls()` 修复了 pending 行，随后 `persistStreamingPartial()` 又把只有工具状态的流式占位当成第二条 assistant 消息插入，且没有结果。下一次请求就会 400（*"An assistant message with 'tool_calls' must be followed by tool messages…"*）。修复：文本为空的工具流式消息一律不持久化，并在每次请求前运行 `repairToolTranscript()` 为任何未匹配的工具调用补上取消结果。*教训：取消路径必须让外部协议保持有效——要验证修复后的转录，而不只是确认修复代码跑过。*
 
+16. **Gemini 3 丢失 thought_signature。** Gemini provider 解析了 `functionCall`，却丢掉了同级的 `thoughtSignature`。第一次工具调用正常，同一轮里的下一次请求就被 HTTP 400 拒绝。修复：把签名存到 `ToolCall`、随工具调用 JSON 持久化，并在回放时写回 functionCall part；如果签名出现在前置 thought part 上，则顺延附加给下一个调用。*教训：厂商的不透明状态必须端到端建模（wire → domain → DB → wire），否则会在第一个抽象边界悄悄消失。*
+
 ---
 
 ## 19. 推荐学习顺序
@@ -1603,6 +1607,7 @@ class MyTool : DeviceTool {
 | 截图正常，应用被杀后失效 | MediaProjection 授权按平台设计绑定进程 | 重新授权；前台服务正常情况下会保住它 |
 | 工具报 "JsonLiteral is not a JsonObject" | 网关双重编码参数 | v0.26.4 已修（`parseToolArguments`）；出现新格式时扩展该函数并加测试 |
 | 报 `An assistant message with 'tool_calls' must be followed by tool messages…`（HTTP 400） | 上一轮在工具执行中被停止；旧版本可能把第二条只有 tool_calls、没有结果的 assistant 消息写入历史 | v0.27.8 已修：停止时不再持久化空的工具流式占位，且每次请求前 `repairToolTranscript()` 自动补取消结果；旧会话下次发送时自愈 |
+| Gemini 3 报 `Function call is missing a thought_signature`（HTTP 400） | Gemini provider 回放历史时丢掉了每次调用的 `thoughtSignature` | 已修：`ToolCall.thoughtSignature` 随工具调用 JSON 持久化，并在 functionCall part 回放；前置 thought part 上的签名会顺延到下一个调用 |
 | AI 在坏工具调用上循环 | 模型反复给出非法参数 | 熔断在连续 3 次失败后拒绝；检查该工具的 `description` 是否把参数写清楚 |
 | Markdown 显示为纯文本 | 模型输出了 CommonMark 不接受的形式（`###标题`、无外框表格） | `MarkdownNormalizer` 修复已知情况；新增修复要带测试 |
 | 搜索无结果 | 网络受限/引擎限流 | 工具会报告引擎诊断；在真机上用真实查询验证 |

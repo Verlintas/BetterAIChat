@@ -22,7 +22,8 @@ data class ToolCall(
     val name: String,
     val arguments: String,
     val result: String? = null,
-    val status: ToolCallStatus = ToolCallStatus.PENDING
+    val status: ToolCallStatus = ToolCallStatus.PENDING,
+    val thoughtSignature: String? = null
 )
 
 enum class ToolCallStatus { PENDING, RUNNING, DONE, FAILED, REJECTED, DENIED }

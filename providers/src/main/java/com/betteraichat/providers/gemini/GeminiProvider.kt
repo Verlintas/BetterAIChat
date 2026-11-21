@@ -43,6 +43,7 @@ data class GeminiContent(val role: String, val parts: List<GeminiPart>)
 data class GeminiPart(
     val text: String? = null,
     val thought: Boolean = false,
+    @SerialName("thoughtSignature") val thoughtSignature: String? = null,
     @SerialName("inlineData") val inlineData: GeminiInlineData? = null,
     @SerialName("functionCall") val functionCall: GeminiFunctionCall? = null,
     @SerialName("functionResponse") val functionResponse: GeminiFunctionResponse? = null
@@ -133,7 +134,7 @@ class GeminiProvider : ChatProvider {
             systemInstruction = system?.takeIf { it.isNotBlank() }?.let {
                 GeminiSystemInstruction(listOf(GeminiPart(text = it)))
             },
-            contents = messages.filter { it.role != ChatRole.SYSTEM }.toGeminiContents(),
+            contents = messages.filter { it.role != ChatRole.SYSTEM }.toGeminiContents(json),
             generationConfig = GeminiGenerationConfig(
                 temperature = config.temperature,
                 maxOutputTokens = config.maxTokens
@@ -169,6 +170,7 @@ class GeminiProvider : ChatProvider {
                 var lastUsage: GeminiUsageMetadata? = null
                 var sawCandidate = false
                 var finished = false
+                var pendingThoughtSignature: String? = null
                 SseParser.parse(body) { _, data ->
                     val resp = runCatching { json.decodeFromString(GeminiResponse.serializer(), data) }
                         .getOrNull() ?: return@parse true
@@ -184,17 +186,21 @@ class GeminiProvider : ChatProvider {
                         finished = true
                     }
                     for (part in parts) {
+                        part.thoughtSignature?.let { pendingThoughtSignature = it }
                         if (part.thought && !part.text.isNullOrBlank()) {
                             emit(StreamEvent.ThinkingDelta(part.text))
                             continue
                         }
                         part.text?.let { emit(StreamEvent.Delta(it)) }
                         part.functionCall?.let { fc ->
+                            val signature = pendingThoughtSignature
+                            pendingThoughtSignature = null
                             toolCalls.add(
                                 ToolCall(
                                     id = fc.id ?: "call_${toolCalls.size}",
                                     name = fc.name,
-                                    arguments = fc.args.toString()
+                                    arguments = fc.args.toString(),
+                                    thoughtSignature = signature
                                 )
                             )
                         }
@@ -229,7 +235,7 @@ class GeminiProvider : ChatProvider {
         return call.clone().execute()
     }
 
-    private fun List<ChatMessage>.toGeminiContents(): List<GeminiContent> {
+    internal fun List<ChatMessage>.toGeminiContents(json: Json): List<GeminiContent> {
         val result = mutableListOf<GeminiContent>()
         for (m in this) {
             val parts = buildList {
@@ -248,7 +254,12 @@ class GeminiProvider : ChatProvider {
                         m.toolCalls.forEach { tc ->
                             val args = runCatching { json.parseToJsonElement(tc.arguments).jsonObject }
                                 .getOrDefault(JsonObject(emptyMap()))
-                            add(GeminiPart(functionCall = GeminiFunctionCall(name = tc.name, args = args)))
+                            add(
+                                GeminiPart(
+                                    functionCall = GeminiFunctionCall(name = tc.name, args = args),
+                                    thoughtSignature = tc.thoughtSignature
+                                )
+                            )
                         }
                     }
                     ChatRole.TOOL -> add(

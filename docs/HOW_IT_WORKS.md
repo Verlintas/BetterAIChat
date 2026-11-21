@@ -336,6 +336,8 @@ sealed interface StreamEvent {
 
 The abstraction is deliberately vendor-neutral: OpenAI emits `delta.tool_calls`, Anthropic emits `delta.content[]` with `input_json_delta`, Gemini emits `functionCall` in its own shape — but all three boil down to `Delta` + `ToolCallsDone`.
 
+**Gemini 3 thought signatures.** Gemini 3 models enforce an opaque per-turn state for multi-turn function calling: the `functionCall` part must be replayed with the `thoughtSignature` returned by the previous response, or the API rejects the request with HTTP 400 (`Function call is missing a thought_signature`). `ToolCall` therefore carries an optional `thoughtSignature`. `GeminiProvider` buffers a signature that arrives on a preceding thought/text part and attaches it to the next function call (with parallel calls, only the first one carries it), and `toGeminiContents()` serializes it back onto the function-call part. The signature is persisted in `toolCallsJson`, so it survives history reloads and compression.
+
 ### 4.2 ModelCatalog — curated model metadata
 
 ```kotlin
@@ -1317,6 +1319,8 @@ These are all bugs found in code review and fixed in v0.20.1 — each with a tra
 
 15. **A dangling tool call after Stop.** Stopping during tool execution persisted the assistant's tool calls twice: `failPendingToolCalls()` repaired the pending row, then `persistStreamingPartial()` inserted the tool-only streaming placeholder as a second assistant message with no results. The next request 400'd (*"An assistant message with 'tool_calls' must be followed by tool messages…"*). Fix: never persist a contentless tool-only streaming message, and run `repairToolTranscript()` before every request to append cancellation results for any unmatched tool call. *Lesson: cancellation paths must leave the external protocol in a valid state — verify the transcript after the repair, not just that the repair ran.*
 
+16. **Gemini 3 missing thought_signature.** The Gemini provider parsed `functionCall` but dropped the sibling `thoughtSignature`. The first tool round worked; the next request in the same turn was rejected with HTTP 400. Fix: store the signature on `ToolCall`, persist it in the tool-call JSON, and replay it on the function-call part; signatures arriving on a preceding thought part are carried forward to the next call. *Lesson: opaque vendor state must be modelled end-to-end (wire → domain → DB → wire) or it silently disappears at the first abstraction boundary.*
+
 ---
 
 ## 19. Suggested study order
@@ -1608,6 +1612,7 @@ class MyTool : DeviceTool {
 | Input box overlapped by the navigation bar (3-button navigation / ColorOS 16 / Android 16) | The chat bottom bar only applied `imePadding`, so the navigation-bar inset was ignored whenever the keyboard was closed | Fixed: the bottom bar now pads `navigationBars ∪ ime` (the max of the two), verified with both 3-button and gesture navigation |
 | "截屏授权已失效" right after a working capture | Pre-v0.27.4 behavior; Android 14+ tokens are single-use | Fixed by the persistent-projection rewrite (ch. 11.2). If you see it now, the system revoked the projection (another app cast, user stopped casting) |
 | Capture works, then stops after the app was killed | MediaProjection grants are process-scoped by platform design | Re-authorize; the foreground service normally prevents this |
+| `Function call is missing a thought_signature` (Gemini 3, HTTP 400) | The Gemini provider dropped the per-call `thoughtSignature` when replaying history | Fixed: `ToolCall.thoughtSignature` is persisted in the tool-call JSON and replayed on the function-call part; signatures on preceding thought parts are carried forward |
 | `An assistant message with 'tool_calls' must be followed by tool messages…` (HTTP 400) | A previous run was stopped mid-tool; old builds could persist a second assistant tool-call message with no results | Fixed in v0.27.8: stop no longer persists contentless tool-only messages, and `repairToolTranscript()` appends cancellation results before every request. Existing conversations heal on the next send |
 | Tool calls fail with "JsonLiteral is not a JsonObject" | Gateway double-encodes arguments | Fixed in v0.26.4 (`parseToolArguments`); if a new format appears, extend that function and add a test |
 | AI loops on a broken tool call | Model keeps re-issuing invalid arguments | Circuit breaker denies after 3 consecutive failures; check the tool's `description` for unclear argument docs |
