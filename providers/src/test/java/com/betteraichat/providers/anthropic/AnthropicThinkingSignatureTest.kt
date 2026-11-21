@@ -2,6 +2,7 @@ package com.betteraichat.providers.anthropic
 
 import com.betteraichat.core.model.ChatMessage
 import com.betteraichat.core.model.ChatRole
+import com.betteraichat.core.model.ThinkingBlock
 import com.betteraichat.core.model.ToolCall
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
@@ -34,5 +35,29 @@ class AnthropicThinkingSignatureTest {
         assertEquals("sig-abc", thinking.signature)
         assertEquals("", thinking.thinkingText)
         assertEquals("tool_use", wire.content.last().type)
+    }
+
+    @Test
+    fun `multiple thinking and redacted blocks are replayed in order`() {
+        val message = ChatMessage(
+            role = ChatRole.ASSISTANT,
+            content = "answer",
+            toolCalls = listOf(
+                ToolCall(id = "toolu_1", name = "web_search", arguments = "{}")
+            ),
+            thinkingBlocks = listOf(
+                ThinkingBlock(type = "thinking", text = "first", signature = "sig-1"),
+                ThinkingBlock(type = "redacted_thinking", data = "encrypted"),
+                ThinkingBlock(type = "thinking", text = "second", signature = "sig-2")
+            )
+        )
+        val wire = with(AnthropicProvider()) { message.toWire(reasoning = true) }
+        assertEquals(
+            listOf("thinking", "redacted_thinking", "thinking", "text", "tool_use"),
+            wire.content.map { it.type }
+        )
+        assertEquals("sig-1", wire.content[0].signature)
+        assertEquals("encrypted", wire.content[1].data)
+        assertEquals("sig-2", wire.content[2].signature)
     }
 }

@@ -59,6 +59,33 @@ class GeminiThoughtSignatureTest {
     }
 
     @Test
+    fun `parallel call ids are replayed when available`() {
+        val assistant = ChatMessage(
+            role = ChatRole.ASSISTANT,
+            content = "",
+            toolCalls = listOf(
+                ToolCall(
+                    id = "c1",
+                    name = "web_search",
+                    arguments = """{"query":"x"}""",
+                    providerId = "call_1"
+                )
+            )
+        )
+        val result = ChatMessage(
+            role = ChatRole.TOOL,
+            content = "ok",
+            toolCallId = "c1",
+            toolName = "web_search"
+        )
+        val contents = with(GeminiProvider()) {
+            listOf(assistant, result).toGeminiContents(json, includeCallIds = true)
+        }
+        assertEquals("call_1", contents[0].parts.single().functionCall?.id)
+        assertEquals("call_1", contents[1].parts.single().functionResponse?.id)
+    }
+
+    @Test
     fun `response part exposes thought signature`() {
         val raw = """
             {"candidates":[{"content":{"role":"model","parts":[

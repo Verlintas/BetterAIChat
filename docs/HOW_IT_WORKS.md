@@ -76,7 +76,7 @@ BetterAIChat/
 │   ├── src/main/java/com/betteraichat/core/
 │   │   ├── engine/ChatEngine.kt            # The agent loop
 │   │   ├── chat/ChatRepository.kt          # DB access layer
-│   │   ├── db/AppDatabase.kt               # Room entities + DAOs + migrations (v10)
+│   │   ├── db/AppDatabase.kt               # Room entities + DAOs + migrations (v11)
 │   │   ├── model/ChatModels.kt             # ChatMessage, ToolCall, ProviderConfig…
 │   │   ├── mode/AppMode.kt                 # Chat/Plan/Build/Max
 │   │   ├── catalog/ModelCatalog.kt         # Built-in model registry per provider
@@ -338,7 +338,11 @@ The abstraction is deliberately vendor-neutral: OpenAI emits `delta.tool_calls`,
 
 **Gemini 3 thought signatures.** Gemini 3 models enforce an opaque per-turn state for multi-turn function calling: the `functionCall` part must be replayed with the `thoughtSignature` returned by the previous response, or the API rejects the request with HTTP 400 (`Function call is missing a thought_signature`). `ToolCall` therefore carries an optional `thoughtSignature`. `GeminiProvider` buffers a signature that arrives on a preceding thought/text part and attaches it to the next function call (with parallel calls, only the first one carries it), and `toGeminiContents()` serializes it back onto the function-call part. The signature is persisted in `toolCallsJson`, so it survives history reloads and compression. Unsigned history imported from another provider gets the documented `skip_thought_signature_validator` sentinel on the first call; old conversations without a signature can still be replayed.
 
-**Anthropic thinking signatures.** Anthropic streams a thinking block's signature as a `signature_delta` inside `content_block_delta`, just before the block closes. The provider captures it, the engine persists it on the assistant message, and `toWire()` replays a thinking block (with empty text when `display: omitted`) whenever a signature exists. Blocks without a signature are skipped instead of being sent invalid.
+**Anthropic thinking signatures.** Anthropic streams a thinking block's signature as a `signature_delta` inside `content_block_delta`, just before the block closes. The provider captures it, the engine persists it on the assistant message, and `toWire()` replays a thinking block (with empty text when `display: omitted`) whenever a signature exists. Blocks without a signature are skipped instead of being sent invalid. The same path handles `redacted_thinking` blocks and preserves **multiple** thinking blocks in their original order — `ThinkingBlock` is stored as a list (DB v11 `thinkingBlocksJson`), not collapsed into one text/signature pair.
+
+**OpenAI token limits.** Official OpenAI models in the `gpt-5`/`gpt-6`/`o*` families reject `max_tokens` and require `max_completion_tokens`; compatible gateways still use `max_tokens`. The provider picks the field based on the base URL and model, so a local DeepSeek/Qwen gateway keeps its existing behavior.
+
+**Catalog prefix matching.** `ModelCatalog.entryFor()` first matches an exact id, then the longest known prefix: a newly released minor version such as `claude-sonnet-5-5` inherits the reasoning flag and context window from `claude-sonnet-5` instead of silently falling back to "no reasoning". Truly unknown models still default to reasoning off.
 
 ### 4.2 ModelCatalog — curated model metadata
 
@@ -1094,13 +1098,13 @@ suspend fun executeAutomation(id: Long) {
 
 ## 14. Storage & state management
 
-### 14.1 Room schema (v10)
+### 14.1 Room schema (v11)
 
 ```
 conversations (id, title, provider, model, mode, agentId, pinned, archived, createdAt, updatedAt)
 messages (id, conversationId FK, role, content, toolCallsJson, toolCallId, toolName,
           model, mode, status, usageInput, usageOutput, attachmentsJson,
-          thinkingText, thinkingSignature, starred, createdAt)
+          thinkingText, thinkingSignature, thinkingBlocksJson, starred, createdAt)
 repeat_tasks (id, title, content, interval, time, weekday, everyHours, requestCode, nextTriggerAt, createdAt)
 automations  (id, name, triggerType, triggerValue, days, actionsJson, enabled, lastRunAt, createdAt)
 memories     (id, conversationId, type [memory|snapshot], content, createdAt, updatedAt)
@@ -1323,6 +1327,8 @@ These are all bugs found in code review and fixed in v0.20.1 — each with a tra
 
 16. **Gemini 3 missing thought_signature.** The Gemini provider parsed `functionCall` but dropped the sibling `thoughtSignature`. The first tool round worked; the next request in the same turn was rejected with HTTP 400. Fix: store the signature on `ToolCall`, persist it in the tool-call JSON, and replay it on the function-call part; signatures arriving on a preceding thought part are carried forward to the next call. *Lesson: opaque vendor state must be modelled end-to-end (wire → domain → DB → wire) or it silently disappears at the first abstraction boundary.*
 
+17. **Anthropic thinking blocks are not "one string".** The provider captured thinking deltas and a single signature, but Anthropic requires the exact sequence of thinking/redacted_thinking blocks, each with its own signature. Multi-block tool turns were rejected as "thinking blocks cannot be modified", and `signature_delta` was never parsed at all. Fix: parse signature deltas into a `List<ThinkingBlock>`, persist it (DB v11) and replay every block verbatim; also require an exact/prefix match in the model catalog so reasoning is not silently disabled for a new minor version. *Lesson: when a vendor calls a field "opaque", preserve its structure and order, not just its content.*
+
 ---
 
 ## 19. Suggested study order
@@ -1332,7 +1338,7 @@ If you want to genuinely learn from this codebase:
 1. **Kotlin coroutines & Flow** — `ChatEngine.run(): Flow<EngineEvent>`, `snapshotFlow` in scroll logic, `withTimeout`, `goAsync()` in receivers.
 2. **Dependency inversion** — `ToolContext` bridges (`ScreenshotProvider`, `OcrProvider`, `AccessibilityBridge`, `AutomationBridge`) and the lambda-lazy `runner` injection that breaks the circular graph.
 3. **Reactive UI** — one immutable `StateFlow`, `collectAsStateWithLifecycle`, `derivedStateOf`, the 10 Hz ticker decoupling event rate from render rate.
-4. **Room** — entities, DAOs, Flow observation, explicit migrations v1→v10.
+4. **Room** — entities, DAOs, Flow observation, explicit migrations v1→v11.
 5. **Networking** — OkHttp + hand-rolled SSE parser, `call.clone()` retry, read-timeout discipline, per-vendor wire translation (OpenAI/Anthropic/Gemini).
 6. **Android system integration** — `AlarmManager.setExactAndAllowWhileIdle`, sticky battery broadcasts, `MediaProjection` + foreground service lifecycle, `AccessibilityService` gesture dispatch (main thread + timeout), `NotificationListenerService`, Shizuku binder IPC.
 7. **Agent design** — mode-based gate (Chat/Plan/Build/Max), prompt+enforcement defense in depth, the confirm loop via `SharedFlow` + `CompletableDeferred`, and the tool-transcript invariant (§7.4).

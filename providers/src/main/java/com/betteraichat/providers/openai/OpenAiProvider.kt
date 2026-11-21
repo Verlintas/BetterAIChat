@@ -82,10 +82,20 @@ data class OpenAiRequest(
     val stream: Boolean = true,
     val temperature: Double? = null,
     @SerialName("max_tokens") val maxTokens: Int? = null,
+    @SerialName("max_completion_tokens") val maxCompletionTokens: Int? = null,
     @SerialName("reasoning_effort") val reasoningEffort: String? = null,
     @SerialName("stream_options") val streamOptions: OpenAiStreamOptions? = null,
     val tools: List<OpenAiTool>? = null
 )
+
+internal fun usesMaxCompletionTokens(baseUrl: String, model: String): Boolean {
+    val official = baseUrl.contains("api.openai.com") || baseUrl.contains("openai.azure.com")
+    if (!official) return false
+    val id = model.lowercase()
+    return id.startsWith("gpt-5") ||
+        id.startsWith("gpt-6") ||
+        Regex("^o[1-9]").containsMatchIn(id)
+}
 
 @Serializable
 data class OpenAiMessage(
@@ -158,11 +168,13 @@ class OpenAiProvider : ChatProvider {
     ): Flow<StreamEvent> = flow {
         val reasoning = config.reasoning &&
             ModelCatalog.entryFor(config.provider, config.model).supportsReasoning
+        val modernLimit = usesMaxCompletionTokens(config.baseUrl, config.model)
         val body = OpenAiRequest(
             model = config.model,
             messages = messages.mapNotNull { it.toWire() },
             temperature = if (reasoning) null else config.temperature,
-            maxTokens = config.maxTokens,
+            maxTokens = if (modernLimit) null else config.maxTokens,
+            maxCompletionTokens = if (modernLimit) config.maxTokens else null,
             reasoningEffort = if (reasoning) "high" else null,
             streamOptions = OpenAiStreamOptions(),
             tools = tools.map {

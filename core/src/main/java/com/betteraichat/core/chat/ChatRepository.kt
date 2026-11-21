@@ -118,7 +118,10 @@ class ChatRepository(private val db: AppDatabase) {
             runCatching { json.decodeFromString<List<Attachment>>(it) }.getOrDefault(emptyList())
         } ?: emptyList(),
         thinkingText = e.thinkingText,
-        thinkingSignature = e.thinkingSignature
+        thinkingSignature = e.thinkingSignature,
+        thinkingBlocks = e.thinkingBlocksJson?.let {
+            runCatching { json.decodeFromString<List<com.betteraichat.core.model.ThinkingBlock>>(it) }.getOrDefault(emptyList())
+        } ?: emptyList()
     )
 
     fun domainToMessage(m: ChatMessage, conversationId: Long, status: String = "done"): MessageEntity = MessageEntity(
@@ -138,6 +141,8 @@ class ChatRepository(private val db: AppDatabase) {
             ?.let { json.encodeToString(ListSerializer(Attachment.serializer()), it) },
         thinkingText = m.thinkingText,
         thinkingSignature = m.thinkingSignature,
+        thinkingBlocksJson = m.thinkingBlocks.takeIf { it.isNotEmpty() }
+            ?.let { json.encodeToString(ListSerializer(com.betteraichat.core.model.ThinkingBlock.serializer()), it) },
         createdAt = System.currentTimeMillis()
     )
 }

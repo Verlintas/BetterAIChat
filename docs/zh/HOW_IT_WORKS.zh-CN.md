@@ -76,7 +76,7 @@ BetterAIChat/
 │   ├── src/main/java/com/betteraichat/core/
 │   │   ├── engine/ChatEngine.kt            # Agent 循环
 │   │   ├── chat/ChatRepository.kt          # 数据库访问层
-│   │   ├── db/AppDatabase.kt               # Room 实体 + DAO + 迁移（v10）
+│   │   ├── db/AppDatabase.kt               # Room 实体 + DAO + 迁移（v11）
 │   │   ├── model/ChatModels.kt             # ChatMessage、ToolCall、ProviderConfig…
 │   │   ├── mode/AppMode.kt                 # Chat/Plan/Build/Max
 │   │   ├── catalog/ModelCatalog.kt         # 各 provider 的内置模型注册表
@@ -338,7 +338,11 @@ sealed interface StreamEvent {
 
 **Gemini 3 的 thought signature。** Gemini 3 系列在多轮 Function Calling 中强制携带不透明的 per-turn 状态：上一轮返回的 `thoughtSignature` 必须原样回传到 `functionCall` part，否则 API 返回 HTTP 400（`Function call is missing a thought_signature`）。因此 `ToolCall` 增加可选的 `thoughtSignature` 字段；`GeminiProvider` 会缓存出现在前置 thought/text part 上的签名，并附加到下一个 functionCall（并行调用只有第一个携带），`toGeminiContents()` 再把它写回 functionCall part。签名会持久化在 `toolCallsJson` 中，历史重载和压缩后都不会丢。来自其他服务商的旧历史没有签名时，会在第一个调用上使用官方约定的 `skip_thought_signature_validator` 哨兵值。
 
-**Anthropic thinking signature。** Anthropic 会在 thinking block 关闭前通过 `content_block_delta` 里的 `signature_delta` 下发签名。provider 捕获后由引擎持久化到 assistant 消息；`toWire()` 只要存在签名就回放 thinking block（`display: omitted` 时文本为空）。没有签名的 block 会被跳过，而不是带着非法签名发送。
+**Anthropic thinking signature。** Anthropic 会在 thinking block 关闭前通过 `content_block_delta` 里的 `signature_delta` 下发签名。provider 捕获后由引擎持久化到 assistant 消息；`toWire()` 只要存在签名就回放 thinking block（`display: omitted` 时文本为空）。没有签名的 block 会被跳过，而不是带着非法签名发送。同一条路径也处理 `redacted_thinking`，并按原始顺序保留**多个** thinking block——`ThinkingBlock` 以列表形式存储（DB v11 的 `thinkingBlocksJson`），不会合并成单一的 text/signature。
+
+**OpenAI token 上限。** 官方 OpenAI 的 `gpt-5`/`gpt-6`/`o*` 系列拒绝 `max_tokens`，要求 `max_completion_tokens`；兼容网关仍然使用 `max_tokens`。provider 根据 base URL 与模型自动选择字段，本地 DeepSeek/Qwen 网关行为不变。
+
+**模型目录前缀匹配。** `ModelCatalog.entryFor()` 先精确匹配，再匹配最长已知前缀：新发布的小版本（如 `claude-sonnet-5-5`）会继承 `claude-sonnet-5` 的推理开关与上下文窗口，而不是静默退化成「不支持推理」。完全未知的模型仍默认关闭推理。
 
 ### 4.2 ModelCatalog —— 精选的模型元数据
 
@@ -1095,13 +1099,13 @@ suspend fun executeAutomation(id: Long) {
 
 ## 14. 存储与状态管理
 
-### 14.1 Room schema（v10）
+### 14.1 Room schema（v11）
 
 ```
 conversations (id, title, provider, model, mode, agentId, pinned, archived, createdAt, updatedAt)
 messages (id, conversationId FK, role, content, toolCallsJson, toolCallId, toolName,
           model, mode, status, usageInput, usageOutput, attachmentsJson,
-          thinkingText, thinkingSignature, starred, createdAt)
+          thinkingText, thinkingSignature, thinkingBlocksJson, starred, createdAt)
 repeat_tasks (id, title, content, interval, time, weekday, everyHours, requestCode, nextTriggerAt, createdAt)
 automations  (id, name, triggerType, triggerValue, days, actionsJson, enabled, lastRunAt, createdAt)
 memories     (id, conversationId, type [memory|snapshot], content, createdAt, updatedAt)
@@ -1322,6 +1326,8 @@ val blinkAlpha = rememberInfiniteTransition(label = "cursor").animateFloat(
 
 16. **Gemini 3 丢失 thought_signature。** Gemini provider 解析了 `functionCall`，却丢掉了同级的 `thoughtSignature`。第一次工具调用正常，同一轮里的下一次请求就被 HTTP 400 拒绝。修复：把签名存到 `ToolCall`、随工具调用 JSON 持久化，并在回放时写回 functionCall part；如果签名出现在前置 thought part 上，则顺延附加给下一个调用。*教训：厂商的不透明状态必须端到端建模（wire → domain → DB → wire），否则会在第一个抽象边界悄悄消失。*
 
+17. **Anthropic 的 thinking block 不是「一个字符串」。** provider 只累积 thinking 文本和一个签名，但 Anthropic 要求按原始顺序回传每个 thinking/redacted_thinking block（各自带签名）。多块工具轮次会报 "thinking blocks cannot be modified"，而且 `signature_delta` 之前根本没解析。修复：把签名 delta 解析成 `List<ThinkingBlock>`，持久化（DB v11）并逐块原样回放；同时模型目录改为精确/前缀匹配，避免新小版本静默关闭推理。*教训：厂商说某个字段「不透明」时，要保留它的结构与顺序，而不只是内容。*
+
 ---
 
 ## 19. 推荐学习顺序
@@ -1331,7 +1337,7 @@ val blinkAlpha = rememberInfiniteTransition(label = "cursor").animateFloat(
 1. **Kotlin 协程与 Flow** —— `ChatEngine.run(): Flow<EngineEvent>`、滚动逻辑中的 `snapshotFlow`、`withTimeout`、接收器中的 `goAsync()`。
 2. **依赖倒置** —— `ToolContext` 桥接层（`ScreenshotProvider`、`OcrProvider`、`AccessibilityBridge`、`AutomationBridge`）以及打破循环依赖图的 lambda-lazy `runner` 注入。
 3. **响应式 UI** —— 一个不可变的 `StateFlow`、`collectAsStateWithLifecycle`、`derivedStateOf`、用 10 Hz 的 ticker 将事件频率与渲染频率解耦。
-4. **Room** —— 实体、DAO、Flow 观察、从 v1 到 v10 的显式迁移。
+4. **Room** —— 实体、DAO、Flow 观察、从 v1 到 v11 的显式迁移。
 5. **网络** —— OkHttp + 手写 SSE 解析器、`call.clone()` 重试、读超时纪律、按厂商转换线上格式（OpenAI/Anthropic/Gemini）。
 6. **Android 系统集成** —— `AlarmManager.setExactAndAllowWhileIdle`、sticky 电池广播、`MediaProjection` + 前台服务生命周期、`AccessibilityService` 手势分发（主线程 + 超时）、`NotificationListenerService`、Shizuku binder IPC。
 7. **Agent 设计** —— 基于模式的闸门（Chat/Plan/Build/Max）、prompt + 强制的纵深防御、通过 `SharedFlow` + `CompletableDeferred` 实现的确认循环，以及工具转录不变量（§7.4）。

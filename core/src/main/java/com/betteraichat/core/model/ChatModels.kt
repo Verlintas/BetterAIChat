@@ -23,7 +23,8 @@ data class ToolCall(
     val arguments: String,
     val result: String? = null,
     val status: ToolCallStatus = ToolCallStatus.PENDING,
-    val thoughtSignature: String? = null
+    val thoughtSignature: String? = null,
+    val providerId: String? = null
 )
 
 enum class ToolCallStatus { PENDING, RUNNING, DONE, FAILED, REJECTED, DENIED }
@@ -39,6 +40,14 @@ data class Attachment(
     val isImage: Boolean get() = kind == "image"
 }
 
+@Serializable
+data class ThinkingBlock(
+    val type: String,
+    val text: String = "",
+    val signature: String? = null,
+    val data: String? = null
+)
+
 data class ChatMessage(
     val role: ChatRole,
     val content: String,
@@ -49,7 +58,8 @@ data class ChatMessage(
     val mode: AppMode? = null,
     val attachments: List<Attachment> = emptyList(),
     val thinkingText: String? = null,
-    val thinkingSignature: String? = null
+    val thinkingSignature: String? = null,
+    val thinkingBlocks: List<ThinkingBlock> = emptyList()
 )
 
 data class ProviderConfig(
@@ -74,6 +84,7 @@ sealed interface StreamEvent {
     data class Delta(val text: String) : StreamEvent
     data class ThinkingDelta(val text: String) : StreamEvent
     data class ThinkingSignature(val signature: String) : StreamEvent
+    data class ThinkingBlocks(val blocks: List<ThinkingBlock>) : StreamEvent
     data class ToolCallsDone(val calls: List<ToolCall>) : StreamEvent
     data class Usage(val promptTokens: Long, val completionTokens: Long) : StreamEvent
     data object Done : StreamEvent

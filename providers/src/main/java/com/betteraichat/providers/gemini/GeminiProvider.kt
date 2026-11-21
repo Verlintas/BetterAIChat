@@ -67,7 +67,8 @@ data class GeminiFunctionCall(
 @Serializable
 data class GeminiFunctionResponse(
     val name: String,
-    val response: JsonObject
+    val response: JsonObject,
+    val id: String? = null
 )
 
 @Serializable
@@ -137,7 +138,11 @@ class GeminiProvider : ChatProvider {
                 GeminiSystemInstruction(listOf(GeminiPart(text = it)))
             },
             contents = messages.filter { it.role != ChatRole.SYSTEM }
-                .toGeminiContents(json, config.model.contains("gemini-3")),
+                .toGeminiContents(
+                    json,
+                    unsignedFallback = config.model.contains("gemini-3"),
+                    includeCallIds = config.model.contains("gemini-3")
+                ),
             generationConfig = GeminiGenerationConfig(
                 temperature = config.temperature,
                 maxOutputTokens = config.maxTokens
@@ -201,7 +206,8 @@ class GeminiProvider : ChatProvider {
                                     id = fc.id ?: "call_${toolCalls.size}",
                                     name = fc.name,
                                     arguments = fc.args.toString(),
-                                    thoughtSignature = signature
+                                    thoughtSignature = signature,
+                                    providerId = fc.id
                                 )
                             )
                         }
@@ -236,8 +242,13 @@ class GeminiProvider : ChatProvider {
         return call.clone().execute()
     }
 
-    internal fun List<ChatMessage>.toGeminiContents(json: Json, unsignedFallback: Boolean = false): List<GeminiContent> {
+    internal fun List<ChatMessage>.toGeminiContents(
+        json: Json,
+        unsignedFallback: Boolean = false,
+        includeCallIds: Boolean = false
+    ): List<GeminiContent> {
         val result = mutableListOf<GeminiContent>()
+        val providerIds = mutableMapOf<String, String>()
         for (m in this) {
             val parts = buildList {
                 when (m.role) {
@@ -257,9 +268,15 @@ class GeminiProvider : ChatProvider {
                                 .getOrDefault(JsonObject(emptyMap()))
                             val signature = tc.thoughtSignature
                                 ?: if (unsignedFallback && index == 0) SKIP_SIGNATURE else null
+                            val providerId = tc.providerId
+                            if (includeCallIds && providerId != null) providerIds[tc.id] = providerId
                             add(
                                 GeminiPart(
-                                    functionCall = GeminiFunctionCall(name = tc.name, args = args),
+                                    functionCall = GeminiFunctionCall(
+                                        name = tc.name,
+                                        id = if (includeCallIds) providerId else null,
+                                        args = args
+                                    ),
                                     thoughtSignature = signature
                                 )
                             )
@@ -269,7 +286,8 @@ class GeminiProvider : ChatProvider {
                         GeminiPart(
                             functionResponse = GeminiFunctionResponse(
                                 name = m.toolName ?: "unknown",
-                                response = JsonObject(mapOf("result" to JsonPrimitive(m.content)))
+                                response = JsonObject(mapOf("result" to JsonPrimitive(m.content))),
+                                id = if (includeCallIds) m.toolCallId?.let { providerIds[it] } else null
                             )
                         )
                     )

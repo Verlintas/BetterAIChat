@@ -5,6 +5,7 @@ import com.betteraichat.core.model.ChatMessage
 import com.betteraichat.core.model.ChatRole
 import com.betteraichat.core.model.ProviderConfig
 import com.betteraichat.core.model.StreamEvent
+import com.betteraichat.core.model.ThinkingBlock
 import com.betteraichat.core.model.ToolCall
 import com.betteraichat.core.model.ToolSpec
 import com.betteraichat.core.provider.ChatProvider
@@ -59,6 +60,7 @@ data class AnthropicBlock(
     val content: String? = null,
     val source: AnthropicImageSource? = null,
     val signature: String? = null,
+    val data: String? = null,
     @SerialName("thinking") val thinkingText: String? = null
 )
 
@@ -167,96 +169,117 @@ class AnthropicProvider : ChatProvider {
             }
             respBody.use { body ->
                 val toolCalls = mutableListOf<ToolCall>()
-            var currentBlockId: String? = null
-            var currentBlockName: String? = null
-            var currentBlockArgs = StringBuilder()
-            var thinkingSignature: String? = null
-            var callsEmitted = false
-            var doneEmitted = false
-            var inputTokens = 0L
-            var outputTokens = 0L
-            var usageSeen = false
-            var completed = false
-            SseParser.parse(body) { _, data ->
-                val ev = runCatching { json.decodeFromString(AnthropicEvent.serializer(), data) }
-                    .getOrNull() ?: return@parse true
-                when (ev.type) {
-                    "message_start" -> ev.message?.usage?.let {
-                        inputTokens = it.inputTokens
-                        usageSeen = true
-                    }
-                    "message_delta" -> ev.usage?.let {
-                        outputTokens = it.outputTokens
-                        usageSeen = true
-                    }
-                    "content_block_start" -> {
-                        val block = ev.contentBlock
-                        when (block?.type) {
-                            "tool_use" -> {
-                                currentBlockId = block.id
-                                currentBlockName = block.name
-                                currentBlockArgs = StringBuilder()
+                val thinkingBlocks = mutableListOf<ThinkingBlock>()
+                var currentBlockType: String? = null
+                var currentBlockId: String? = null
+                var currentBlockName: String? = null
+                var currentBlockArgs = StringBuilder()
+                var currentThinkingText = StringBuilder()
+                var currentThinkingSignature: String? = null
+                var inputTokens = 0L
+                var outputTokens = 0L
+                var usageSeen = false
+                var completed = false
+                SseParser.parse(body) { _, data ->
+                    val ev = runCatching { json.decodeFromString(AnthropicEvent.serializer(), data) }
+                        .getOrNull() ?: return@parse true
+                    when (ev.type) {
+                        "message_start" -> ev.message?.usage?.let {
+                            inputTokens = it.inputTokens
+                            usageSeen = true
+                        }
+                        "message_delta" -> ev.usage?.let {
+                            outputTokens = it.outputTokens
+                            usageSeen = true
+                        }
+                        "content_block_start" -> {
+                            val block = ev.contentBlock
+                            currentBlockType = block?.type
+                            when (block?.type) {
+                                "tool_use" -> {
+                                    currentBlockId = block.id
+                                    currentBlockName = block.name
+                                    currentBlockArgs = StringBuilder()
+                                }
+                                "thinking" -> {
+                                    currentThinkingText = StringBuilder()
+                                    currentThinkingSignature = null
+                                    block.signature?.takeIf { it.isNotBlank() }?.let {
+                                        currentThinkingSignature = it
+                                        emit(StreamEvent.ThinkingSignature(it))
+                                    }
+                                    if (!block.thinkingText.isNullOrBlank()) {
+                                        currentThinkingText.append(block.thinkingText)
+                                        emit(StreamEvent.ThinkingDelta(block.thinkingText))
+                                    }
+                                }
+                                "redacted_thinking" -> {
+                                    thinkingBlocks.add(
+                                        ThinkingBlock(type = "redacted_thinking", data = block.data)
+                                    )
+                                }
                             }
-                            "thinking" -> {
-                                block.signature?.takeIf { it.isNotBlank() }?.let {
-                                    thinkingSignature = it
+                        }
+                        "content_block_delta" -> {
+                            val delta = ev.delta ?: return@parse true
+                            when (delta.type) {
+                                "text_delta" -> delta.text?.let { emit(StreamEvent.Delta(it)) }
+                                "thinking_delta" -> delta.text?.let {
+                                    currentThinkingText.append(it)
+                                    emit(StreamEvent.ThinkingDelta(it))
+                                }
+                                "signature_delta" -> delta.signature?.let {
+                                    currentThinkingSignature = it
                                     emit(StreamEvent.ThinkingSignature(it))
                                 }
-                                if (!block.thinkingText.isNullOrBlank()) {
-                                    emit(StreamEvent.ThinkingDelta(block.thinkingText))
+                                "input_json_delta" -> delta.partialJson?.let { currentBlockArgs.append(it) }
+                            }
+                        }
+                        "content_block_stop" -> {
+                            if (currentBlockType == "thinking") {
+                                val text = currentThinkingText.toString()
+                                if (text.isNotBlank() || !currentThinkingSignature.isNullOrBlank()) {
+                                    thinkingBlocks.add(
+                                        ThinkingBlock(
+                                            type = "thinking",
+                                            text = text,
+                                            signature = currentThinkingSignature
+                                        )
+                                    )
                                 }
+                                currentThinkingText = StringBuilder()
+                                currentThinkingSignature = null
                             }
-                        }
-                    }
-                    "content_block_delta" -> {
-                        val delta = ev.delta ?: return@parse true
-                        when (delta.type) {
-                            "text_delta" -> delta.text?.let { emit(StreamEvent.Delta(it)) }
-                            "thinking_delta" -> delta.text?.let { emit(StreamEvent.ThinkingDelta(it)) }
-                            "signature_delta" -> delta.signature?.let {
-                                thinkingSignature = it
-                                emit(StreamEvent.ThinkingSignature(it))
-                            }
-                            "input_json_delta" -> delta.partialJson?.let { currentBlockArgs.append(it) }
-                        }
-                    }
-                    "content_block_stop" -> {
-                        if (currentBlockId != null && currentBlockName != null) {
-                            toolCalls.add(
-                                ToolCall(
-                                    id = currentBlockId!!,
-                                    name = currentBlockName!!,
-                                    arguments = currentBlockArgs.toString().ifBlank { "{}" }
+                            if (currentBlockId != null && currentBlockName != null) {
+                                toolCalls.add(
+                                    ToolCall(
+                                        id = currentBlockId!!,
+                                        name = currentBlockName!!,
+                                        arguments = currentBlockArgs.toString().ifBlank { "{}" }
+                                    )
                                 )
-                            )
-                            currentBlockId = null
-                            currentBlockName = null
-                            currentBlockArgs = StringBuilder()
+                                currentBlockId = null
+                                currentBlockName = null
+                                currentBlockArgs = StringBuilder()
+                            }
+                            currentBlockType = null
                         }
+                        "message_stop" -> {
+                            completed = true
+                            return@parse false
+                        }
+                        "error" -> ev.error?.message?.let { emit(StreamEvent.Error(it)) }
                     }
-                    "message_stop" -> {
-                        completed = true
-                        if (!callsEmitted) {
-                            callsEmitted = true
-                            emit(StreamEvent.ToolCallsDone(toolCalls))
-                        }
-                        if (!doneEmitted) {
-                            doneEmitted = true
-                            emit(StreamEvent.Done)
-                        }
-                        return@parse false
-                    }
-                    "error" -> ev.error?.message?.let { emit(StreamEvent.Error(it)) }
+                    true
+                }.collect { }
+                if (usageSeen) emit(StreamEvent.Usage(inputTokens, outputTokens))
+                if (!completed) {
+                    emit(StreamEvent.Error("流意外中断（未收到 message_stop）"))
+                } else {
+                    if (thinkingBlocks.isNotEmpty()) emit(StreamEvent.ThinkingBlocks(thinkingBlocks))
+                    emit(StreamEvent.ToolCallsDone(toolCalls))
+                    emit(StreamEvent.Done)
                 }
-                true
-            }.collect { }
-            if (usageSeen) emit(StreamEvent.Usage(inputTokens, outputTokens))
-            if (!completed) {
-                emit(StreamEvent.Error("流意外中断（未收到 message_stop）"))
-            } else if (!callsEmitted) {
-                emit(StreamEvent.ToolCallsDone(toolCalls))
-                emit(StreamEvent.Done)
-            }
             }
         } finally {
             call.cancel()
@@ -303,14 +326,31 @@ class AnthropicProvider : ChatProvider {
         }
         ChatRole.ASSISTANT -> {
             val blocks = mutableListOf<AnthropicBlock>()
-            if (reasoning && !thinkingSignature.isNullOrBlank()) {
-                blocks.add(
-                    AnthropicBlock(
-                        type = "thinking",
-                        thinkingText = thinkingText ?: "",
-                        signature = thinkingSignature
+            if (reasoning) {
+                if (thinkingBlocks.isNotEmpty()) {
+                    thinkingBlocks.forEach { block ->
+                        when (block.type) {
+                            "redacted_thinking" -> blocks.add(
+                                AnthropicBlock(type = "redacted_thinking", data = block.data)
+                            )
+                            else -> blocks.add(
+                                AnthropicBlock(
+                                    type = "thinking",
+                                    thinkingText = block.text,
+                                    signature = block.signature
+                                )
+                            )
+                        }
+                    }
+                } else if (!thinkingSignature.isNullOrBlank()) {
+                    blocks.add(
+                        AnthropicBlock(
+                            type = "thinking",
+                            thinkingText = thinkingText ?: "",
+                            signature = thinkingSignature
+                        )
                     )
-                )
+                }
             }
             if (content.isNotBlank()) blocks.add(AnthropicBlock(type = "text", text = content))
             toolCalls.forEach {

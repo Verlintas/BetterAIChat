@@ -47,6 +47,9 @@ object ModelCatalog {
     )
 
     val anthropic = listOf(
+        ModelEntry("claude-opus-5-5", "Claude Opus 5.5", maxTokens = 8192, supportsReasoning = true, contextWindow = 200_000),
+        ModelEntry("claude-sonnet-5-5", "Claude Sonnet 5.5", maxTokens = 8192, supportsReasoning = true, contextWindow = 200_000),
+        ModelEntry("claude-haiku-5-5", "Claude Haiku 5.5", maxTokens = 8192, supportsReasoning = true, contextWindow = 200_000),
         ModelEntry("claude-opus-5", "Claude Opus 5", maxTokens = 8192, supportsReasoning = true, contextWindow = 200_000),
         ModelEntry("claude-opus-4-8", "Claude Opus 4.8", maxTokens = 8192, supportsReasoning = true, contextWindow = 200_000),
         ModelEntry("claude-opus-4-6", "Claude Opus 4.6", maxTokens = 8192, supportsReasoning = true, contextWindow = 200_000),
@@ -76,8 +79,13 @@ object ModelCatalog {
         ProviderId.GEMINI -> gemini
     }
 
-    fun entryFor(provider: ProviderId, modelId: String): ModelEntry =
-        modelsFor(provider).firstOrNull { it.id == modelId } ?: ModelEntry(modelId, modelId)
+    fun entryFor(provider: ProviderId, modelId: String): ModelEntry {
+        val normalized = modelId.lowercase()
+        val models = modelsFor(provider)
+        models.firstOrNull { it.id == normalized }?.let { return it }
+        models.firstOrNull { normalized.startsWith(it.id) }?.let { return it }
+        return ModelEntry(normalized, modelId)
+    }
 
     fun defaultModel(provider: ProviderId): String = modelsFor(provider).first().id
 

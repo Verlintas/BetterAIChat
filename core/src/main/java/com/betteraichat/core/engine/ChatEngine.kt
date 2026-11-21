@@ -6,6 +6,7 @@ import com.betteraichat.core.model.ChatRole
 import com.betteraichat.core.model.ProviderConfig
 import com.betteraichat.core.model.ProviderId
 import com.betteraichat.core.model.StreamEvent
+import com.betteraichat.core.model.ThinkingBlock
 import com.betteraichat.core.model.ToolCall
 import com.betteraichat.core.model.ToolCallStatus
 import com.betteraichat.core.model.ToolSpec
@@ -86,6 +87,7 @@ class ChatEngine(
             var text = StringBuilder()
             var thinking = StringBuilder()
             var thinkingSignature: String? = null
+            var thinkingBlocks = emptyList<ThinkingBlock>()
             var toolCalls = emptyList<ToolCall>()
             try {
                 val tools = if (budgetReached) emptyList() else toolCatalog.specsFor(mode)
@@ -121,6 +123,7 @@ class ChatEngine(
                         }
                         is StreamEvent.ToolCallsDone -> toolCalls = ev.calls
                         is StreamEvent.ThinkingSignature -> thinkingSignature = ev.signature
+                        is StreamEvent.ThinkingBlocks -> thinkingBlocks = ev.blocks
                         is StreamEvent.Usage -> emit(EngineEvent.Usage(ev.promptTokens, ev.completionTokens))
                         is StreamEvent.Error -> throw IllegalStateException(ev.message)
                         StreamEvent.Done -> Unit
@@ -145,7 +148,8 @@ class ChatEngine(
                 model = config.model,
                 mode = mode,
                 thinkingText = thinking.toString().ifBlank { null },
-                thinkingSignature = thinkingSignature
+                thinkingSignature = thinkingSignature,
+                thinkingBlocks = thinkingBlocks
             )
             emit(EngineEvent.AssistantFinished(assistantMsg))
             if (toolCalls.isEmpty() || budgetReached) break

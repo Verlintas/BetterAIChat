@@ -501,7 +501,8 @@ class ChatViewModel(
                                     model = config.model,
                                     mode = s.mode,
                                     thinkingText = msg.thinkingText,
-                                    thinkingSignature = msg.thinkingSignature
+                                    thinkingSignature = msg.thinkingSignature,
+                                    thinkingBlocks = msg.thinkingBlocks
                                 ),
                                 cid
                             ).copy(
